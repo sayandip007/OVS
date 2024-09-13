@@ -1,0 +1,173 @@
+/* Ensure body and html elements take up full height */
+html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+}
+
+/* Adjust the body to use flexbox to push the footer to the bottom */
+body {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+/* Feedback Page Styles */
+.feedback-container {
+    display: flex;
+    flex-grow: 1;
+    margin: 60px auto;
+    padding: 0 20px;
+    max-width: 900px;
+    align-items: center;
+    justify-content: center;
+}
+
+.form-container {
+    background-color: #fff;
+    padding: 40px;
+    border-radius: 10px;
+    box-shadow: 5px 3px 5px grey;
+    text-align: center;
+    min-width: 450px;
+}
+
+h2 {
+    font-size: 2.2rem;
+    margin-bottom: 20px;
+    color: #004d99;
+}
+
+.input-group {
+    margin-bottom: 20px;
+    text-align: left;
+}
+
+label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 600;
+    color: #333;
+}
+
+input[type="text"],
+input[type="email"],
+textarea {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    box-sizing: border-box;
+    font-size: 1rem;
+    transition: border-color 0.3s ease;
+}
+
+input[type="text"]:focus,
+input[type="email"]:focus,
+textarea:focus {
+    border-color: #004d99;
+    outline: none;
+}
+
+button {
+    width: 100%;
+    padding: 12px;
+    background-color: #004d99;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1.1rem; 
+    transition: background-color 0.3s ease;
+}
+
+button:hover {
+    background-color: #003d80;
+}
+
+textarea {
+    resize: vertical;
+    min-height: 150px;
+}
+
+.success-message {
+    color: #4CAF50;
+    font-size: 1.2rem;
+    margin-top: 20px;
+}
+
+/* Responsive Design */
+@media screen and (max-width: 768px) {
+    .feedback-container {
+        padding: 0 10px;
+    }
+
+    .form-container {
+        padding: 20px;
+        min-width: unset;
+    }
+
+    h2 {
+        font-size: 1.8rem;
+    }
+
+    button {
+        font-size: 1rem;
+    }
+}
+
+@media screen and (max-width: 480px) {
+    .feedback-container {
+        margin: 40px auto;
+        padding: 0 10px;
+    }
+
+    .form-container {
+        padding: 20px;
+    }
+
+    h2 {
+        font-size: 1.6rem;
+        margin-bottom: 15px;
+    }
+
+    input[type="text"],
+    input[type="email"],
+    textarea {
+        padding: 10px;
+        font-size: 0.95rem;
+    }
+
+    button {
+        padding: 10px;
+        font-size: 0.95rem;
+    }
+}
+
+@media screen and (max-width: 320px) {
+    .feedback-container {
+        margin: 30px auto;
+        padding: 0 5px;
+    }
+
+    .form-container {
+        padding: 15px;
+    }
+
+    h2 {
+        font-size: 1.4rem;
+        margin-bottom: 10px;
+    }
+
+    input[type="text"],
+    input[type="email"],
+    textarea {
+        padding: 8px;
+        font-size: 0.85rem;
+    }
+
+    button {
+        padding: 8px;
+        font-size: 0.85rem;
+    }
+}

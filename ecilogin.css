@@ -1,0 +1,257 @@
+/* Reset some default styles */
+body, h1, p, ul {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+}
+
+/* Adjust the body to use flexbox to push the footer to the bottom */
+body {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+/* Login Page Styles */
+.auth-container {
+    flex-grow: 1;
+    min-width: 900px;
+    max-width: 900px;
+    margin: 60px auto;
+    padding: 0 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.form-container {
+    background-color: #fff;
+    padding: 40px;
+    border-radius: 10px;
+    box-shadow: 5px 3px 5px grey;
+    max-width: 400px;
+    width: 100%;
+    text-align: center;
+}
+
+h2 {
+    font-size: 2rem;
+    margin-bottom: 20px;
+    color: #004d99;
+}
+
+.input-group {
+    margin-bottom: 20px;
+    text-align: left;
+}
+
+label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: bold;
+    color: #333;
+}
+
+input[type="text"],
+input[type="email"],
+input[type="tel"] {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #c9c9c9;
+    background-color: #fcfcfc7e;
+    border-radius: 8px;
+    box-sizing: border-box;
+    font-size: 1rem;
+}
+
+button {
+    width: 100%;
+    padding: 12px;
+    background-color: #004d99;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1rem;
+}
+
+button:hover {
+    background-color: #003d80;
+}
+
+.error-message {
+    color: #eb0a0a;
+    font-size: 0.9rem;
+    margin-bottom: 10px;
+}
+
+.success-message {
+    color: #2d8d31;
+    font-size: 0.9rem;
+    margin-bottom: 10px;
+}
+
+a {
+    color: #004d99;
+    text-decoration: none;
+    font-weight: bold;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+/* OTP */
+.otp-inputs {
+    display: flex;
+    justify-content: space-between;
+    margin: 20px 0;
+}
+
+.otp-input {
+    width: 40px;
+    height: 40px;
+    border: 1px solid #ddddddc8;
+    border-radius: 5px;
+    text-align: center;
+    font-size: 1.5rem;
+    color: #333;
+    margin-right: 5px;
+}
+
+.otp-input:last-child {
+    margin-right: 0;
+}
+
+.otp-input:focus {
+    border-color: #004d99;
+    outline: none;
+}
+
+#otpTimer {
+    font-size: 0.9rem;
+    color: #333;
+    margin-top: 10px;
+}
+
+.resend-otp-link {
+    color: #004d99;
+    text-decoration: none;
+    font-weight: bold;
+    display: block;
+    margin-top: 10px;
+}
+
+.resend-otp-link:hover {
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+/* Responsive Design */
+@media screen and (max-width: 768px) {
+    .auth-container {
+        min-width: unset;
+        padding: 0 10px;
+        margin: 40px auto;
+    }
+
+    .form-container {
+        max-width: 100%;
+        padding: 30px;
+    }
+
+    h2 {
+        font-size: 1.8rem;
+    }
+
+    input[type="text"],
+    input[type="email"],
+    input[type="tel"] {
+        padding: 10px;
+        font-size: 0.95rem;
+    }
+
+    button {
+        padding: 10px;
+        font-size: 0.95rem;
+    }
+
+    .otp-input {
+        width: 35px;
+        height: 35px;
+        font-size: 1.2rem;
+    }
+}
+
+@media screen and (max-width: 480px) {
+    .auth-container {
+        padding: 0 5px;
+    }
+
+    .form-container {
+        padding: 20px;
+    }
+
+    h2 {
+        font-size: 1.6rem;
+        margin-bottom: 15px;
+    }
+
+    input[type="text"],
+    input[type="email"],
+    input[type="tel"] {
+        padding: 8px;
+        font-size: 0.9rem;
+    }
+
+    button {
+        padding: 8px;
+        font-size: 0.9rem;
+    }
+
+    .otp-input {
+        width: 30px;
+        height: 30px;
+        font-size: 1.1rem;
+    }
+}
+
+@media screen and (max-width: 320px) {
+    .auth-container {
+        margin: 30px auto;
+        padding: 0 5px;
+    }
+
+    .form-container {
+        padding: 15px;
+    }
+
+    h2 {
+        font-size: 1.4rem;
+        margin-bottom: 10px;
+    }
+
+    input[type="text"],
+    input[type="email"],
+    input[type="tel"] {
+        padding: 6px;
+        font-size: 0.85rem;
+    }
+
+    button {
+        padding: 6px;
+        font-size: 0.85rem;
+    }
+
+    .otp-input {
+        width: 25px;
+        height: 25px;
+        font-size: 1rem;
+    }
+}

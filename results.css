@@ -1,0 +1,142 @@
+/* Ensure body and html elements take up full height */
+html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+}
+
+/* Adjust the body to use flexbox to push the footer to the bottom */
+body {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+/* Results Page Styles */
+.results-container {
+    flex-grow: 1;
+    min-width: 1200px;
+    max-width: 1500px;
+    margin: 60px auto;
+    padding: 0 20px;
+}
+
+.results-table {
+    background-color: #ffffff;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 5px 3px 5px grey;
+    overflow-x: auto;
+}
+
+.results-table table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.results-table th, .results-table td {
+    padding: 14px;
+    text-align: left;
+    border-bottom: 1px solid #ddd;
+    font-size: 16px;
+}
+
+.results-table th {
+    background-color: #f4f4f4;
+    font-weight: 600;
+    color: #002d72;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.results-table tr:hover {
+    background-color: #f1f1f1;
+    transition: background-color 0.3s ease-in-out;
+}
+
+.results-table tr:nth-child(even) {
+    background-color: #f9f9f9;
+}
+
+/* Responsive Styles */
+
+/* Tablets and Smaller Screens */
+@media screen and (max-width: 1024px) {
+    .results-container {
+        min-width: 100%;
+    }
+
+    .results-table th, .results-table td {
+        padding: 12px;
+        font-size: 15px;
+    }
+
+    .results-table {
+        padding: 15px;
+    }
+}
+
+@media screen and (max-width: 768px) {
+    .results-container {
+        margin: 40px auto;
+        padding: 0 15px;
+    }
+
+    .results-table th, .results-table td {
+        padding: 10px;
+        font-size: 14px;
+    }
+
+    .results-table {
+        padding: 10px;
+        box-shadow: 4px 3px 4px grey;
+    }
+
+    h2 {
+        font-size: 1.8rem;
+    }
+}
+
+/* Mobile Devices */
+@media screen and (max-width: 480px) {
+    .results-container {
+        margin: 30px auto;
+        padding: 0 10px;
+    }
+
+    .results-table th, .results-table td {
+        padding: 8px;
+        font-size: 13px;
+    }
+
+    .results-table {
+        padding: 8px;
+        box-shadow: 3px 2px 3px grey;
+    }
+
+    h2 {
+        font-size: 1.6rem;
+    }
+}
+
+/* Very Small Mobile Devices */
+@media screen and (max-width: 320px) {
+    .results-container {
+        margin: 20px auto;
+        padding: 0 5px;
+    }
+
+    .results-table th, .results-table td {
+        padding: 6px;
+        font-size: 12px;
+    }
+
+    .results-table {
+        padding: 5px;
+        box-shadow: 2px 1px 2px grey;
+    }
+
+    h2 {
+        font-size: 1.4rem;
+    }
+}

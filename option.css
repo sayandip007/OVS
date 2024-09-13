@@ -1,0 +1,100 @@
+/* Reset some default styles */
+body, h1, p, ul {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+}
+
+/* Option styles */
+.option-container {
+    text-align: center;
+    margin: 30px;
+}
+
+.option-container h2 {
+    font-size: 1.8rem;
+    margin-bottom: 15px; 
+}
+
+.option-button {
+    display: inline-block;
+    font-size: 1.1rem;
+    padding: 12px 24px;
+    margin: 8px;
+    background-color: #0359b4;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+.option-button:hover {
+    background-color: #002d72;
+}
+
+.option-button:focus {
+    outline: none;
+}
+
+/* Responsive Design */
+
+/* Tablets and smaller screens */
+@media screen and (max-width: 768px) {
+    .option-container {
+        margin: 20px;
+    }
+
+    .option-container h2 {
+        font-size: 1.6rem;
+        margin-bottom: 10px;
+    }
+
+    .option-button {
+        font-size: 1rem;
+        padding: 10px 20px;
+        margin: 6px;
+    }
+}
+
+/* Mobile screens */
+@media screen and (max-width: 480px) {
+    .option-container {
+        margin: 15px;
+    }
+
+    .option-container h2 {
+        font-size: 1.4rem;
+        margin-bottom: 8px;
+    }
+
+    .option-button {
+        font-size: 0.9rem;
+        padding: 8px 16px;
+        margin: 4px;
+    }
+}
+
+/* Very small mobile screens */
+@media screen and (max-width: 320px) {
+    .option-container {
+        margin: 10px;
+    }
+
+    .option-container h2 {
+        font-size: 1.2rem;
+        margin-bottom: 5px;
+    }
+
+    .option-button {
+        font-size: 0.8rem;
+        padding: 6px 12px;
+        margin: 2px;
+    }
+}

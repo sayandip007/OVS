@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Feedback</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="feedback.css">
+
+</head>
+<body>
+    <!-- Navigation Bar -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="#" class="nav-logo">Voting Portal</a>
+            <div class="logo-container">
+                <img src="eci-logo.png" alt="ECI Logo" class="nav-logo-img" height="30px">
+                <img src="g20-logo.png" alt="G20 Summit Logo" class="nav-logo-img" height="30px">
+                <img src="75-years-logo.png" alt="75 Years Independence Logo" class="nav-logo-img" height="30px">
+            </div>
+            <ul class="nav-menu">
+                <li class="nav-item"><a href="index.html" class="nav-link">Home</a></li>
+                <li class="nav-item"><a href="about.html" class="nav-link">About</a></li>
+                <li class="nav-item"><a href="results.html" class="nav-link">Results</a></li>
+                <li class="nav-item"><a href="feedback.html" class="nav-link feedback">Feedback</a></li>
+            </ul>
+            <div class="nav-toggle" id="mobile-menu">
+                <span class="bar"></span>
+                <span class="bar"></span>
+                <span class="bar"></span>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="feedback-container">
+        <div class="form-container">
+            <h2>Feedback</h2>
+            <form id="feedbackForm">
+                <div class="input-group">
+                    <label for="feedbackName">Name</label>
+                    <input type="text" id="feedbackName" name="name" required>
+                </div>
+                <div class="input-group">
+                    <label for="feedbackEmail">Email</label>
+                    <input type="email" id="feedbackEmail" name="email" required>
+                </div>
+                <div class="input-group">
+                    <label for="feedbackMessage">Your Feedback</label>
+                    <textarea id="feedbackMessage" name="message" rows="6" required></textarea>
+                </div>
+                <button type="submit">Submit Feedback</button>
+                <p id="feedbackSuccess" class="success-message"></p>
+            </form>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-container">
+            <div class="footer-links">
+                <a href="#" class="footer-link">Privacy Policy</a>
+                <a href="#" class="footer-link">Terms of Service</a>
+                <a href="#" class="footer-link">Help Center</a>
+            </div>
+            <p class="footer-text">Copyright &copy; 2024 Voting Portal. All rights reserved.</p>
+        </div>
+    </footer>
+
+    <script src="scripts.js"></script>
+    <script src="feedback.js"></script>
+</body>
+</html>

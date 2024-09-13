@@ -1,0 +1,192 @@
+/* Reset some default styles */
+body, h1, p, ul {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+}
+
+/* Register Page Styles */
+.auth-container {
+    flex-grow: 1;
+    max-width: 900px;
+    margin: 60px auto;
+    padding: 0 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.form-container {
+    background-color: #fff;
+    padding: 40px;
+    border-radius: 10px;
+    box-shadow: 5px 3px 5px grey;
+    max-width: 400px;
+    width: 100%;
+    text-align: center;
+    min-width: 450px;
+}
+
+h2 {
+    font-size: 2rem;
+    margin-bottom: 20px;
+    color: #004d99;
+}
+
+.input-group {
+    margin-bottom: 20px;
+    text-align: left;
+}
+
+label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: bold;
+    color: #333;
+}
+
+input[type="text"],
+input[type="email"],
+input[type="tel"] {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    box-sizing: border-box;
+    font-size: 1rem;
+}
+
+button {
+    width: 100%;
+    padding: 12px;
+    background-color: #004d99;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1rem;
+}
+
+button:hover {
+    background-color: #003d80;
+}
+
+.error-message {
+    color: #eb0a0a;
+    font-size: 0.9rem;
+    margin-bottom: 10px;
+}
+
+.success-message {
+    color: #2d8d31;
+    font-size: 0.9rem;
+    margin-bottom: 10px;
+}
+
+a {
+    color: #004d99;
+    text-decoration: none;
+    font-weight: bold;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+/* Responsive Design */
+
+/* Tablets and Smaller Screens */
+@media screen and (max-width: 768px) {
+    .auth-container {
+        margin: 40px auto;
+        padding: 0 15px;
+    }
+
+    .form-container {
+        padding: 30px;
+        min-width: 100%;
+    }
+
+    h2 {
+        font-size: 1.8rem;
+    }
+
+    button {
+        padding: 10px;
+        font-size: 1rem;
+    }
+}
+
+/* Mobile Devices */
+@media screen and (max-width: 480px) {
+    .auth-container {
+        margin: 30px auto;
+        padding: 0 10px;
+    }
+
+    .form-container {
+        padding: 20px;
+        min-width: 100%; 
+        box-shadow: 3px 2px 4px grey; 
+    }
+
+    h2 {
+        font-size: 1.6rem;
+    }
+
+    input[type="text"],
+    input[type="email"],
+    input[type="tel"] {
+        padding: 10px;
+        font-size: 0.95rem;
+    }
+
+    button {
+        padding: 10px;
+        font-size: 0.95rem;
+    }
+
+    .input-group {
+        margin-bottom: 15px; 
+    }
+}
+
+/* Very Small Mobile Devices */
+@media screen and (max-width: 320px) {
+    .auth-container {
+        margin: 20px auto;
+        padding: 0 5px;
+    }
+
+    .form-container {
+        padding: 15px;
+        min-width: 100%;
+        box-shadow: 2px 1px 3px grey;
+    }
+
+    h2 {
+        font-size: 1.4rem;
+    }
+
+    input[type="text"],
+    input[type="email"],
+    input[type="tel"] {
+        padding: 8px;
+        font-size: 0.9rem;
+    }
+
+    button {
+        padding: 8px;
+        font-size: 0.9rem;
+    }
+
+    .input-group {
+        margin-bottom: 12px; 
+    }
+}

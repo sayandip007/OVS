@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vote</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="vote.css">
+</head>
+<body>
+    <!-- Navigation Bar -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="#" class="nav-logo">Voting Portal</a>
+            <div class="logo-container">
+                <img src="eci-logo.png" alt="ECI Logo" class="nav-logo-img" height="30px">
+                <img src="g20-logo.png" alt="G20 Summit Logo" class="nav-logo-img" height="30px">
+                <img src="75-years-logo.png" alt="75 Years Independence Logo" class="nav-logo-img" height="30px">
+            </div>
+            <ul class="nav-menu">
+                <li class="nav-item"><a href="index.html" class="nav-link">Home</a></li>
+                <li class="nav-item"><a href="about.html" class="nav-link">About</a></li>
+                <li class="nav-item"><a href="results.html" class="nav-link">Results</a></li>
+                <li class="nav-item"><a href="feedback.html" class="nav-link feedback">Feedback</a></li>
+            </ul>
+            <div class="nav-toggle" id="mobile-menu">
+                <span class="bar"></span>
+                <span class="bar"></span>
+                <span class="bar"></span>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="voting-machine">
+        <h2>Cast Your Vote</h2>
+
+        <div class="timer">
+            <p>Time Remaining</p>
+        </div>
+        
+        <div class="candidates">
+            <div class="candidate" id="candidate1">
+                <span class="serial-no">1.</span>
+                <img src="candidate1.jpg" alt="Candidate 1" class="candidate-image">
+                <span class="candidate-name">Narendra Modi</span>
+                <img src="logo1.png" alt="Party Logo 1" class="party-logo">
+                <button class="vote-button" onclick="selectCandidate('BJP', '1')">VOTE</button>
+                <span class="indicator" id="indicator1"></span>
+            </div>
+            <div class="candidate" id="candidate2">
+                <span class="serial-no">2.</span>
+                <img src="candidate2.jpg" alt="Candidate 2" class="candidate-image">
+                <span class="candidate-name">Rahul Gandhi</span>
+                <img src="logo2.png" alt="Party Logo 2" class="party-logo">
+                <button class="vote-button" onclick="selectCandidate('INC', '2')">VOTE</button>
+                <span class="indicator" id="indicator2"></span>
+            </div>
+            <div class="candidate" id="candidate3">
+                <span class="serial-no">3.</span>
+                <img src="candidate3.jpg" alt="Candidate 3" class="candidate-image">
+                <span class="candidate-name">Chandrababu Naidu</span>
+                <img src="logo3.png" alt="Party Logo 3" class="party-logo">
+                <button class="vote-button" onclick="selectCandidate('TDP', '3')">VOTE</button>
+                <span class="indicator" id="indicator3"></span>
+            </div>
+            <div class="candidate" id="candidate4">
+                <span class="serial-no">4.</span>
+                <img src="candidate4.jpg" alt="Candidate 4" class="candidate-image">
+                <span class="candidate-name">Sitaram Yechury</span>
+                <img src="logo4.png" alt="Party Logo 4" class="party-logo">
+                <button class="vote-button" onclick="selectCandidate('CPIM', '4')">VOTE</button>
+                <span class="indicator" id="indicator4"></span>
+            </div>
+            <div class="candidate" id="candidate5">
+                <span class="serial-no">5.</span>
+                <img src="candidate5.jpg" alt="Candidate 5" class="candidate-image">
+                <span class="candidate-name">Mamata Banerjee</span>
+                <img src="logo5.png" alt="Party Logo 5" class="party-logo">
+                <button class="vote-button" onclick="selectCandidate('AITC', '5')">VOTE</button>
+                <span class="indicator" id="indicator5"></span>
+            </div>
+            <div class="candidate" id="candidate6">
+                <span class="serial-no">6.</span>
+                <img src="candidate6.jpg" alt="Candidate 6" class="candidate-image">
+                <span class="candidate-name">Nitish Kumar</span>
+                <img src="logo6.png" alt="Party Logo 6" class="party-logo">
+                <button class="vote-button" onclick="selectCandidate('JDU', '6')">VOTE</button>
+                <span class="indicator" id="indicator6"></span>
+            </div>
+            <div class="candidate" id="candidate7">
+                <span class="serial-no">7.</span>
+                <img src="nota.jpg" alt="Candidate 7" class="candidate-image">
+                <span class="candidate-name">None of the Above</span>
+                <img src="nota.png" alt="NOTA Logo" class="party-logo">
+                <button class="vote-button" onclick="selectCandidate('NOTA', '7')">VOTE</button>
+                <span class="indicator" id="indicator7"></span>
+            </div>
+        </div>
+        <button class="submit-button" onclick="submitVote()">Submit Vote</button>
+        <p id="voteMessage" class="success-message"></p>
+    </div>
+    
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-container">
+            <div class="footer-links">
+                <a href="#" class="footer-link">Privacy Policy</a>
+                <a href="#" class="footer-link">Terms of Service</a>
+                <a href="#" class="footer-link">Help Center</a>
+            </div>
+            <p class="footer-text">Copyright &copy; 2024 Voting Portal. All rights reserved.</p>
+        </div>
+    </footer>
+
+    <script src="vote.js"></script>
+</body>
+</html>

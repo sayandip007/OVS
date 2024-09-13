@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="ecilogin.css">
+    
+</head>
+<body>
+    <!-- Navigation Bar -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="#" class="nav-logo">Voting Portal</a>
+            <div class="logo-container">
+                <img src="eci-logo.png" alt="ECI Logo" class="nav-logo-img" height="30px">
+                <img src="g20-logo.png" alt="G20 Summit Logo" class="nav-logo-img" height="30px">
+                <img src="75-years-logo.png" alt="75 Years Independence Logo" class="nav-logo-img" height="30px">
+            </div>
+            <ul class="nav-menu">
+                <li class="nav-item"><a href="index.html" class="nav-link">Home</a></li>
+                <li class="nav-item"><a href="about.html" class="nav-link">About</a></li>
+                <li class="nav-item"><a href="results.html" class="nav-link">Results</a></li>
+                <li class="nav-item"><a href="feedback.html" class="nav-link feedback">Feedback</a></li>
+            </ul>
+            <div class="nav-toggle" id="mobile-menu">
+                <span class="bar"></span>
+                <span class="bar"></span>
+                <span class="bar"></span>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+<div class="auth-container">
+    <div class="form-container" id="loginContainer">
+        <h2>ECI Login</h2>
+        <form id="loginForm">
+            <div class="input-group">
+                <label for="loginUsername">User ID (Aadhaar/Voter Number)</label>
+                <input type="text" id="loginUsername" name="username" required>
+            </div>
+            <div class="input-group">
+                <label for="loginPhone">Phone Number</label>
+                <input type="tel" id="loginPhone" name="phone" required>
+            </div>
+            <button type="submit">Send OTP</button>
+            <p id="loginError" class="error-message"></p>
+            <p id="loginSuccess" class="success-message"></p>
+        </form>
+    </div>
+
+    <div class="form-container" id="otpContainer" style="display: none;">
+        <h2>Enter OTP</h2>
+        <form id="otpForm">
+            <div class="otp-inputs">
+                <input type="text" class="otp-input" maxlength="1" id="otp1" name="otp1" required>
+                <input type="text" class="otp-input" maxlength="1" id="otp2" name="otp2" required>
+                <input type="text" class="otp-input" maxlength="1" id="otp3" name="otp3" required>
+                <input type="text" class="otp-input" maxlength="1" id="otp4" name="otp4" required>
+                <input type="text" class="otp-input" maxlength="1" id="otp5" name="otp5" required>
+                <input type="text" class="otp-input" maxlength="1" id="otp6" name="otp6" required>
+            </div>
+            <button type="submit">Submit OTP</button>
+            <p id="otpError" class="error-message"></p>
+            <p id="otpSuccess" class="success-message"></p>
+            <p id="otpTimer">Time left: <span id="timer">30</span> seconds</p>
+            <a href="#" id="resendOtpLink" class="resend-otp-link" style="display: none;">Resend OTP</a>
+        </form>
+    </div>
+    
+</div>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-container">
+            <div class="footer-links">
+                <a href="#" class="footer-link">Privacy Policy</a>
+                <a href="#" class="footer-link">Terms of Service</a>
+                <a href="#" class="footer-link">Help Center</a>
+            </div>
+            <p class="footer-text">Copyright &copy; 2024 Voting Portal. All rights reserved.</p>
+        </div>
+    </footer>
+
+    <script src="eciotp.js"></script>
+    <script src="ecilogin.js"></script>
+</body>
+</html>

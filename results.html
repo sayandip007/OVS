@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Results</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="results.css">
+
+</head>
+<body>
+    <!-- Navigation Bar -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="#" class="nav-logo">Voting Portal</a>
+            <div class="logo-container">
+                <img src="eci-logo.png" alt="ECI Logo" class="nav-logo-img" height="30px">
+                <img src="g20-logo.png" alt="G20 Summit Logo" class="nav-logo-img" height="30px">
+                <img src="75-years-logo.png" alt="75 Years Independence Logo" class="nav-logo-img" height="30px">
+            </div>
+            <ul class="nav-menu">
+                <li class="nav-item"><a href="index.html" class="nav-link">Home</a></li>
+                <li class="nav-item"><a href="about.html" class="nav-link">About</a></li>
+                <li class="nav-item"><a href="results.html" class="nav-link">Results</a></li>
+                <li class="nav-item"><a href="feedback.html" class="nav-link feedback">Feedback</a></li>
+            </ul>
+            <div class="nav-toggle" id="mobile-menu">
+                <span class="bar"></span>
+                <span class="bar"></span>
+                <span class="bar"></span>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="results-container">
+        <h2>Election Results</h2>
+        <div id="resultContainer" class="results-table" style="display: none;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Candidate</th>
+                        <th>Party</th>
+                        <th>Votes</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Narendra Modi</td>
+                        <td>BJP</td>
+                        <td>240</td>
+                    </tr>
+                    <tr>
+                        <td>Rahul Gandhi</td>
+                        <td>INC</td>
+                        <td>99</td>
+                    </tr>
+                    <tr>
+                        <td>N Chandrababu Naidu</td>
+                        <td>TDP</td>
+                        <td>16</td>
+                    </tr>
+                    <tr>
+                        <td>Sitaram Yechury</td>
+                        <td>CPIM</td>
+                        <td>4</td>
+                    </tr>
+                    <tr>
+                        <td>Mamata Banerjee</td>
+                        <td>AITC</td>
+                        <td>29</td>
+                    </tr>
+                    <tr>
+                        <td>Nitish Kumar</td>
+                        <td>JDU</td>
+                        <td>12</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <div id="messageContainer" style="display: none;"></div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-container">
+            <div class="footer-links">
+                <a href="#" class="footer-link">Privacy Policy</a>
+                <a href="#" class="footer-link">Terms of Service</a>
+                <a href="#" class="footer-link">Help Center</a>
+            </div>
+            <p class="footer-text">Copyright &copy; 2024 Voting Portal. All rights reserved.</p>
+        </div>
+    </footer>
+
+    <script src="displayresult.js"></script>
+</body>
+</html>
