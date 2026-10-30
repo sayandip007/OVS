@@ -1,0 +1,5 @@
+{
+  "name": "Voting Portal",
+  "description": "Online Voting Portal for Voters and ECI Officers with OTP authentication, candidate registration, electronic voting machine interface, and election results.",
+  "requestFramePermissions": []
+}
