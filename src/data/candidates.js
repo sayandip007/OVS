@@ -1,0 +1,350 @@
+import {
+  candidate1,
+  candidate2,
+  candidate3,
+  candidate4,
+  candidate5,
+  candidate6,
+  defaultAvatar,
+} from '../assets';
+import { ELECTION_TYPES, METADATA_SOURCES } from '../utils/constants';
+
+/**
+ * Candidates are strictly scoped to ONE electionId AND ONE constituencyId.
+ * Lok Sabha candidates belong only to PARLIAMENTARY constituencies.
+ * State Assembly candidates belong only to ASSEMBLY constituencies.
+ */
+export const INITIAL_CANDIDATES = [
+  // =========================================================================
+  // 1. LOK SABHA 2029 — WB-PC-KRISHNANAGAR (Krishnanagar Parliamentary, WB)
+  // =========================================================================
+  {
+    id: 'CAND-LS29-WB-KRN-1',
+    name: 'Mahua Roy Chowdhury (Demo)',
+    partyId: 'PARTY-AITC',
+    electionId: 'LS-2029',
+    constituencyId: 'WB-PC-KRISHNANAGAR',
+    electionType: ELECTION_TYPES.LOK_SABHA,
+    photograph: candidate5,
+    biography: 'Two-term parliamentarian focusing on rural infrastructure, handloom weavers, and public education in Nadia.',
+    education: 'M.A. in Economics, University of Calcutta',
+    manifesto: 'Expand textile clusters, modernize district hospitals, and improve rail connectivity across Krishnanagar.',
+    status: 'APPROVED',
+    metadataSource: METADATA_SOURCES.DEMO_SAMPLE,
+  },
+  {
+    id: 'CAND-LS29-WB-KRN-2',
+    name: 'Subrata Chatterjee (Demo)',
+    partyId: 'PARTY-BJP',
+    electionId: 'LS-2029',
+    constituencyId: 'WB-PC-KRISHNANAGAR',
+    electionType: ELECTION_TYPES.LOK_SABHA,
+    photograph: candidate1,
+    biography: 'Social worker and agricultural policy advocate working across Nadia district.',
+    education: 'B.Sc. Agriculture, Bidhan Chandra Krishi Viswavidyalaya',
+    manifesto: 'Direct cold-chain logistics for farmers, highway expansion, and youth skill centers.',
+    status: 'APPROVED',
+    metadataSource: METADATA_SOURCES.DEMO_SAMPLE,
+  },
+  {
+    id: 'CAND-LS29-WB-KRN-3',
+    name: 'Debashis Mukherjee (Demo)',
+    partyId: 'PARTY-CPIM',
+    electionId: 'LS-2029',
+    constituencyId: 'WB-PC-KRISHNANAGAR',
+    electionType: ELECTION_TYPES.LOK_SABHA,
+    photograph: candidate4,
+    biography: 'Trade union leader and public school teacher representing grassroots workers.',
+    education: 'M.Sc. Mathematics, Jadavpur University',
+    manifesto: 'Strengthen public healthcare, minimum support price guarantees, and rural employment.',
+    status: 'APPROVED',
+    metadataSource: METADATA_SOURCES.DEMO_SAMPLE,
+  },
+  {
+    id: 'CAND-LS29-WB-KRN-4',
+    name: 'Rohan Sen (Independent Demo)',
+    partyId: 'PARTY-IND',
+    electionId: 'LS-2029',
+    constituencyId: 'WB-PC-KRISHNANAGAR',
+    electionType: ELECTION_TYPES.LOK_SABHA,
+    photograph: defaultAvatar,
+    biography: 'Independent civic activist focused on clean river initiatives and municipal transparency.',
+    education: 'B.Tech Civil Engineering',
+    manifesto: 'Jalangi river rejuvenation and transparent constituency development fund tracking.',
+    status: 'APPROVED',
+    metadataSource: METADATA_SOURCES.DEMO_SAMPLE,
+  },
+
+  // =========================================================================
+  // 2. WEST BENGAL ASSEMBLY 2029 — WB-AC-KRISHNANAGAR-UTTAR (Assembly, WB)
+  // Completely separate from Lok Sabha candidates!
+  // =========================================================================
+  {
+    id: 'CAND-WBA29-KRNU-1',
+    name: 'Koushik Banerjee (Assembly Demo)',
+    partyId: 'PARTY-AITC',
+    electionId: 'WB-ASSEMBLY-2029',
+    constituencyId: 'WB-AC-KRISHNANAGAR-UTTAR',
+    electionType: ELECTION_TYPES.STATE_ASSEMBLY,
+    photograph: candidate6,
+    biography: 'Municipal councillor and community organizer in Krishnanagar Uttar Assembly segment.',
+    education: 'LL.B., University of Kalyani',
+    manifesto: '24x7 potable water supply, urban drainage upgrade, and clay-modelling artisan heritage hub in Ghurni.',
+    status: 'APPROVED',
+    metadataSource: METADATA_SOURCES.DEMO_SAMPLE,
+  },
+  {
+    id: 'CAND-WBA29-KRNU-2',
+    name: 'Arindam Ghosh (Assembly Demo)',
+    partyId: 'PARTY-BJP',
+    electionId: 'WB-ASSEMBLY-2029',
+    constituencyId: 'WB-AC-KRISHNANAGAR-UTTAR',
+    electionType: ELECTION_TYPES.STATE_ASSEMBLY,
+    photograph: candidate3,
+    biography: 'Physician and public health campaigner serving Nadia district clinics.',
+    education: 'MBBS, NRS Medical College',
+    manifesto: 'Modern trauma care unit in Krishnanagar, digital municipal services, and youth sports complex.',
+    status: 'APPROVED',
+    metadataSource: METADATA_SOURCES.DEMO_SAMPLE,
+  },
+  {
+    id: 'CAND-WBA29-KRNU-3',
+    name: 'Sutapa Dasgupta (Assembly Demo)',
+    partyId: 'PARTY-INC',
+    electionId: 'WB-ASSEMBLY-2029',
+    constituencyId: 'WB-AC-KRISHNANAGAR-UTTAR',
+    electionType: ELECTION_TYPES.STATE_ASSEMBLY,
+    photograph: candidate2,
+    biography: 'Educator and women self-help group coordinator in Krishnanagar Uttar.',
+    education: 'M.A. Bengali Literature',
+    manifesto: 'Micro-credit support for women entrepreneurs, library modernization, and solar street lighting.',
+    status: 'APPROVED',
+    metadataSource: METADATA_SOURCES.DEMO_SAMPLE,
+  },
+
+  // =========================================================================
+  // 3. LOK SABHA 2029 — DL-PC-NEW-DELHI (New Delhi Parliamentary, DL)
+  // =========================================================================
+  {
+    id: 'CAND-LS29-DL-ND-1',
+    name: 'Vikramaditya Verma (Demo)',
+    partyId: 'PARTY-BJP',
+    electionId: 'LS-2029',
+    constituencyId: 'DL-PC-NEW-DELHI',
+    electionType: ELECTION_TYPES.LOK_SABHA,
+    photograph: candidate1,
+    biography: 'Public policy specialist focusing on urban air quality and electric mobility.',
+    education: 'M.P.P., IIT Delhi',
+    manifesto: '100% electric public bus fleet, green corridors, and commercial market redevelopment.',
+    status: 'APPROVED',
+    metadataSource: METADATA_SOURCES.DEMO_SAMPLE,
+  },
+  {
+    id: 'CAND-LS29-DL-ND-2',
+    name: 'Ajay Mehra (Demo)',
+    partyId: 'PARTY-INC',
+    electionId: 'LS-2029',
+    constituencyId: 'DL-PC-NEW-DELHI',
+    electionType: ELECTION_TYPES.LOK_SABHA,
+    photograph: candidate2,
+    biography: 'Senior advocate and urban housing rights representative.',
+    education: 'LL.M., University of Delhi',
+    manifesto: 'Affordable urban housing, clean Yamuna mission, and metro feeder connectivity.',
+    status: 'APPROVED',
+    metadataSource: METADATA_SOURCES.DEMO_SAMPLE,
+  },
+
+  // =========================================================================
+  // 4. DELHI ASSEMBLY 2029 — DL-AC-NEW-DELHI (New Delhi Assembly, DL)
+  // =========================================================================
+  {
+    id: 'CAND-DLA29-ND-1',
+    name: 'Meenakshi Kapoor (Assembly Demo)',
+    partyId: 'PARTY-BPP-DEMO',
+    electionId: 'DL-ASSEMBLY-2029',
+    constituencyId: 'DL-AC-NEW-DELHI',
+    electionType: ELECTION_TYPES.STATE_ASSEMBLY,
+    photograph: candidate5,
+    biography: 'Civic administrator focused on neighbourhood clinics and government school infrastructure.',
+    education: 'M.A. Public Administration',
+    manifesto: 'Smart classrooms, underground cabling, and neighbourhood solar microgrids.',
+    status: 'APPROVED',
+    metadataSource: METADATA_SOURCES.DEMO_SAMPLE,
+  },
+  {
+    id: 'CAND-DLA29-ND-2',
+    name: 'Rajeshwar Khanna (Assembly Demo)',
+    partyId: 'PARTY-BJP',
+    electionId: 'DL-ASSEMBLY-2029',
+    constituencyId: 'DL-AC-NEW-DELHI',
+    electionType: ELECTION_TYPES.STATE_ASSEMBLY,
+    photograph: candidate6,
+    biography: 'Resident welfare association federation coordinator in Central/New Delhi.',
+    education: 'B.Com (Hons), SRCC',
+    manifesto: 'Multi-level automated parking, senior citizen care centres, and CCTV security grid.',
+    status: 'APPROVED',
+    metadataSource: METADATA_SOURCES.DEMO_SAMPLE,
+  },
+
+  // =========================================================================
+  // 5. LOK SABHA 2029 — UP-PC-VARANASI (Varanasi Parliamentary, UP)
+  // =========================================================================
+  {
+    id: 'CAND-LS29-UP-VNS-1',
+    name: 'Narendra Modi (Demo Reference)',
+    partyId: 'PARTY-BJP',
+    electionId: 'LS-2029',
+    constituencyId: 'UP-PC-VARANASI',
+    electionType: ELECTION_TYPES.LOK_SABHA,
+    photograph: candidate1,
+    biography: 'Parliamentary representative for Varanasi constituency (Demonstration Reference Record).',
+    education: 'M.A. Political Science',
+    manifesto: 'Infrastructure modernization, riverfront conservation, and textile weavers export hub.',
+    status: 'APPROVED',
+    metadataSource: METADATA_SOURCES.DEMO_SAMPLE,
+  },
+  {
+    id: 'CAND-LS29-UP-VNS-2',
+    name: 'Rahul Gandhi (Demo Reference)',
+    partyId: 'PARTY-INC',
+    electionId: 'LS-2029',
+    constituencyId: 'UP-PC-VARANASI',
+    electionType: ELECTION_TYPES.LOK_SABHA,
+    photograph: candidate2,
+    biography: 'Parliamentary candidate (Demonstration Reference Record).',
+    education: 'M.Phil. Development Studies',
+    manifesto: 'Youth employment fellowships, MSME credit access, and social security expansion.',
+    status: 'APPROVED',
+    metadataSource: METADATA_SOURCES.DEMO_SAMPLE,
+  },
+
+  // =========================================================================
+  // 6. LOK SABHA 2024 (DECLARED RESULTS ARCHIVE DEMO — PRESERVES ORIGINAL 6 CANDIDATES)
+  // =========================================================================
+  {
+    id: 'CAND-LS24-1',
+    name: 'Narendra Modi',
+    partyId: 'PARTY-BJP',
+    electionId: 'LS-2024',
+    constituencyId: 'UP-PC-VARANASI',
+    electionType: ELECTION_TYPES.LOK_SABHA,
+    photograph: candidate1,
+    biography: 'Candidate in 2024 Lok Sabha reference dataset.',
+    education: 'M.A. Political Science',
+    manifesto: 'National infrastructure & digital governance.',
+    status: 'APPROVED',
+    metadataSource: METADATA_SOURCES.DEMO_SAMPLE,
+  },
+  {
+    id: 'CAND-LS24-2',
+    name: 'Rahul Gandhi',
+    partyId: 'PARTY-INC',
+    electionId: 'LS-2024',
+    constituencyId: 'KL-PC-1',
+    electionType: ELECTION_TYPES.LOK_SABHA,
+    photograph: candidate2,
+    biography: 'Candidate in 2024 Lok Sabha reference dataset.',
+    education: 'M.Phil.',
+    manifesto: 'Social justice and youth employment.',
+    status: 'APPROVED',
+    metadataSource: METADATA_SOURCES.DEMO_SAMPLE,
+  },
+  {
+    id: 'CAND-LS24-3',
+    name: 'N Chandrababu Naidu',
+    partyId: 'PARTY-TDP',
+    electionId: 'LS-2024',
+    constituencyId: 'AP-PC-1',
+    electionType: ELECTION_TYPES.LOK_SABHA,
+    photograph: candidate3,
+    biography: 'Candidate in 2024 Lok Sabha reference dataset.',
+    education: 'M.A. Economics',
+    manifesto: 'IT corridors and regional infrastructure.',
+    status: 'APPROVED',
+    metadataSource: METADATA_SOURCES.DEMO_SAMPLE,
+  },
+  {
+    id: 'CAND-LS24-4',
+    name: 'Sitaram Yechury',
+    partyId: 'PARTY-CPIM',
+    electionId: 'LS-2024',
+    constituencyId: 'WB-PC-KOLKATA-DAKSHIN',
+    electionType: ELECTION_TYPES.LOK_SABHA,
+    photograph: candidate4,
+    biography: 'Candidate in 2024 Lok Sabha reference dataset.',
+    education: 'M.A. Economics',
+    manifesto: 'Labour rights and public sector strengthening.',
+    status: 'APPROVED',
+    metadataSource: METADATA_SOURCES.DEMO_SAMPLE,
+  },
+  {
+    id: 'CAND-LS24-5',
+    name: 'Mamata Banerjee',
+    partyId: 'PARTY-AITC',
+    electionId: 'LS-2024',
+    constituencyId: 'WB-PC-KOLKATA-DAKSHIN',
+    electionType: ELECTION_TYPES.LOK_SABHA,
+    photograph: candidate5,
+    biography: 'Candidate in 2024 Lok Sabha reference dataset.',
+    education: 'M.A., LL.B.',
+    manifesto: 'Regional welfare and women empowerment schemes.',
+    status: 'APPROVED',
+    metadataSource: METADATA_SOURCES.DEMO_SAMPLE,
+  },
+  {
+    id: 'CAND-LS24-6',
+    name: 'Nitish Kumar',
+    partyId: 'PARTY-JDU',
+    electionId: 'LS-2024',
+    constituencyId: 'BR-PC-1',
+    electionType: ELECTION_TYPES.LOK_SABHA,
+    photograph: candidate6,
+    biography: 'Candidate in 2024 Lok Sabha reference dataset.',
+    education: 'B.Sc. Engineering',
+    manifesto: 'Rural roads, electricity, and education.',
+    status: 'APPROVED',
+    metadataSource: METADATA_SOURCES.DEMO_SAMPLE,
+  },
+];
+
+/**
+ * Initial demo tallies keyed by `${electionId}::${constituencyId}::${candidateIdOrNOTA}`
+ * Notice that tallies are aggregate counters ONLY and never store which voter cast which vote.
+ */
+export const INITIAL_TALLIES = {
+  // LS-2029 — Krishnanagar PC
+  'LS-2029::WB-PC-KRISHNANAGAR::CAND-LS29-WB-KRN-1': 142,
+  'LS-2029::WB-PC-KRISHNANAGAR::CAND-LS29-WB-KRN-2': 128,
+  'LS-2029::WB-PC-KRISHNANAGAR::CAND-LS29-WB-KRN-3': 49,
+  'LS-2029::WB-PC-KRISHNANAGAR::CAND-LS29-WB-KRN-4': 14,
+  'LS-2029::WB-PC-KRISHNANAGAR::NOTA': 6,
+
+  // WB-ASSEMBLY-2029 — Krishnanagar Uttar AC
+  'WB-ASSEMBLY-2029::WB-AC-KRISHNANAGAR-UTTAR::CAND-WBA29-KRNU-1': 96,
+  'WB-ASSEMBLY-2029::WB-AC-KRISHNANAGAR-UTTAR::CAND-WBA29-KRNU-2': 88,
+  'WB-ASSEMBLY-2029::WB-AC-KRISHNANAGAR-UTTAR::CAND-WBA29-KRNU-3': 34,
+  'WB-ASSEMBLY-2029::WB-AC-KRISHNANAGAR-UTTAR::NOTA': 4,
+
+  // LS-2029 — New Delhi PC
+  'LS-2029::DL-PC-NEW-DELHI::CAND-LS29-DL-ND-1': 115,
+  'LS-2029::DL-PC-NEW-DELHI::CAND-LS29-DL-ND-2': 104,
+  'LS-2029::DL-PC-NEW-DELHI::NOTA': 5,
+
+  // DL-ASSEMBLY-2029 — New Delhi AC
+  'DL-ASSEMBLY-2029::DL-AC-NEW-DELHI::CAND-DLA29-ND-1': 84,
+  'DL-ASSEMBLY-2029::DL-AC-NEW-DELHI::CAND-DLA29-ND-2': 79,
+  'DL-ASSEMBLY-2029::DL-AC-NEW-DELHI::NOTA': 3,
+
+  // LS-2029 — Varanasi PC
+  'LS-2029::UP-PC-VARANASI::CAND-LS29-UP-VNS-1': 185,
+  'LS-2029::UP-PC-VARANASI::CAND-LS29-UP-VNS-2': 110,
+  'LS-2029::UP-PC-VARANASI::NOTA': 4,
+
+  // LS-2024 Archived Reference (Preserves original 240, 99, 16, 4, 29, 12 numbers)
+  'LS-2024::UP-PC-VARANASI::CAND-LS24-1': 240,
+  'LS-2024::KL-PC-1::CAND-LS24-2': 99,
+  'LS-2024::AP-PC-1::CAND-LS24-3': 16,
+  'LS-2024::WB-PC-KOLKATA-DAKSHIN::CAND-LS24-4': 4,
+  'LS-2024::WB-PC-KOLKATA-DAKSHIN::CAND-LS24-5': 29,
+  'LS-2024::BR-PC-1::CAND-LS24-6': 12,
+};
