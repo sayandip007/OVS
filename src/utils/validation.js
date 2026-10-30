@@ -1,5 +1,18 @@
 import { ELECTION_TYPES, CONSTITUENCY_TYPES, ELECTION_STATUSES } from './constants';
 
+export function calculateAgeFromDob(dobString) {
+  if (!dobString) return -1;
+  const birthDate = new Date(dobString);
+  if (Number.isNaN(birthDate.getTime())) return -1;
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const m = today.getMonth() - birthDate.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+    age -= 1;
+  }
+  return age;
+}
+
 export function validateElectionInput(election, constituencies = []) {
   const errors = {};
 
@@ -24,8 +37,13 @@ export function validateElectionInput(election, constituencies = []) {
       errors.stateId = 'State selection is mandatory for a State Assembly election.';
     }
   } else if (election.type === ELECTION_TYPES.LOK_SABHA) {
-    if (election.stateId !== null && election.stateId !== undefined && election.stateId !== '') {
-      errors.stateId = 'Lok Sabha election is nationwide and must not be restricted to a single stateId.';
+    if (
+      election.stateId !== null &&
+      election.stateId !== undefined &&
+      election.stateId !== ''
+    ) {
+      errors.stateId =
+        'Lok Sabha election is nationwide and must not be restricted to a single stateId.';
     }
   }
 
@@ -35,36 +53,49 @@ export function validateElectionInput(election, constituencies = []) {
 
   if (election.nominationStartDate && election.nominationEndDate) {
     if (new Date(election.nominationEndDate) < new Date(election.nominationStartDate)) {
-      errors.nominationEndDate = 'Nomination end date cannot be earlier than nomination start date.';
+      errors.nominationEndDate =
+        'Nomination end date cannot be earlier than nomination start date.';
     }
   }
 
   if (election.pollingStartDate && election.pollingEndDate) {
     if (new Date(election.pollingEndDate) < new Date(election.pollingStartDate)) {
-      errors.pollingEndDate = 'Polling end date cannot be earlier than polling start date.';
+      errors.pollingEndDate =
+        'Polling end date cannot be earlier than polling start date.';
     }
   }
 
   if (election.pollingEndDate && election.resultDate) {
     if (new Date(election.resultDate) < new Date(election.pollingEndDate)) {
-      errors.resultDate = 'Result declaration date cannot be earlier than polling end date.';
+      errors.resultDate =
+        'Result declaration date cannot be earlier than polling end date.';
     }
   }
 
-  if (Array.isArray(election.constituencyIds) && election.constituencyIds.length > 0 && constituencies.length > 0) {
-    const constituencyMap = new Map(constituencies.map((c) => [c.id, c]));
+  if (
+    Array.isArray(election.constituencyIds) &&
+    election.constituencyIds.length > 0 &&
+    constituencies.length > 0
+  ) {
+    const constituencyMap = new Map(
+      constituencies.map((c) => [c.id || c.constituencyId, c])
+    );
     for (const cId of election.constituencyIds) {
       const c = constituencyMap.get(cId);
       if (!c) {
         errors.constituencyIds = `Constituency ${cId} does not exist.`;
         break;
       }
-      if (election.type === ELECTION_TYPES.LOK_SABHA && c.type !== CONSTITUENCY_TYPES.PARLIAMENTARY) {
+      const cType = c.type || c.constituencyType;
+      if (
+        election.type === ELECTION_TYPES.LOK_SABHA &&
+        cType !== CONSTITUENCY_TYPES.PARLIAMENTARY
+      ) {
         errors.constituencyIds = `Lok Sabha elections can only associate Parliamentary constituencies (found ${c.name}).`;
         break;
       }
       if (election.type === ELECTION_TYPES.STATE_ASSEMBLY) {
-        if (c.type !== CONSTITUENCY_TYPES.ASSEMBLY) {
+        if (cType !== CONSTITUENCY_TYPES.ASSEMBLY) {
           errors.constituencyIds = `State Assembly elections can only associate Assembly constituencies (found ${c.name}).`;
           break;
         }
@@ -78,47 +109,67 @@ export function validateElectionInput(election, constituencies = []) {
 
   return {
     isValid: Object.keys(errors).length === 0,
+    valid: Object.keys(errors).length === 0,
     errors,
+    fieldErrors: errors,
   };
 }
 
-export function validateConstituencyInput(constituency, states = [], districts = [], constituencies = []) {
+export function validateConstituencyInput(
+  constituency,
+  states = [],
+  districts = [],
+  constituencies = []
+) {
   const errors = {};
 
   if (!constituency.name || !constituency.name.trim()) {
     errors.name = 'Constituency name is required.';
   }
 
+  const cType = constituency.type || constituency.constituencyType;
   if (
-    !constituency.type ||
-    ![CONSTITUENCY_TYPES.PARLIAMENTARY, CONSTITUENCY_TYPES.ASSEMBLY].includes(constituency.type)
+    !cType ||
+    ![CONSTITUENCY_TYPES.PARLIAMENTARY, CONSTITUENCY_TYPES.ASSEMBLY].includes(cType)
   ) {
     errors.type = 'Constituency type must be PARLIAMENTARY or ASSEMBLY.';
   }
 
   if (!constituency.stateId) {
     errors.stateId = 'State / Union Territory is required.';
-  } else if (states.length > 0 && !states.some((s) => s.id === constituency.stateId)) {
+  } else if (
+    states.length > 0 &&
+    !states.some((s) => (s.id || s.stateId) === constituency.stateId)
+  ) {
     errors.stateId = 'Selected State / Union Territory is invalid.';
   }
 
-  if (constituency.type === CONSTITUENCY_TYPES.ASSEMBLY) {
+  if (cType === CONSTITUENCY_TYPES.ASSEMBLY) {
     if (!constituency.districtId) {
       errors.districtId = 'District is required for an Assembly constituency.';
     } else if (districts.length > 0) {
-      const dist = districts.find((d) => d.id === constituency.districtId);
+      const dist = districts.find(
+        (d) => (d.id || d.districtId) === constituency.districtId
+      );
       if (!dist || dist.stateId !== constituency.stateId) {
-        errors.districtId = 'Selected district does not belong to the selected state.';
+        errors.districtId =
+          'Selected district does not belong to the selected state.';
       }
     }
 
-    if (constituency.parentParliamentaryConstituencyId && constituencies.length > 0) {
+    if (
+      constituency.parentParliamentaryConstituencyId &&
+      constituencies.length > 0
+    ) {
       const parentPc = constituencies.find(
-        (c) => c.id === constituency.parentParliamentaryConstituencyId
+        (c) =>
+          (c.id || c.constituencyId) ===
+          constituency.parentParliamentaryConstituencyId
       );
       if (
         !parentPc ||
-        parentPc.type !== CONSTITUENCY_TYPES.PARLIAMENTARY ||
+        (parentPc.type || parentPc.constituencyType) !==
+          CONSTITUENCY_TYPES.PARLIAMENTARY ||
         parentPc.stateId !== constituency.stateId
       ) {
         errors.parentParliamentaryConstituencyId =
@@ -129,11 +180,18 @@ export function validateConstituencyInput(constituency, states = [], districts =
 
   return {
     isValid: Object.keys(errors).length === 0,
+    valid: Object.keys(errors).length === 0,
     errors,
+    fieldErrors: errors,
   };
 }
 
-export function validateCandidateInput(candidate, elections = [], constituencies = [], parties = []) {
+export function validateCandidateInput(
+  candidate,
+  elections = [],
+  constituencies = [],
+  parties = []
+) {
   const errors = {};
 
   if (!candidate.name || !candidate.name.trim()) {
@@ -142,7 +200,10 @@ export function validateCandidateInput(candidate, elections = [], constituencies
 
   if (!candidate.partyId) {
     errors.partyId = 'Political party affiliation is required.';
-  } else if (parties.length > 0 && !parties.some((p) => p.id === candidate.partyId)) {
+  } else if (
+    parties.length > 0 &&
+    !parties.some((p) => (p.id || p.partyId) === candidate.partyId)
+  ) {
     errors.partyId = 'Selected political party does not exist.';
   }
 
@@ -155,30 +216,42 @@ export function validateCandidateInput(candidate, elections = [], constituencies
   }
 
   if (candidate.electionId && elections.length > 0) {
-    const election = elections.find((e) => e.id === candidate.electionId);
+    const election = elections.find(
+      (e) => (e.id || e.electionId) === candidate.electionId
+    );
     if (!election) {
       errors.electionId = 'Selected election was not found.';
-    } else if (candidate.electionType && candidate.electionType !== election.type) {
-      errors.electionType = 'Candidate electionType must match the selected election type.';
-    } else if (candidate.constituencyId && constituencies.length > 0) {
-      const constituency = constituencies.find((c) => c.id === candidate.constituencyId);
-      if (!constituency) {
-        errors.constituencyId = 'Selected constituency was not found.';
-      } else {
-        if (
-          election.type === ELECTION_TYPES.LOK_SABHA &&
-          constituency.type !== CONSTITUENCY_TYPES.PARLIAMENTARY
-        ) {
-          errors.constituencyId =
-            'Lok Sabha candidate must be assigned to a Parliamentary constituency.';
-        }
-        if (election.type === ELECTION_TYPES.STATE_ASSEMBLY) {
-          if (constituency.type !== CONSTITUENCY_TYPES.ASSEMBLY) {
+    } else {
+      const elType = election.type || election.electionType;
+      if (candidate.electionType && candidate.electionType !== elType) {
+        errors.electionType =
+          'Candidate electionType must match the selected election type.';
+      } else if (candidate.constituencyId && constituencies.length > 0) {
+        const constituency = constituencies.find(
+          (c) => (c.id || c.constituencyId) === candidate.constituencyId
+        );
+        if (!constituency) {
+          errors.constituencyId = 'Selected constituency was not found.';
+        } else {
+          const cType = constituency.type || constituency.constituencyType;
+          if (
+            elType === ELECTION_TYPES.LOK_SABHA &&
+            cType !== CONSTITUENCY_TYPES.PARLIAMENTARY
+          ) {
             errors.constituencyId =
-              'State Assembly candidate must be assigned to an Assembly constituency.';
-          } else if (election.stateId && constituency.stateId !== election.stateId) {
-            errors.constituencyId =
-              'Candidate constituency must belong to the same state as the Assembly election.';
+              'Lok Sabha candidate must be assigned to a Parliamentary constituency.';
+          }
+          if (elType === ELECTION_TYPES.STATE_ASSEMBLY) {
+            if (cType !== CONSTITUENCY_TYPES.ASSEMBLY) {
+              errors.constituencyId =
+                'State Assembly candidate must be assigned to an Assembly constituency.';
+            } else if (
+              election.stateId &&
+              constituency.stateId !== election.stateId
+            ) {
+              errors.constituencyId =
+                'Candidate constituency must belong to the same state as the Assembly election.';
+            }
           }
         }
       }
@@ -187,76 +260,209 @@ export function validateCandidateInput(candidate, elections = [], constituencies
 
   return {
     isValid: Object.keys(errors).length === 0,
+    valid: Object.keys(errors).length === 0,
     errors,
+    fieldErrors: errors,
   };
 }
 
-export function validateVoterInput(voter, states = [], districts = [], constituencies = []) {
+export function validateVoterInput(
+  voter,
+  states = [],
+  districts = [],
+  constituencies = [],
+  existingVoters = []
+) {
   const errors = {};
 
-  if (!voter.fullName || !voter.fullName.trim()) {
+  if (!voter || !voter.fullName || !voter.fullName.trim()) {
     errors.fullName = 'Full name is required.';
   }
 
-  if (!voter.dob) {
+  const dobValue = voter?.dateOfBirth || voter?.dob;
+  if (!dobValue) {
     errors.dob = 'Date of birth is required.';
   } else {
-    const birthDate = new Date(voter.dob);
-    const ageDiff = Date.now() - birthDate.getTime();
-    const ageDate = new Date(ageDiff);
-    const age = Math.abs(ageDate.getUTCFullYear() - 1970);
-    if (isNaN(birthDate.getTime()) || age < 18) {
-      errors.dob = 'Voter must be at least 18 years old.';
+    const age = calculateAgeFromDob(dobValue);
+    if (age < 0) {
+      errors.dob = 'Please enter a valid date of birth.';
+    } else if (age < 18) {
+      errors.dob = 'Voter must be at least 18 years old for demo eligibility.';
     }
   }
 
-  if (!voter.epicRef || !voter.epicRef.trim()) {
-    errors.epicRef = 'EPIC reference ID is required.';
+  const epicVal = voter?.epicReference || voter?.epicRef || voter?.voterRef;
+  if (!epicVal || !String(epicVal).trim()) {
+    errors.epicRef = 'Demo EPIC / Voter ID reference is required.';
+    errors.voterRef = 'Demo EPIC / Voter ID reference is required.';
+  } else if (Array.isArray(existingVoters) && existingVoters.length > 0) {
+    const normalizedEpic = String(epicVal).trim().toUpperCase();
+    const isDuplicate = existingVoters.some((v) => {
+      if (voter?.id && (v.id || v.voterId) === voter.id) return false;
+      const existingEpic = (
+        v.epicRef ||
+        v.epicReference ||
+        v.voterRef ||
+        ''
+      )
+        .trim()
+        .toUpperCase();
+      return existingEpic === normalizedEpic;
+    });
+    if (isDuplicate) {
+      errors.epicRef =
+        'A demo voter with this EPIC / Voter ID reference already exists.';
+      errors.voterRef =
+        'A demo voter with this EPIC / Voter ID reference already exists.';
+    }
   }
 
-  if (!voter.stateId) {
+  if (!voter?.email || !String(voter.email).trim()) {
+    errors.email = 'Email address is required.';
+  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(voter.email).trim())) {
+    errors.email = 'Please enter a valid email address.';
+  }
+
+  if (!voter?.mobile || !/^[6-9]\d{9}$/.test(String(voter.mobile).trim())) {
+    errors.mobile =
+      'Please enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.';
+  }
+
+  if (voter?.pinCode !== undefined && voter?.pinCode !== '') {
+    if (!/^[1-9]\d{5}$/.test(String(voter.pinCode).trim())) {
+      errors.pinCode = 'Please enter a valid 6-digit PIN code.';
+    }
+  }
+
+  if (!voter?.stateId) {
     errors.stateId = 'State / Union Territory is required.';
+  } else if (
+    states.length > 0 &&
+    !states.some((s) => (s.id || s.stateId) === voter.stateId)
+  ) {
+    errors.stateId = 'Selected State / Union Territory ID is invalid.';
   }
 
-  if (!voter.districtId) {
+  if (!voter?.districtId) {
     errors.districtId = 'District is required.';
   } else if (districts.length > 0 && voter.stateId) {
-    const dist = districts.find((d) => d.id === voter.districtId);
+    const dist = districts.find(
+      (d) => (d.id || d.districtId) === voter.districtId
+    );
     if (!dist || dist.stateId !== voter.stateId) {
-      errors.districtId = 'Selected district does not belong to the chosen state.';
+      errors.districtId =
+        'Selected district does not belong to the chosen state.';
     }
   }
 
-  if (!voter.parliamentaryConstituencyId) {
-    errors.parliamentaryConstituencyId = 'Parliamentary constituency is required.';
+  if (!voter?.parliamentaryConstituencyId) {
+    errors.parliamentaryConstituencyId =
+      'Parliamentary constituency is required.';
   } else if (constituencies.length > 0 && voter.stateId) {
-    const pc = constituencies.find((c) => c.id === voter.parliamentaryConstituencyId);
-    if (!pc || pc.type !== CONSTITUENCY_TYPES.PARLIAMENTARY || pc.stateId !== voter.stateId) {
+    const pc = constituencies.find(
+      (c) => (c.id || c.constituencyId) === voter.parliamentaryConstituencyId
+    );
+    const pcType = pc?.type || pc?.constituencyType;
+    if (
+      !pc ||
+      pcType !== CONSTITUENCY_TYPES.PARLIAMENTARY ||
+      pc.stateId !== voter.stateId
+    ) {
       errors.parliamentaryConstituencyId =
         'Selected Parliamentary constituency is invalid for this state.';
+    } else if (
+      voter.districtId &&
+      Array.isArray(pc.districtIds) &&
+      pc.districtIds.length > 0 &&
+      !pc.districtIds.includes(voter.districtId)
+    ) {
+      errors.parliamentaryConstituencyId =
+        'Selected Parliamentary constituency does not cover the selected district.';
     }
   }
 
-  if (!voter.assemblyConstituencyId) {
+  if (!voter?.assemblyConstituencyId) {
     errors.assemblyConstituencyId = 'Assembly constituency is required.';
   } else if (constituencies.length > 0 && voter.stateId) {
-    const ac = constituencies.find((c) => c.id === voter.assemblyConstituencyId);
-    if (!ac || ac.type !== CONSTITUENCY_TYPES.ASSEMBLY || ac.stateId !== voter.stateId) {
+    const ac = constituencies.find(
+      (c) => (c.id || c.constituencyId) === voter.assemblyConstituencyId
+    );
+    const acType = ac?.type || ac?.constituencyType;
+    if (
+      !ac ||
+      acType !== CONSTITUENCY_TYPES.ASSEMBLY ||
+      ac.stateId !== voter.stateId
+    ) {
       errors.assemblyConstituencyId =
         'Selected Assembly constituency is invalid for this state.';
+    } else if (
+      voter.districtId &&
+      ac.districtId &&
+      ac.districtId !== voter.districtId
+    ) {
+      errors.assemblyConstituencyId =
+        'Selected Assembly constituency does not belong to the selected district.';
+    } else if (
+      voter.parliamentaryConstituencyId &&
+      ac.parentParliamentaryConstituencyId &&
+      ac.parentParliamentaryConstituencyId !== voter.parliamentaryConstituencyId
+    ) {
+      errors.assemblyConstituencyId =
+        'Selected Assembly constituency does not map to the selected Parliamentary constituency.';
     }
-  }
-
-  if (!voter.mobile || !/^\d{10}$/.test(String(voter.mobile).trim())) {
-    errors.mobile = 'Please enter a valid 10-digit mobile number.';
-  }
-
-  if (voter.email && voter.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(voter.email.trim())) {
-    errors.email = 'Please enter a valid email address.';
   }
 
   return {
     isValid: Object.keys(errors).length === 0,
+    valid: Object.keys(errors).length === 0,
     errors,
+    fieldErrors: errors,
+  };
+}
+
+export function validateProfileUpdateInput(updates) {
+  const errors = {};
+
+  if (!updates.fullName || String(updates.fullName).trim().length < 2) {
+    errors.fullName = 'Full name must be at least 2 characters.';
+  }
+
+  const dobValue = updates.dateOfBirth || updates.dob;
+  if (!dobValue) {
+    errors.dob = 'Date of birth is required.';
+  } else {
+    const age = calculateAgeFromDob(dobValue);
+    if (age < 18) {
+      errors.dob = 'Voter must be at least 18 years old.';
+    }
+  }
+
+  if (
+    !updates.email ||
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(updates.email).trim())
+  ) {
+    errors.email = 'Please enter a valid email address.';
+  }
+
+  if (!updates.mobile || !/^[6-9]\d{9}$/.test(String(updates.mobile).trim())) {
+    errors.mobile = 'Please enter a valid 10-digit Indian mobile number.';
+  }
+
+  if (
+    updates.address !== undefined &&
+    String(updates.address).trim().length < 5
+  ) {
+    errors.address = 'Please enter a complete residential address.';
+  }
+
+  if (updates.pinCode && !/^[1-9]\d{5}$/.test(String(updates.pinCode).trim())) {
+    errors.pinCode = 'Please enter a valid 6-digit PIN code.';
+  }
+
+  return {
+    isValid: Object.keys(errors).length === 0,
+    valid: Object.keys(errors).length === 0,
+    errors,
+    fieldErrors: errors,
   };
 }

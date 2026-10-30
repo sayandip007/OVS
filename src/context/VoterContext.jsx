@@ -4,7 +4,9 @@ import { useElection } from './ElectionContext';
 import {
   getVoterEligibleElections,
   getVoterConstituencyIdForElection,
+  getVoterElectionParticipationStatus,
   getVoterParticipationSummary,
+  getVoterProfileCompletion,
   getCandidatesForElectionConstituency,
 } from '../utils/electionHelpers';
 
@@ -19,8 +21,15 @@ export function VoterProvider({ children }) {
     constituencies,
     elections,
     candidates,
+    voterNotifications,
+    recentCandidates,
     updateVoterProfile,
     castSimulatedVote,
+    simulateElectionParticipationStatus,
+    markNotificationAsRead,
+    markAllNotificationsAsRead,
+    clearAllNotifications,
+    recordCandidateView,
   } = useElection();
 
   const currentVoter = useMemo(() => {
@@ -77,19 +86,46 @@ export function VoterProvider({ children }) {
       const entry = raw.byElectionId?.[elId] || {
         status: 'PENDING',
         participatedAt: null,
+        referenceId: null,
       };
       return {
         electionId: elId,
         status: entry.status,
         participatedAt: entry.participatedAt,
+        referenceId: entry.referenceId,
       };
     });
     return {
       ...raw,
-      pendingCount: Math.max(0, raw.totalCount - raw.completedCount),
       items,
     };
   }, [currentVoter, eligibleElections]);
+
+  const profileCompletion = useMemo(() => {
+    return getVoterProfileCompletion(currentVoter);
+  }, [currentVoter]);
+
+  const myNotifications = useMemo(() => {
+    const rawList = !currentVoter
+      ? voterNotifications || []
+      : (voterNotifications || []).filter(
+          (n) => !n.targetStateId || n.targetStateId === currentVoter.stateId
+        );
+    return rawList.map((n) => ({
+      ...n,
+      id: n.id || n.notificationId,
+      notificationId: n.notificationId || n.id,
+      read: Boolean(n.read || n.isRead),
+      isRead: Boolean(n.read || n.isRead),
+      createdAt: n.createdAt || n.timestamp || new Date().toISOString(),
+      timestamp: n.timestamp || n.createdAt || new Date().toISOString(),
+    }));
+  }, [voterNotifications, currentVoter]);
+
+  const unreadNotificationCount = useMemo(
+    () => myNotifications.filter((n) => !n.isRead).length,
+    [myNotifications]
+  );
 
   const getConstituencyForVoterElection = useCallback(
     (election) => {
@@ -119,37 +155,57 @@ export function VoterProvider({ children }) {
     [currentVoter, candidates]
   );
 
-  const hasParticipatedInElection = useCallback(
-    (electionId) => {
-      if (!currentVoter || !electionId) return false;
-      return currentVoter.elections?.[electionId]?.status === 'VOTED';
+  const getElectionParticipationStatus = useCallback(
+    (election) => {
+      return getVoterElectionParticipationStatus(currentVoter, election);
     },
     [currentVoter]
   );
 
-  const submitBallotForElection = useCallback(
-    ({ electionId, candidateOrNotaId }) => {
+  const hasParticipatedInElection = useCallback(
+    (electionId) => {
+      if (!currentVoter || !electionId) return false;
+      const entry = currentVoter.elections?.[electionId];
+      return entry?.status === 'VOTED' || entry?.participated === true;
+    },
+    [currentVoter]
+  );
+
+  const updateCurrentVoterProfile = useCallback(
+    (updates, options = {}) => {
       if (!currentVoter) {
         return { ok: false, error: 'Voter not authenticated.' };
       }
-      const targetElection = eligibleElections.find(
-        (e) => (e.id || e.electionId) === electionId
+      const res = updateVoterProfile(
+        currentVoter.id || currentVoter.voterId,
+        updates,
+        {
+          ...options,
+          correctionReason: updates?.correctionReason || options?.correctionReason,
+        }
       );
-      if (!targetElection) {
-        return { ok: false, error: 'Election not found for this voter.' };
+      if (!res.ok) {
+        return {
+          ...res,
+          error: Array.isArray(res.errors) ? res.errors[0] : res.error,
+        };
       }
-      const constituencyId = getVoterConstituencyIdForElection(
-        currentVoter,
-        targetElection
-      );
-      return castSimulatedVote({
-        voterId: currentVoter.id || currentVoter.voterId,
-        electionId,
-        constituencyId,
-        selectedCandidateIdOrNota: candidateOrNotaId,
-      });
+      return res;
     },
-    [currentVoter, eligibleElections, castSimulatedVote]
+    [currentVoter, updateVoterProfile]
+  );
+
+  const simulateParticipationForCurrentVoter = useCallback(
+    (electionId) => {
+      if (!currentVoter) {
+        return { ok: false, error: 'Voter not authenticated.' };
+      }
+      return simulateElectionParticipationStatus(
+        currentVoter.id || currentVoter.voterId,
+        electionId
+      );
+    },
+    [currentVoter, simulateElectionParticipationStatus]
   );
 
   return (
@@ -163,10 +219,20 @@ export function VoterProvider({ children }) {
         voterAssemblyConstituency: voterGeography.assemblyConstituency,
         eligibleElections,
         participationSummary,
+        profileCompletion,
+        notifications: myNotifications,
+        unreadNotificationCount,
+        recentCandidates,
         getConstituencyForVoterElection,
         getCandidatesForVoterElection,
+        getElectionParticipationStatus,
         hasParticipatedInElection,
-        submitBallotForElection,
+        updateCurrentVoterProfile,
+        simulateParticipationForCurrentVoter,
+        markNotificationAsRead,
+        markAllNotificationsAsRead,
+        clearAllNotifications,
+        recordCandidateView,
         updateVoterProfile,
         castSimulatedVote,
       }}

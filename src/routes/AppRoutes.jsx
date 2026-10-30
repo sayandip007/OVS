@@ -22,6 +22,9 @@ import VoterDashboard from '../pages/voter/Dashboard';
 import VoterProfile from '../pages/voter/Profile';
 import ElectionHub from '../pages/voter/ElectionHub';
 import ConstituencyDetails from '../pages/voter/ConstituencyDetails';
+import Notifications from '../pages/voter/Notifications';
+import VotingHistory from '../pages/voter/VotingHistory';
+import Settings from '../pages/voter/Settings';
 
 // Admin Pages
 import AdminLogin from '../pages/admin/Login';
@@ -34,9 +37,9 @@ import PartyManagement from '../pages/admin/PartyManagement';
 import CandidateManagement from '../pages/admin/CandidateManagement';
 
 /**
- * Frontend Route Guard for Protected Voter Routes
- * Prevents unauthenticated users or ECI Admins from accessing Voter Hub routes.
- */
+  * Frontend Route Guard for Protected Voter Routes
+  * Prevents unauthenticated users or ECI Admins from accessing Voter Hub routes.
+  */
 function RequireVoter({ children }) {
   const { isVoterAuthenticated, isAdminAuthenticated } = useAuth();
   const location = useLocation();
@@ -52,9 +55,9 @@ function RequireVoter({ children }) {
 }
 
 /**
- * Frontend Route Guard for Protected ECI Officer / Admin Routes
- * Prevents unauthenticated users or Voters from accessing Admin Console routes.
- */
+  * Frontend Route Guard for Protected ECI Officer / Admin Routes
+  * Prevents unauthenticated users or Voters from accessing Admin Console routes.
+  */
 function RequireAdmin({ children }) {
   const { isAdminAuthenticated, isVoterAuthenticated } = useAuth();
   const location = useLocation();
@@ -98,7 +101,7 @@ export default function AppRoutes() {
         <Route path="*" element={<NotFound />} />
       </Route>
 
-      {/* Protected Voter Portal Routes */}
+      {/* Protected Voter Portal Routes (Uses Reusable VoterLayout) */}
       <Route
         path="/voter"
         element={
@@ -110,8 +113,13 @@ export default function AppRoutes() {
         <Route index element={<Navigate to="/voter/dashboard" replace />} />
         <Route path="dashboard" element={<VoterDashboard />} />
         <Route path="profile" element={<VoterProfile />} />
-        <Route path="elections" element={<ElectionHub />} />
         <Route path="constituencies" element={<ConstituencyDetails />} />
+        <Route path="elections" element={<ElectionHub />} />
+        <Route path="election-info" element={<ElectionInformation />} />
+        <Route path="candidates" element={<CandidateDirectory />} />
+        <Route path="notifications" element={<Notifications />} />
+        <Route path="history" element={<VotingHistory />} />
+        <Route path="settings" element={<Settings />} />
       </Route>
 
       {/* Protected ECI Admin Console Routes */}

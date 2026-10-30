@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useCallback, useMemo } from
 import {
   STORAGE_KEYS,
   METADATA_SOURCES,
+  NOTIFICATION_TYPES,
 } from '../utils/constants';
 import { defaultAvatar, eciLogo } from '../assets';
 import { storageService } from '../services/storageService';
@@ -18,11 +19,13 @@ import {
   createCandidateRecord,
   updateCandidateRecord,
 } from '../services/candidateService';
-import { validateVoterInput } from '../utils/validation';
+import {
+  validateVoterInput,
+  validateProfileUpdateInput,
+} from '../utils/validation';
 
 const ElectionContext = createContext(null);
 
-// Official Lok Sabha & Assembly seat counts for all 36 States/UTs
 const OFFICIAL_SEAT_ALLOCATIONS = {
   AP: { ls: 25, ac: 175, region: 'South' },
   AR: { ls: 2, ac: 60, region: 'North-East' },
@@ -66,7 +69,8 @@ function enrichState(s) {
   const id = s.id || s.stateId;
   const name = s.name || s.stateName;
   const alloc = OFFICIAL_SEAT_ALLOCATIONS[id] || { ls: 1, ac: 30, region: 'India' };
-  const normalizedType = s.type === 'UNION_TERRITORY' || s.type === 'UT' ? 'UT' : 'STATE';
+  const normalizedType =
+    s.type === 'UNION_TERRITORY' || s.type === 'UT' ? 'UT' : 'STATE';
   return {
     ...s,
     id,
@@ -99,6 +103,8 @@ function enrichDistrict(d) {
 function enrichConstituency(c) {
   const id = c.id || c.constituencyId;
   const type = c.type || c.constituencyType;
+  const parentPc =
+    c.parentParliamentaryConstituencyId || c.parentParliamentaryId || null;
   return {
     ...c,
     id,
@@ -107,6 +113,9 @@ function enrichConstituency(c) {
     constituencyType: type,
     code: c.code || id,
     reservationType: c.reservationType || 'GENERAL',
+    electorCount: c.electorCount || (type === 'PARLIAMENTARY' ? 1645200 : 248500),
+    parentParliamentaryConstituencyId: parentPc,
+    parentParliamentaryId: parentPc,
   };
 }
 
@@ -133,6 +142,14 @@ function enrichElection(e) {
   const id = e.id || e.electionId;
   const name = e.name || e.title;
   const type = e.type || e.electionType;
+  const nominationStart =
+    e.nominationStartDate || e.schedule?.gazetteNotification || '2029-03-01';
+  const nominationEnd =
+    e.nominationEndDate || e.schedule?.nominationClose || '2029-03-20';
+  const pollStart =
+    e.pollingDate || e.pollingStartDate || e.schedule?.pollingDate || '2029-04-15';
+  const resultDate = e.resultDate || e.schedule?.countingDate || '2029-05-23';
+
   return {
     ...e,
     id,
@@ -141,12 +158,21 @@ function enrichElection(e) {
     title: name,
     type,
     electionType: type,
+    year: e.year || 2029,
     constituencyType:
       e.constituencyType || (type === 'LOK_SABHA' ? 'PARLIAMENTARY' : 'ASSEMBLY'),
-    announcementDate: e.announcementDate || e.nominationStartDate || '2029-03-01',
-    pollingDate: e.pollingDate || e.pollingStartDate || '2029-04-15',
-    pollingStartDate: e.pollingStartDate || e.pollingDate || '2029-04-15',
-    pollingEndDate: e.pollingEndDate || e.pollingDate || '2029-05-15',
+    announcementDate: e.announcementDate || nominationStart,
+    pollingDate: pollStart,
+    pollingStartDate: pollStart,
+    pollingEndDate: e.pollingEndDate || pollStart,
+    resultDate,
+    schedule: {
+      gazetteNotification: nominationStart,
+      nominationClose: nominationEnd,
+      pollingDate: pollStart,
+      countingDate: resultDate,
+      ...(e.schedule || {}),
+    },
   };
 }
 
@@ -177,14 +203,255 @@ function enrichCandidate(c, index, constituencies) {
 
 function enrichVoter(v) {
   const id = v.id || v.voterId;
-  const epic = v.epicRef || v.voterRef;
+  const epic = v.epicRef || v.epicReference || v.voterRef;
+  const dobVal = v.dateOfBirth || v.dob || '1998-01-01';
   return {
     ...v,
     id,
     voterId: id,
+    dateOfBirth: dobVal,
+    dob: dobVal,
+    epicReference: v.epicReference || epic,
     epicRef: epic,
     voterRef: epic,
+    pinCode: v.pinCode || '741101',
+    accountStatus: v.accountStatus || 'ACTIVE',
+    createdAt: v.createdAt || '2026-01-15T10:00:00.000Z',
+    updatedAt: v.updatedAt || '2026-10-25T10:00:00.000Z',
+    constituencyHistory: Array.isArray(v.constituencyHistory)
+      ? v.constituencyHistory
+      : [],
   };
+}
+
+/**
+ * Pure helper for registering a voter against existing records (used by context & unit tests).
+ */
+export function registerVoterRecord(
+  input,
+  existingVoters = [],
+  states = [],
+  districts = [],
+  constituencies = []
+) {
+  const epicVal = (
+    input?.epicReference ||
+    input?.epicRef ||
+    input?.voterRef ||
+    ''
+  )
+    .trim()
+    .toUpperCase();
+
+  const normalizedInput = {
+    ...input,
+    fullName: input?.fullName ? String(input.fullName).trim() : '',
+    dob: input?.dateOfBirth || input?.dob || '',
+    dateOfBirth: input?.dateOfBirth || input?.dob || '',
+    gender: input?.gender ? String(input.gender).trim() : '',
+    email: input?.email ? String(input.email).trim() : '',
+    mobile: input?.mobile ? String(input.mobile).trim() : '',
+    epicRef: epicVal,
+    epicReference: epicVal,
+    address: input?.address ? String(input.address).trim() : '',
+    pinCode: input?.pinCode ? String(input.pinCode).trim() : '',
+    stateId: input?.stateId || '',
+    districtId: input?.districtId || '',
+    parliamentaryConstituencyId: input?.parliamentaryConstituencyId || '',
+    assemblyConstituencyId: input?.assemblyConstituencyId || '',
+  };
+
+  const validation = validateVoterInput(
+    normalizedInput,
+    states,
+    districts,
+    constituencies
+  );
+  if (!validation.isValid) {
+    return {
+      ok: false,
+      errors: Array.isArray(validation.errors)
+        ? validation.errors
+        : Object.values(validation.errors || {}),
+      fieldErrors: validation.errors,
+    };
+  }
+
+  // Prevent duplicate demo identity (EPIC reference or mobile)
+  const duplicateEpic = existingVoters.some(
+    (v) =>
+      (v.epicRef || '').toUpperCase() === epicVal ||
+      (v.epicReference || '').toUpperCase() === epicVal ||
+      (v.voterRef || '').toUpperCase() === epicVal
+  );
+  if (duplicateEpic) {
+    return {
+      ok: false,
+      errors: [
+        'A demo voter with this EPIC / Voter ID reference already exists in the local store.',
+      ],
+      fieldErrors: {
+        epicRef:
+          'A demo voter with this EPIC / Voter ID reference already exists.',
+      },
+    };
+  }
+
+  const nowIso = new Date().toISOString();
+  let seq = existingVoters.length + 1;
+  let id = `VOTER-${String(seq).padStart(3, '0')}`;
+  while (existingVoters.some((v) => (v.id || v.voterId) === id)) {
+    seq += 1;
+    id = `VOTER-${String(seq).padStart(3, '0')}`;
+  }
+
+  const newVoter = enrichVoter({
+    id,
+    voterId: id,
+    fullName: normalizedInput.fullName,
+    dateOfBirth: normalizedInput.dateOfBirth,
+    dob: normalizedInput.dob,
+    gender: normalizedInput.gender,
+    email: normalizedInput.email,
+    mobile: normalizedInput.mobile,
+    epicReference: epicVal,
+    epicRef: epicVal,
+    voterRef: epicVal,
+    address: normalizedInput.address || 'Demo Residential Address',
+    pinCode: normalizedInput.pinCode || '700001',
+    stateId: normalizedInput.stateId,
+    districtId: normalizedInput.districtId,
+    parliamentaryConstituencyId: normalizedInput.parliamentaryConstituencyId,
+    assemblyConstituencyId: normalizedInput.assemblyConstituencyId,
+    accountStatus: 'ACTIVE',
+    avatar: input?.avatar || defaultAvatar,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    constituencyHistory: [
+      {
+        changedAt: nowIso,
+        reason: 'Initial Demo Registration',
+        stateId: normalizedInput.stateId,
+        districtId: normalizedInput.districtId,
+        parliamentaryConstituencyId: normalizedInput.parliamentaryConstituencyId,
+        assemblyConstituencyId: normalizedInput.assemblyConstituencyId,
+      },
+    ],
+    elections: {},
+    metadataSource: METADATA_SOURCES.DEMO_SAMPLE,
+  });
+
+  return { ok: true, voter: newVoter };
+}
+
+/**
+ * Pure helper for updating a voter profile (used by context & unit tests).
+ * Preserves constituency associations unless `allowAdminConstituencyCorrection` is true.
+ */
+export function updateVoterProfileRecord(
+  voterId,
+  updates,
+  existingVoters = [],
+  states = [],
+  districts = [],
+  constituencies = [],
+  options = {}
+) {
+  const target = existingVoters.find((v) => (v.id || v.voterId) === voterId);
+  if (!target) {
+    return { ok: false, errors: ['Voter not found.'] };
+  }
+
+  const candidateMerged = {
+    ...target,
+    ...updates,
+    dob: updates.dateOfBirth || updates.dob || target.dob || target.dateOfBirth,
+    dateOfBirth:
+      updates.dateOfBirth || updates.dob || target.dateOfBirth || target.dob,
+  };
+
+  // Validate personal & contact fields
+  const profileCheck = validateProfileUpdateInput(candidateMerged);
+  if (!profileCheck.isValid) {
+    return {
+      ok: false,
+      errors: Object.values(profileCheck.errors),
+      fieldErrors: profileCheck.errors,
+    };
+  }
+
+  const isAttemptingConstituencyChange =
+    (updates.stateId && updates.stateId !== target.stateId) ||
+    (updates.districtId && updates.districtId !== target.districtId) ||
+    (updates.parliamentaryConstituencyId &&
+      updates.parliamentaryConstituencyId !==
+        target.parliamentaryConstituencyId) ||
+    (updates.assemblyConstituencyId &&
+      updates.assemblyConstituencyId !== target.assemblyConstituencyId);
+
+  let nextHistory = Array.isArray(target.constituencyHistory)
+    ? [...target.constituencyHistory]
+    : [];
+
+  if (isAttemptingConstituencyChange) {
+    if (!options.allowAdminConstituencyCorrection) {
+      return {
+        ok: false,
+        errors: [
+          'Constituency associations cannot be modified directly after registration without using the Demo Administrative Constituency Correction workflow.',
+        ],
+      };
+    }
+
+    const fullGeoCheck = validateVoterInput(
+      candidateMerged,
+      states,
+      districts,
+      constituencies
+    );
+    if (!fullGeoCheck.isValid) {
+      return {
+        ok: false,
+        errors: Object.values(fullGeoCheck.errors),
+        fieldErrors: fullGeoCheck.errors,
+      };
+    }
+
+    nextHistory.unshift({
+      changedAt: new Date().toISOString(),
+      reason:
+        options.correctionReason ||
+        'Demo Administrative Constituency Correction',
+      previousStateId: target.stateId,
+      previousDistrictId: target.districtId,
+      previousParliamentaryConstituencyId: target.parliamentaryConstituencyId,
+      previousAssemblyConstituencyId: target.assemblyConstituencyId,
+      stateId: candidateMerged.stateId,
+      districtId: candidateMerged.districtId,
+      parliamentaryConstituencyId: candidateMerged.parliamentaryConstituencyId,
+      assemblyConstituencyId: candidateMerged.assemblyConstituencyId,
+    });
+  }
+
+  const merged = enrichVoter({
+    ...candidateMerged,
+    stateId: isAttemptingConstituencyChange
+      ? candidateMerged.stateId
+      : target.stateId,
+    districtId: isAttemptingConstituencyChange
+      ? candidateMerged.districtId
+      : target.districtId,
+    parliamentaryConstituencyId: isAttemptingConstituencyChange
+      ? candidateMerged.parliamentaryConstituencyId
+      : target.parliamentaryConstituencyId,
+    assemblyConstituencyId: isAttemptingConstituencyChange
+      ? candidateMerged.assemblyConstituencyId
+      : target.assemblyConstituencyId,
+    constituencyHistory: nextHistory,
+    updatedAt: new Date().toISOString(),
+  });
+
+  return { ok: true, voter: merged };
 }
 
 export function ElectionProvider({ children }) {
@@ -238,7 +505,6 @@ export function ElectionProvider({ children }) {
     [store.voters]
   );
 
-  // Nested tallies lookup: supports both flat 'electionId::constituencyId::candId' and nested tallies[electionId][constituencyId][candId]
   const normalizedTallies = useMemo(() => {
     const raw = store.tallies || {};
     const result = { ...raw };
@@ -256,6 +522,74 @@ export function ElectionProvider({ children }) {
     }
     return result;
   }, [store.tallies]);
+
+  // ================= VOTER NOTIFICATIONS =================
+  const voterNotifications = useMemo(
+    () => store.voterNotifications || [],
+    [store.voterNotifications]
+  );
+
+  const addVoterNotification = useCallback(
+    (payload) => {
+      const nextItem = {
+        id: `VNOTIF-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+        type: payload.type || NOTIFICATION_TYPES.GENERAL_ANNOUNCEMENT,
+        title: payload.title || 'Portal Update',
+        message: payload.message || '',
+        timestamp: new Date().toISOString(),
+        read: false,
+        targetStateId: payload.targetStateId || null,
+      };
+      const next = [nextItem, ...(store.voterNotifications || [])];
+      syncKey(
+        STORAGE_KEYS.VOTER_NOTIFICATIONS,
+        'voterNotifications',
+        next
+      );
+      return nextItem;
+    },
+    [store.voterNotifications, syncKey]
+  );
+
+  const markNotificationAsRead = useCallback(
+    (notificationId) => {
+      const next = (store.voterNotifications || []).map((n) =>
+        n.id === notificationId ? { ...n, read: true } : n
+      );
+      syncKey(
+        STORAGE_KEYS.VOTER_NOTIFICATIONS,
+        'voterNotifications',
+        next
+      );
+    },
+    [store.voterNotifications, syncKey]
+  );
+
+  const markAllNotificationsAsRead = useCallback(() => {
+    const next = (store.voterNotifications || []).map((n) => ({
+      ...n,
+      read: true,
+    }));
+    syncKey(STORAGE_KEYS.VOTER_NOTIFICATIONS, 'voterNotifications', next);
+  }, [store.voterNotifications, syncKey]);
+
+  const clearAllNotifications = useCallback(() => {
+    syncKey(STORAGE_KEYS.VOTER_NOTIFICATIONS, 'voterNotifications', []);
+  }, [syncKey]);
+
+  // ================= RECENTLY VIEWED CANDIDATES =================
+  const recordCandidateView = useCallback(
+    (candidateId) => {
+      if (!candidateId) return;
+      const current = store.recentCandidates || [];
+      const next = [
+        candidateId,
+        ...current.filter((id) => id !== candidateId),
+      ].slice(0, 6);
+      syncKey(STORAGE_KEYS.RECENT_CANDIDATES, 'recentCandidates', next);
+    },
+    [store.recentCandidates, syncKey]
+  );
 
   // ================= ELECTIONS =================
   const createElection = useCallback(
@@ -701,82 +1035,70 @@ export function ElectionProvider({ children }) {
   // ================= VOTERS & PARTICIPATION =================
   const registerVoter = useCallback(
     (input) => {
-      const normalizedInput = {
-        ...input,
-        epicRef: (input.epicRef || input.voterRef || '').trim().toUpperCase(),
-      };
-      const validation = validateVoterInput(
-        normalizedInput,
+      const result = registerVoterRecord(
+        input,
+        store.voters,
         store.states,
         store.districts,
         store.constituencies
       );
-      if (!validation.isValid) {
-        return {
-          ok: false,
-          errors: Array.isArray(validation.errors)
-            ? validation.errors
-            : Object.values(validation.errors || {}),
-        };
-      }
+      if (!result.ok) return result;
 
-      const epicUpper = normalizedInput.epicRef;
-      if (
-        store.voters.some(
-          (v) => (v.epicRef || v.voterRef || '').toUpperCase() === epicUpper
-        )
-      ) {
-        return {
-          ok: false,
-          errors: [
-            'A voter with this EPIC reference already exists in the electoral roll.',
-          ],
-        };
-      }
+      const next = [...store.voters, result.voter];
+      syncKey(STORAGE_KEYS.VOTERS, 'voters', next);
 
-      const id = `VOTER-${String(store.voters.length + 1).padStart(3, '0')}`;
-      const newVoter = enrichVoter({
-        id,
-        fullName: normalizedInput.fullName.trim(),
-        dob: normalizedInput.dob,
-        gender: normalizedInput.gender || 'General',
-        epicRef: epicUpper,
-        stateId: normalizedInput.stateId,
-        districtId: normalizedInput.districtId,
-        parliamentaryConstituencyId: normalizedInput.parliamentaryConstituencyId,
-        assemblyConstituencyId: normalizedInput.assemblyConstituencyId,
-        email: normalizedInput.email ? normalizedInput.email.trim() : '',
-        mobile: String(normalizedInput.mobile).trim(),
-        address: normalizedInput.address ? normalizedInput.address.trim() : '',
-        avatar: normalizedInput.avatar || defaultAvatar,
-        elections: {},
-        metadataSource: METADATA_SOURCES.DEMO_SAMPLE,
+      addVoterNotification({
+        type: NOTIFICATION_TYPES.PROFILE_UPDATE,
+        title: `Demo Voter Registered: ${result.voter.fullName}`,
+        message: `Assigned to Parliamentary Constituency ${result.voter.parliamentaryConstituencyId} and Assembly Constituency ${result.voter.assemblyConstituencyId}.`,
       });
 
-      const next = [...store.voters, newVoter];
-      syncKey(STORAGE_KEYS.VOTERS, 'voters', next);
-      return { ok: true, voter: newVoter };
+      return result;
     },
-    [store.states, store.districts, store.constituencies, store.voters, syncKey]
+    [
+      store.voters,
+      store.states,
+      store.districts,
+      store.constituencies,
+      syncKey,
+      addVoterNotification,
+    ]
   );
 
   const updateVoterProfile = useCallback(
-    (voterId, updates) => {
-      const target = store.voters.find(
-        (v) => (v.id || v.voterId) === voterId
+    (voterId, updates, options = {}) => {
+      const result = updateVoterProfileRecord(
+        voterId,
+        updates,
+        store.voters,
+        store.states,
+        store.districts,
+        store.constituencies,
+        options
       );
-      if (!target) {
-        return { ok: false, errors: ['Voter not found.'] };
-      }
+      if (!result.ok) return result;
 
-      const merged = enrichVoter({ ...target, ...updates });
       const next = store.voters.map((v) =>
-        (v.id || v.voterId) === voterId ? merged : v
+        (v.id || v.voterId) === voterId ? result.voter : v
       );
       syncKey(STORAGE_KEYS.VOTERS, 'voters', next);
-      return { ok: true, voter: merged };
+
+      addVoterNotification({
+        type: NOTIFICATION_TYPES.PROFILE_UPDATE,
+        title: 'Demo Voter Profile Updated',
+        message: `Profile changes saved locally for ${result.voter.fullName} (${result.voter.epicReference}).`,
+      });
+
+      return result;
     },
-    [store.voters, syncKey]
+    [
+      store.voters,
+      store.states,
+      store.districts,
+      store.constituencies,
+      syncKey,
+      addVoterNotification,
+    ]
   );
 
   const castSimulatedVote = useCallback(
@@ -813,6 +1135,48 @@ export function ElectionProvider({ children }) {
       return { ok: true, voter: enrichVoter(result.voter) };
     },
     [store.voters, store.tallies]
+  );
+
+  // Phase 3 helper: Simulate participation status for one election without ballot submission
+  const simulateElectionParticipationStatus = useCallback(
+    (voterId, electionId) => {
+      const targetVoter = store.voters.find(
+        (v) => (v.id || v.voterId) === voterId
+      );
+      if (!targetVoter) {
+        return { ok: false, error: 'Voter profile not found.' };
+      }
+      const targetElection = store.elections.find(
+        (e) => (e.id || e.electionId) === electionId
+      );
+      const result = recordSimulatedParticipation({
+        voter: targetVoter,
+        electionId,
+        election: targetElection,
+        tallies: store.tallies,
+      });
+      if (!result.ok) return result;
+
+      const nextVoters = store.voters.map((v) =>
+        (v.id || v.voterId) === voterId ? enrichVoter(result.voter) : v
+      );
+      syncKey(STORAGE_KEYS.VOTERS, 'voters', nextVoters);
+
+      addVoterNotification({
+        type: NOTIFICATION_TYPES.ELECTION_REMINDER,
+        title: `Participation Status Updated (${electionId})`,
+        message: `Demo participation status for ${
+          targetElection?.name || electionId
+        } marked as VOTED. Other eligible elections remain unchanged.`,
+      });
+
+      return {
+        ok: true,
+        voter: enrichVoter(result.voter),
+        referenceId: result.referenceId,
+      };
+    },
+    [store.voters, store.elections, store.tallies, syncKey, addVoterNotification]
   );
 
   // ================= FEEDBACK & RESET =================
@@ -854,6 +1218,15 @@ export function ElectionProvider({ children }) {
     [store.feedback]
   );
 
+  const recentCandidateObjects = useMemo(() => {
+    const ids = store.recentCandidates || [];
+    return ids
+      .map((id) =>
+        enrichedCandidates.find((c) => (c.id || c.candidateId) === id)
+      )
+      .filter(Boolean);
+  }, [store.recentCandidates, enrichedCandidates]);
+
   return (
     <ElectionContext.Provider
       value={{
@@ -866,6 +1239,8 @@ export function ElectionProvider({ children }) {
         candidates: enrichedCandidates,
         voters: enrichedVoters,
         tallies: normalizedTallies,
+        voterNotifications,
+        recentCandidates: recentCandidateObjects,
         feedback: normalizedFeedbacks,
         feedbacks: normalizedFeedbacks,
         createElection,
@@ -890,9 +1265,16 @@ export function ElectionProvider({ children }) {
         registerVoter,
         updateVoterProfile,
         castSimulatedVote,
+        simulateElectionParticipationStatus,
+        addVoterNotification,
+        markNotificationAsRead,
+        markAllNotificationsAsRead,
+        clearAllNotifications,
+        recordCandidateView,
         addFeedback,
         submitFeedback: addFeedback,
         resetDemoData,
+        resetDemoEnvironment: resetDemoData,
       }}
     >
       {children}

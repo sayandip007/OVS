@@ -5,7 +5,7 @@ import { INITIAL_CONSTITUENCIES } from '../data/constituencies';
 import { INITIAL_PARTIES } from '../data/parties';
 import { INITIAL_ELECTIONS, INITIAL_ANNOUNCEMENTS } from '../data/elections';
 import { INITIAL_CANDIDATES, INITIAL_TALLIES } from '../data/candidates';
-import { INITIAL_VOTERS } from '../data/voters';
+import { INITIAL_VOTERS, INITIAL_VOTER_NOTIFICATIONS } from '../data/voters';
 
 const memoryLocalStore = new Map();
 const memorySessionStore = new Map();
@@ -98,13 +98,16 @@ export function getDefaultSeedSnapshot() {
     voters: structuredClone(INITIAL_VOTERS),
     tallies: structuredClone(INITIAL_TALLIES),
     announcements: structuredClone(INITIAL_ANNOUNCEMENTS),
+    voterNotifications: structuredClone(INITIAL_VOTER_NOTIFICATIONS),
+    recentCandidates: ['CAND-LS29-WB-KRN-1', 'CAND-WB29-KRNU-1'],
     feedback: [
       {
         id: 'FB-SEED-1',
         name: 'S. Venkataraman',
         email: 'venkat.citizen@example.com',
         category: 'Simultaneous Elections UX',
-        message: 'Clear separation between Lok Sabha and State Assembly ballots on the voter dashboard.',
+        message:
+          'Clear separation between Lok Sabha and State Assembly ballots on the voter dashboard.',
         createdAt: '2026-10-28T09:30:00.000Z',
       },
     ],
@@ -126,6 +129,8 @@ export function initializeStorageIfNeeded() {
     setDurableItem(STORAGE_KEYS.VOTERS, seed.voters);
     setDurableItem(STORAGE_KEYS.TALLIES, seed.tallies);
     setDurableItem(STORAGE_KEYS.ANNOUNCEMENTS, seed.announcements);
+    setDurableItem(STORAGE_KEYS.VOTER_NOTIFICATIONS, seed.voterNotifications);
+    setDurableItem(STORAGE_KEYS.RECENT_CANDIDATES, seed.recentCandidates);
     setDurableItem(STORAGE_KEYS.FEEDBACK, seed.feedback);
     return seed;
   }
@@ -140,6 +145,14 @@ export function initializeStorageIfNeeded() {
     voters: getDurableItem(STORAGE_KEYS.VOTERS, seed.voters),
     tallies: getDurableItem(STORAGE_KEYS.TALLIES, seed.tallies),
     announcements: getDurableItem(STORAGE_KEYS.ANNOUNCEMENTS, seed.announcements),
+    voterNotifications: getDurableItem(
+      STORAGE_KEYS.VOTER_NOTIFICATIONS,
+      seed.voterNotifications
+    ),
+    recentCandidates: getDurableItem(
+      STORAGE_KEYS.RECENT_CANDIDATES,
+      seed.recentCandidates
+    ),
     feedback: getDurableItem(STORAGE_KEYS.FEEDBACK, seed.feedback),
   };
 }
@@ -156,6 +169,8 @@ export function resetAllDemoData() {
   setDurableItem(STORAGE_KEYS.VOTERS, seed.voters);
   setDurableItem(STORAGE_KEYS.TALLIES, seed.tallies);
   setDurableItem(STORAGE_KEYS.ANNOUNCEMENTS, seed.announcements);
+  setDurableItem(STORAGE_KEYS.VOTER_NOTIFICATIONS, seed.voterNotifications);
+  setDurableItem(STORAGE_KEYS.RECENT_CANDIDATES, seed.recentCandidates);
   setDurableItem(STORAGE_KEYS.FEEDBACK, seed.feedback);
   return seed;
 }
@@ -164,6 +179,8 @@ export const storageService = {
   safeParseJSON,
   getDurableItem,
   setDurableItem,
+  getItem: getDurableItem,
+  setItem: setDurableItem,
   getSessionItem,
   setSessionItem,
   getDefaultSeedSnapshot,

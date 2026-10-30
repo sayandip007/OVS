@@ -14,7 +14,14 @@ export default function CandidateDirectory() {
   const initialType = searchParams.get('type') || 'ALL';
   const initialStateId = searchParams.get('stateId') || 'ALL';
 
-  const { elections, states, constituencies, parties, candidates } = useElection();
+  const {
+    elections,
+    states,
+    constituencies,
+    parties,
+    candidates,
+    recordCandidateView,
+  } = useElection();
 
   const [search, setSearch] = useState('');
   const [electionFilter, setElectionFilter] = useState(initialElectionId);
@@ -27,10 +34,16 @@ export default function CandidateDirectory() {
   const availableConstituencies = useMemo(() => {
     return constituencies.filter((c) => {
       if (stateFilter !== 'ALL' && c.stateId !== stateFilter) return false;
-      if (typeFilter === ELECTION_TYPES.LOK_SABHA && c.constituencyType !== 'PARLIAMENTARY') {
+      if (
+        typeFilter === ELECTION_TYPES.LOK_SABHA &&
+        c.constituencyType !== 'PARLIAMENTARY'
+      ) {
         return false;
       }
-      if (typeFilter === ELECTION_TYPES.STATE_ASSEMBLY && c.constituencyType !== 'ASSEMBLY') {
+      if (
+        typeFilter === ELECTION_TYPES.STATE_ASSEMBLY &&
+        c.constituencyType !== 'ASSEMBLY'
+      ) {
         return false;
       }
       return true;
@@ -74,8 +87,13 @@ export default function CandidateDirectory() {
     constituencies,
   ]);
 
+  const handleInspectCandidate = (cand, party, constituency) => {
+    recordCandidateView(cand.candidateId);
+    setSelectedCandidate({ candidate: cand, party, constituency });
+  };
+
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
       <PageHeader
         badge="Affidavits & Nominations"
         title="Contesting Candidates Directory"
@@ -215,9 +233,7 @@ export default function CandidateDirectory() {
                 <div className="flex justify-end">
                   <button
                     type="button"
-                    onClick={() =>
-                      setSelectedCandidate({ candidate: cand, party, constituency })
-                    }
+                    onClick={() => handleInspectCandidate(cand, party, constituency)}
                     className="text-xs font-bold text-[#002868] hover:underline cursor-pointer"
                   >
                     Inspect Full Affidavit &amp; Manifesto &rarr;
