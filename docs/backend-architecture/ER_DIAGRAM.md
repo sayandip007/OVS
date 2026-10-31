@@ -1,17 +1,17 @@
-# OVS Entity-Relationship (ER) Diagram & Structural Analysis
+# OVS Entity-Relationship (ER) Diagram & Structural Analysis (Phase 8.1.1 Corrected)
 
 ## 1. Complete Entity-Relationship Diagram (Mermaid)
 
 ```mermaid
 erDiagram
     %% =========================================================================
-    %% GEOGRAPHY ENTITIES
+    %% GEOGRAPHY ENTITIES (WITH COMPOSITE INTEGRITY)
     %% =========================================================================
     State ||--o{ District : "contains"
     State ||--o{ ParliamentaryConstituency : "contains"
     State ||--o{ AssemblyConstituency : "contains"
-    District ||--o{ AssemblyConstituency : "contains"
-    ParliamentaryConstituency ||--o{ AssemblyConstituency : "parent of (dual mapping)"
+    District ||--o{ AssemblyConstituency : "contains (composite districtId, stateId)"
+    ParliamentaryConstituency ||--o{ AssemblyConstituency : "parent of (composite parentPC, stateId)"
 
     State {
         string id PK "e.g. WB, MH, DL"
@@ -25,14 +25,14 @@ erDiagram
 
     District {
         string id PK "e.g. DIST-WB-KOL"
-        string stateId FK
+        string stateId FK "UNIQUE (id, stateId)"
         string name
         string headquarters
     }
 
     ParliamentaryConstituency {
         string id PK "e.g. PC-WB-KOLKATA-SOUTH"
-        string stateId FK
+        string stateId FK "UNIQUE (id, stateId)"
         int constituencyNumber
         string name
         string reservationType "GENERAL | SC | ST"
@@ -42,8 +42,8 @@ erDiagram
     AssemblyConstituency {
         string id PK "e.g. AC-WB-BHABANIPUR"
         string stateId FK
-        string districtId FK
-        string parentParliamentaryConstituencyId FK
+        string districtId FK "FK (districtId, stateId)"
+        string parentParliamentaryConstituencyId FK "FK (parentPC, stateId)"
         int constituencyNumber
         string name
         string reservationType "GENERAL | SC | ST"
@@ -58,9 +58,9 @@ erDiagram
     User ||--o{ UserSession : "establishes"
 
     VoterProfile }o--|| State : "resides in"
-    VoterProfile }o--|| District : "resides in"
-    VoterProfile }o--|| ParliamentaryConstituency : "assigned PC"
-    VoterProfile }o--|| AssemblyConstituency : "assigned AC"
+    VoterProfile }o--|| District : "FK (districtId, stateId)"
+    VoterProfile }o--|| ParliamentaryConstituency : "FK (parliamentaryConstituencyId, stateId)"
+    VoterProfile }o--|| AssemblyConstituency : "FK (assemblyConstituencyId, parliamentaryConstituencyId)"
     VoterProfile ||--o{ VoterNotification : "receives"
     VoterProfile ||--o{ DemoParticipation : "participates in"
 
@@ -114,6 +114,7 @@ erDiagram
     Election ||--o{ CountingSession : "counted in"
     Election ||--o{ DemoParticipation : "receives demo participation"
     Election ||--o{ Announcement : "targets"
+    Election ||--o{ AdminElectionScope : "scoped to"
     State ||--o{ Election : "hosts (for Assembly)"
 
     Election {
@@ -121,8 +122,8 @@ erDiagram
         string name
         string type "LOK_SABHA | STATE_ASSEMBLY"
         int year
-        string stateId FK "Null for Lok Sabha"
-        string status "UPCOMING | POLLING_ACTIVE | RESULTS_DECLARED"
+        string stateId FK "Null for Lok Sabha, NOT NULL for Assembly"
+        string status "UPCOMING | NOMINATION_OPEN | POLLING_ACTIVE | COUNTING_ACTIVE | RESULTS_DECLARED"
         date pollingStartDate
         date pollingEndDate
         date countingDate
@@ -134,8 +135,8 @@ erDiagram
         uuid id PK
         string electionId FK
         string constituencyType "PARLIAMENTARY | ASSEMBLY"
-        string parliamentaryConstituencyId FK
-        string assemblyConstituencyId FK
+        string parliamentaryConstituencyId FK "Partial UK (electionId, PC)"
+        string assemblyConstituencyId FK "Partial UK (electionId, AC)"
     }
 
     ElectionLifecycleHistory {
@@ -151,9 +152,9 @@ erDiagram
     %% PARTIES & CANDIDATES
     %% =========================================================================
     PoliticalParty ||--o{ Candidate : "sponsors"
-    PoliticalParty ||--o{ CandidateTally : "tallied under"
+    PoliticalParty ||--o{ CandidateTally : "referenced by composite FK"
     Candidate ||--o{ CandidateNomination : "files"
-    Candidate ||--o{ CandidateTally : "receives votes"
+    Candidate ||--o{ CandidateTally : "receives votes (FK candidateId, partyId)"
 
     PoliticalParty {
         string id PK "e.g. PARTY-BJP, PARTY-INC"
@@ -166,7 +167,7 @@ erDiagram
 
     Candidate {
         string id PK "e.g. CAND-LS29-KRN-1"
-        string partyId FK
+        string partyId FK "UNIQUE (id, partyId)"
         string fullName
         int age
         string gender
@@ -180,17 +181,18 @@ erDiagram
         string candidateId FK
         string electionId FK
         string constituencyType "PARLIAMENTARY | ASSEMBLY"
-        string parliamentaryConstituencyId FK
-        string assemblyConstituencyId FK
+        string parliamentaryConstituencyId FK "Partial UK (election, PC, candidate)"
+        string assemblyConstituencyId FK "Partial UK (election, AC, candidate)"
         string status "SUBMITTED | APPROVED | REJECTED | WITHDRAWN"
         datetime scrutinyDate
         string scrutinyNote
     }
 
     %% =========================================================================
-    %% ADMINISTRATIVE RBAC & AUDIT
+    %% ADMINISTRATIVE RBAC, SCOPES & AUDIT
     %% =========================================================================
     AdminUser ||--o{ AdminActionLog : "performs"
+    AdminUser ||--o{ AdminElectionScope : "assigned scopes"
     AdminUser }o--o| State : "assigned state scope"
 
     AdminUser {
@@ -199,9 +201,16 @@ erDiagram
         string officerCode UK "e.g. ECI-SUPER-001"
         string fullName
         string role "SUPER_ADMIN | NATIONAL_ADMIN | STATE_ADMIN | ELECTION_OFFICER | READ_ONLY_AUDITOR"
-        string assignedStateId FK
-        string[] assignedElectionIds
+        string assignedStateId FK "Scope for STATE_ADMIN"
         boolean isActive
+    }
+
+    AdminElectionScope {
+        uuid id PK
+        uuid adminUserId FK
+        string electionId FK "UNIQUE (adminUserId, electionId)"
+        datetime assignedAt
+        uuid assignedByAdminId FK
     }
 
     AdminActionLog {
@@ -241,9 +250,9 @@ erDiagram
         string id PK "RESULT-LS-2029-WB-PC-KOLKATA-SOUTH"
         string electionId FK
         string constituencyType "PARLIAMENTARY | ASSEMBLY"
-        string parliamentaryConstituencyId FK
-        string assemblyConstituencyId FK
-        string status "DRAFT | COUNTING_IN_PROGRESS | COMPLETED | PUBLISHED"
+        string parliamentaryConstituencyId FK "Partial UK (electionId, PC)"
+        string assemblyConstituencyId FK "Partial UK (electionId, AC)"
+        string status "DRAFT | COUNTING_IN_PROGRESS | COUNTING_PAUSED | COUNTING_COMPLETED | RESULT_READY_FOR_REVIEW | PUBLISHED | TIED | UNDER_REVIEW | CORRECTED | UNPUBLISHED"
         int totalConfiguredRounds
         int currentRound
         int totalCountedVotes
@@ -268,7 +277,7 @@ erDiagram
     CandidateTally {
         uuid id PK
         string sessionId FK
-        string candidateId FK
+        string candidateId FK "Composite FK (candidateId, partyId)"
         string partyId FK
         int votes
         decimal voteSharePercentage
@@ -286,13 +295,21 @@ erDiagram
     %% =========================================================================
     %% ANNOUNCEMENTS & NOTIFICATIONS
     %% =========================================================================
+    Announcement }o--o| State : "target state"
+    Announcement }o--o| Election : "target election"
+    Announcement }o--o| ParliamentaryConstituency : "target PC"
+    Announcement }o--o| AssemblyConstituency : "target AC"
+
     Announcement {
         string id PK "ANN-001"
         string title
         string category "GENERAL_INFO | ELECTION_SCHEDULE | RESULTS"
-        string targetAudience "ALL_VOTERS | SPECIFIC_STATE"
+        string targetAudience "ALL_VOTERS | SPECIFIC_STATE | SPECIFIC_ELECTION | SPECIFIC_CONSTITUENCY"
         string targetStateId FK
         string targetElectionId FK
+        string targetConstituencyType "PARLIAMENTARY | ASSEMBLY | NULL"
+        string targetParliamentaryConstituencyId FK
+        string targetAssemblyConstituencyId FK
         date publicationDate
         date expiryDate
         string status "PUBLISHED | ARCHIVED"
@@ -313,27 +330,51 @@ erDiagram
 
 ## 2. Plain-Language Explanation of Key Structural Relationships
 
-### 2.1 The Geography Hierarchy & Dual-Constituency Mapping
-- **States & UTs**: A `State` acts as the root boundary for local governance. It has child `District` records and child `ParliamentaryConstituency` (PC) records.
-- **Parent PC to Assembly Constituency (AC)**: An `AssemblyConstituency` belongs to a `State` and a `District`, but crucially references a `parentParliamentaryConstituencyId`. This establishes India's delimitation structure where multiple ACs physically comprise a single PC.
-- **Voter Dual Assignment**: Each `VoterProfile` is mapped to **both** a `parliamentaryConstituencyId` and an `assemblyConstituencyId`. This dual foreign-key relation enables the voter to participate in national Lok Sabha elections (via their PC) and state assembly elections (via their AC) simultaneously.
+### 2.1 Geographic Hierarchy Integrity & Dual-Constituency Mapping
+- **States & UTs**: A `State` acts as the root boundary. It has child `District` records and child `ParliamentaryConstituency` (PC) records.
+- **Parent PC to Assembly Constituency (AC)**: An `AssemblyConstituency` belongs to a `State` and a `District`, and explicitly references a `parentParliamentaryConstituencyId`. 
+- **Enforced Geographic Consistency via Composite Foreign Keys**:
+  - `AssemblyConstituency` enforces that its district and its parent PC belong to the same state via `FOREIGN KEY (districtId, stateId) REFERENCES districts(id, stateId)` and `FOREIGN KEY (parentParliamentaryConstituencyId, stateId) REFERENCES parliamentary_constituencies(id, stateId)`.
+  - `VoterProfile` enforces that a voter's assigned AC strictly belongs to their assigned PC via `FOREIGN KEY (assemblyConstituencyId, parliamentaryConstituencyId) REFERENCES assembly_constituencies(id, parentParliamentaryConstituencyId)`.
+  - It is mathematically and relationally impossible at the database level for an AC to belong to a PC in another state, or for a voter to be assigned to an AC that is outside their assigned PC.
 
-### 2.2 User Authentication vs. Profile Separation
+### 2.2 Constituency Type Integrity & Nullable Composite Uniqueness
+- **Mutual Exclusivity**: `ElectionConstituency`, `CandidateNomination`, and `CountingSession` hold either a Parliamentary Constituency or an Assembly Constituency, never both and never neither. This is enforced via PostgreSQL `CHECK` constraints:
+  ```sql
+  CHECK (
+    (constituency_type = 'PARLIAMENTARY' AND parliamentary_constituency_id IS NOT NULL AND assembly_constituency_id IS NULL)
+    OR
+    (constituency_type = 'ASSEMBLY' AND assembly_constituency_id IS NOT NULL AND parliamentary_constituency_id IS NULL)
+  );
+  ```
+- **PostgreSQL Partial Unique Indexes**: In standard SQL-92, `NULL != NULL`, meaning ordinary composite `UNIQUE (electionId, parliamentaryConstituencyId, assemblyConstituencyId)` constraints allow duplicate rows when one column is NULL. In OVS, this is resolved by using PostgreSQL Partial Unique Indexes (`CREATE UNIQUE INDEX ... WHERE parliamentary_constituency_id IS NOT NULL`).
+
+### 2.3 Candidate-Party Consistency & Tally Integrity
+- In `candidates`, a composite unique key `UNIQUE (id, partyId)` is established.
+- In `candidate_tallies`, vote counts are bound by the composite foreign key `FOREIGN KEY (candidateId, partyId) REFERENCES candidates(id, partyId)`.
+- This ensures that a candidate's votes cannot be recorded under a different political party than their registered party.
+- NOTA (None of the Above) is modeled as a first-class citizen in `counting_sessions.notaVotes`, separate from individual candidate tallies.
+
+### 2.4 User Authentication vs. Profile Separation
 - To adhere to privacy-by-design, credentials and session data live in the `User` and `UserSession` tables.
 - A `User` has a 1-to-1 relationship with either a `VoterProfile` (for citizen voters) or an `AdminUser` (for election commission officers).
 - Authentication mechanisms never query or expose electoral choices or ballot records.
 
-### 2.3 Strict Separation: Demo Participation vs. Counting Engine
+### 2.5 Strict Separation: Demo Participation vs. Counting Engine
 - **`DemoParticipation` Table**: Contains **only** `{ voterId, electionId, status: 'VOTED', demoReference, referenceId, participatedAt, recordedAt }`.
   - There is a unique constraint on `(voterId, electionId)` ensuring that a voter can only participate once per election.
-  - **Noticeably absent**: There is **no foreign key** to `candidates`, `political_parties`, or any selection column.
+  - **Zero Choice Persistence**: There is **no foreign key** to `candidates`, `political_parties`, or any selection column.
 - **`CountingSession` and `CandidateTally` Tables**:
   - Counting sessions are linked to an `(electionId, constituencyId)`.
   - The votes counted in `CandidateTally` originate from deterministic simulation seed data (`INITIAL_RESULTS`) or round-by-round admin simulations, **completely decoupled** from voter records.
   - No database query or join can link a voter's demo participation entry to a candidate vote tally.
 
-### 2.4 Administrative Scoping (RBAC)
+### 2.6 Normalized Administrative Scoping (RBAC)
 - An `AdminUser` is assigned a `role` (`SUPER_ADMIN`, `NATIONAL_ADMIN`, `STATE_ADMIN`, `ELECTION_OFFICER`, `READ_ONLY_AUDITOR`).
-- `STATE_ADMIN` has a foreign key to `assignedStateId`, restricting their authorization to elections, constituencies, and candidates within that specific state.
-- `ELECTION_OFFICER` has an array of `assignedElectionIds`, restricting their actions to specific assigned elections.
+- `STATE_ADMIN` has a foreign key to `assignedStateId`, restricting authorization to elections, constituencies, and candidates within that specific state.
+- `ELECTION_OFFICER` has normalized foreign key mappings via `AdminElectionScope` (`admin_election_scopes` table), replacing unstructured JSON or text arrays.
 - All mutating administrative actions are logged in `AdminActionLog` with sanitized JSON details.
+
+### 2.7 Typed Announcement Targeting
+- Announcements targeting constituencies explicitly declare `targetConstituencyType` (`PARLIAMENTARY` or `ASSEMBLY`) and reference `parliamentary_constituencies.id` or `assembly_constituencies.id` with valid foreign keys.
+- Enforced by a CHECK constraint ensuring that targeting a constituency always points to a verified constituency record.

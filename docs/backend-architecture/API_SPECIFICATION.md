@@ -1,11 +1,17 @@
-# OVS REST API Specification (v1)
+# OVS REST API Specification (v1 - Phase 8.1.1 Corrected)
 
 ## 1. Global API Standards & Conventions
 
 - **Base URI**: `/api/v1`
 - **Transport**: HTTPS with TLS 1.3 (HTTP/2 supported).
 - **Format**: JSON (`Content-Type: application/json; charset=utf-8`).
-- **Session Identification**: Secure HttpOnly cookie (`ovs_session`) or Bearer token header (`Authorization: Bearer <session_token>`).
+- **Session Identification & Cookie Discipline**: 
+  - Standardized **exclusively** on a secure, HttpOnly, SameSite=Strict cookie (`ovs_session`).
+  - No Bearer tokens or client-side storage of authentication tokens in LocalStorage/SessionStorage.
+- **CSRF Defense-in-Depth**:
+  - `SameSite=Strict` attribute on `ovs_session` cookie.
+  - Custom anti-CSRF request header requirement (`X-CSRF-Token`) for all mutating HTTP methods (`POST`, `PUT`, `PATCH`, `DELETE`).
+  - Strict server-side validation of incoming `Origin` and `Referer` headers against allowed domain white-lists.
 - **Standard Success Envelope**:
   ```json
   {
@@ -17,17 +23,20 @@
     }
   }
   ```
-- **Standard RFC-7807 Error Response**:
+- **Standard RFC 9457 Problem Details Error Response** (`Content-Type: application/problem+json`):
   ```json
   {
-    "success": false,
-    "error": {
-      "code": "VALIDATION_FAILED",
-      "message": "Input validation error.",
-      "details": {
-        "mobile": ["Mobile must be a valid 10-digit Indian number."]
+    "type": "https://ovs.eci.gov.in/errors/validation-failed",
+    "title": "Validation Failed",
+    "status": 400,
+    "detail": "Input validation failed on one or more submitted fields.",
+    "instance": "/api/v1/auth/register",
+    "invalidParams": [
+      {
+        "name": "mobile",
+        "reason": "Mobile must be a valid 10-digit Indian number."
       }
-    }
+    ]
   }
   ```
 - **CRITICAL BALLOT PRIVACY INVARIANT**: No endpoint accepts or returns candidate selection alongside identified voter records.
@@ -58,10 +67,10 @@
     "password": "SecurePassword123!"
   }
   ```
-- **Validation Rules (Zod)**: Age >= 18; valid Indian 10-digit mobile; unique `voterRef`; valid `stateId`, `districtId`, `parliamentaryConstituencyId`, and `assemblyConstituencyId` hierarchy.
+- **Validation Rules (Zod)**: Age >= 18; valid Indian 10-digit mobile; unique `voterRef`; valid `stateId`, `districtId`, `parliamentaryConstituencyId`, and `assemblyConstituencyId` composite hierarchy.
 - **Responses**:
   - `201 Created`: `{ "success": true, "data": { "voterId": "uuid", "epicNumber": "WBX7766554" } }`
-  - `400 Bad Request`: Validation failure.
+  - `400 Bad Request`: RFC 9457 Validation failure.
   - `409 Conflict`: EPIC or email already registered.
 
 ### 2.2 Voter Login (Initiate Challenge)
@@ -75,16 +84,20 @@
     "mobile": "9830011223"
   }
   ```
+- **Dual Flow Architecture (Demo Simulation vs Production)**:
+  - *Demo Simulation Sandbox*: Returns a pre-configured demo OTP (`123456`) in the response metadata with an educational disclaimer, while hashing and storing the challenge.
+  - *Production Architecture*: Integrates with a licensed Telecom Service Provider (TSP) SMS Gateway; never echoes OTP in HTTP responses; enforces IP/device velocity rate limiting.
 - **Responses**:
   - `200 OK`:
     ```json
     {
       "success": true,
       "data": {
-        "challengeId": "uuid",
+        "challengeId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
         "maskedMobile": "XXXXXX1223",
         "expiresInSeconds": 120,
-        "demoOtpNotice": "In demonstration mode, default OTP is 123456"
+        "isDemoSimulation": true,
+        "demoOtpNotice": "In educational demonstration mode, the simulated OTP is 123456"
       }
     }
     ```
@@ -97,12 +110,13 @@
 - **Request Body**:
   ```json
   {
-    "challengeId": "uuid",
+    "challengeId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
     "otp": "123456"
   }
   ```
 - **Responses**:
-  - `200 OK`: Sets cookie `ovs_session`; returns voter summary.
+  - `200 OK`: Sets cookie `ovs_session=...; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=28800`; returns voter profile summary and CSRF token.
+  - `400 Bad Request`: Expired or consumed challenge.
   - `401 Unauthorized`: Invalid OTP / Exceeded maximum 3 attempts.
 
 ### 2.4 Resend OTP
@@ -119,12 +133,12 @@
 - **Purpose**: Revokes current session and clears session cookie.
 - **Auth / Role**: Authenticated (`VOTER` or `ADMIN`).
 - **Responses**:
-  - `200 OK`: `{ "success": true, "message": "Logged out successfully." }`
+  - `200 OK`: Clears `ovs_session` cookie; returns `{ "success": true, "message": "Logged out successfully." }`
 
 ### 2.6 Get Current Session Profile
 - **Method & Path**: `GET /api/v1/auth/me`
 - **Purpose**: Returns current user profile, role, and permission scopes.
-- **Auth / Role**: Authenticated.
+- **Auth / Role**: Authenticated (via `ovs_session` cookie).
 - **Responses**:
   - `200 OK`: `{ "success": true, "data": { "userType": "VOTER", "profile": { ... } } }`
   - `401 Unauthorized`: Unauthenticated.
@@ -154,59 +168,14 @@
 - **Purpose**: Computes voter's eligible elections (Lok Sabha and State Assembly) based on voter's state and constituencies.
 - **Auth / Role**: Authenticated (`VOTER`).
 - **Responses**:
-  - `200 OK`:
-    ```json
-    {
-      "success": true,
-      "data": {
-        "eligibleElections": [
-          {
-            "id": "LS-2029",
-            "name": "Lok Sabha General Election 2029",
-            "type": "LOK_SABHA",
-            "status": "POLLING_ACTIVE",
-            "participationStatus": "PENDING",
-            "assignedConstituency": { "id": "PC-WB-KOLKATA-SOUTH", "type": "PARLIAMENTARY", "name": "Kolkata South" }
-          },
-          {
-            "id": "WB-ASSEMBLY-2029",
-            "name": "West Bengal Legislative Assembly Election 2029",
-            "type": "STATE_ASSEMBLY",
-            "status": "POLLING_ACTIVE",
-            "participationStatus": "PENDING",
-            "assignedConstituency": { "id": "AC-WB-BHABANIPUR", "type": "ASSEMBLY", "name": "Bhabanipur" }
-          }
-        ],
-        "participationSummary": {
-          "totalCount": 2,
-          "completedCount": 0,
-          "label": "0 / 2 Completed",
-          "percentage": 0
-        }
-      }
-    }
-    ```
+  - `200 OK`: Eligible elections with assigned PC and AC and participation statuses.
 
 ### 3.4 Get Voter Participation History
 - **Method & Path**: `GET /api/v1/voters/me/participation`
 - **Purpose**: Returns non-sensitive demo participation receipts.
 - **Auth / Role**: Authenticated (`VOTER`).
 - **Responses**:
-  - `200 OK`:
-    ```json
-    {
-      "success": true,
-      "data": [
-        {
-          "electionId": "LS-2029",
-          "status": "VOTED",
-          "demoReference": "DEMO-LS-000001",
-          "referenceId": "DEMO-REF-LS2029-VOTER001",
-          "participatedAt": "2029-04-20T10:30:00.000Z"
-        }
-      ]
-    }
-    ```
+  - `200 OK`: List of participation records (zero candidate choice fields).
 
 ---
 
@@ -221,7 +190,7 @@
 
 ### 4.2 List Districts for a State
 - **Method & Path**: `GET /api/v1/geography/states/:stateId/districts`
-- **Purpose**: Retrieves representative districts in a jurisdiction.
+- **Purpose**: Retrieves administrative districts within a jurisdiction.
 - **Auth / Role**: Public.
 - **Responses**: `200 OK`.
 
@@ -283,25 +252,12 @@
   ```
   *(Note: Request body contains NO candidateId, partyId, or ballot choice parameter! Any submitted candidate field is rejected with 400 Bad Request).*
 - **Validation**:
-  1. Voter must be authenticated.
+  1. Voter must be authenticated via valid session cookie.
   2. Election must exist and be in `POLLING_ACTIVE` status.
   3. Voter must be registered in an eligible constituency for this election.
   4. Duplicate check: Voter must not have already participated in this election (`status !== 'VOTED'`).
 - **Responses**:
-  - `201 Created`:
-    ```json
-    {
-      "success": true,
-      "data": {
-        "status": "VOTED",
-        "participated": true,
-        "demoReference": "DEMO-LS-000001",
-        "referenceId": "DEMO-REF-LS2029-VOTER001",
-        "participatedAt": "2029-04-20T10:30:00.000Z",
-        "ballotCountingSeparation": "STRICT_DECOUPLED"
-      }
-    }
-    ```
+  - `201 Created`: Non-sensitive receipt (`demoReference`, `referenceId`, `participatedAt`).
   - `400 Bad Request`: Election not active, state mismatch, or prohibited candidate choice field supplied.
   - `409 Conflict`: Duplicate participation attempt (`ALREADY_PARTICIPATED`).
 
@@ -309,63 +265,51 @@
 
 ## 7. Counting & Results Endpoints (`/api/v1/admin/counting-sessions` & `/api/v1/results`)
 
-### 7.1 Advance Counting Round (ECI Officer Action)
+### 7.1 Unified Result State Machine Statuses
+The counting engine enforces a deterministic 10-state lifecycle:
+1. `DRAFT`: Initial uncounted state.
+2. `COUNTING_IN_PROGRESS`: Rounds are actively progressing.
+3. `COUNTING_PAUSED`: Counting temporarily halted by Election Officer.
+4. `COUNTING_COMPLETED`: All configured rounds have completed vote tallying.
+5. `RESULT_READY_FOR_REVIEW`: Tabulations finalized and pending Returning Officer certification.
+6. `PUBLISHED`: Verified results made publicly visible on portal dashboards.
+7. `TIED`: Two or more candidates share identical leading votes; publication blocked.
+8. `UNDER_REVIEW`: Result challenged or undergoing formal recount/scrutiny.
+9. `CORRECTED`: Result amended following audit, with historical diff captured.
+10. `UNPUBLISHED`: Result rescinded from public view by Super Admin.
+
+### 7.2 Advance Counting Round (ECI Officer Action)
 - **Method & Path**: `POST /api/v1/admin/counting-sessions/:sessionId/rounds`
 - **Purpose**: Advances the constituency counting simulation by one round.
 - **Auth / Role**: Authenticated ECI Admin (`SUPER_ADMIN`, `NATIONAL_ADMIN`, `STATE_ADMIN`, `ELECTION_OFFICER`).
-- **Scope Restriction**: `STATE_ADMIN` restricted to their state; `ELECTION_OFFICER` restricted to assigned elections.
+- **Scope Restriction**: `STATE_ADMIN` restricted to their state; `ELECTION_OFFICER` restricted to elections in `admin_election_scopes`.
 - **Responses**:
-  - `200 OK`:
-    ```json
-    {
-      "success": true,
-      "data": {
-        "sessionId": "RESULT-LS-2029-WB-PC-KOLKATA-SOUTH",
-        "currentRound": 3,
-        "totalConfiguredRounds": 5,
-        "roundVotes": 125000,
-        "cumulativeVotes": 375000,
-        "leadingCandidate": { "id": "CAND-LS29-KRN-1", "leadMargin": 21500 },
-        "status": "COUNTING_IN_PROGRESS"
-      }
-    }
-    ```
+  - `200 OK`: Returns updated round metrics, cumulative votes, and leading candidate margin.
 
-### 7.2 Complete Counting Session
+### 7.3 Complete Counting Session
 - **Method & Path**: `POST /api/v1/admin/counting-sessions/:sessionId/complete`
 - **Purpose**: Concludes rounds, checks for ties, and sets status to `RESULT_READY_FOR_REVIEW`.
 - **Auth / Role**: Authorized ECI Admin.
-- **Validation**: All configured rounds must be processed (`rounds.length >= totalConfiguredRounds`).
+- **Validation**: All configured rounds must be processed (`currentRound >= totalConfiguredRounds`).
 - **Responses**: `200 OK`.
 
-### 7.3 Publish Constituency Result
+### 7.4 Publish Constituency Result
 - **Method & Path**: `POST /api/v1/admin/results/:sessionId/publish`
 - **Purpose**: Publishes verified result, making it publicly visible on `/results`.
 - **Auth / Role**: Authorized ECI Admin (`SUPER_ADMIN`, `NATIONAL_ADMIN`, `STATE_ADMIN`).
-- **Validation**: Guard enforces `countingStatus === 'COMPLETED'`, `rounds.length >= totalConfiguredRounds`, and no unresolved tie.
+- **Validation Preconditions**:
+  1. Session status must be `RESULT_READY_FOR_REVIEW`.
+  2. All configured rounds must be complete (`currentRound >= totalConfiguredRounds`).
+  3. Status cannot be `TIED`.
 - **Responses**:
   - `200 OK`: `{ "success": true, "data": { "isPublished": true, "status": "PUBLISHED" } }`
-  - `400 Bad Request`: Incomplete counting session cannot be published.
+  - `400 Bad Request`: Precondition failed (incomplete counting session or tied result).
 
-### 7.4 Public Results Listing
-- **Method & Path**: `GET /api/v1/results`
-- **Purpose**: Retrieves published constituency results for public dashboards.
-- **Auth / Role**: Public.
-- **Filter**: Implicitly filters `isPublished = true` (unpublished/draft results hidden).
-- **Responses**: `200 OK`.
-
-### 7.5 National & State Result Analytics
+### 7.5 Public Results Listing & Analytics
+- **Method & Path**: `GET /api/v1/results` (Public results, implicitly filtering `isPublished = true`).
 - **Method & Path**: `GET /api/v1/results/analytics/lok-sabha`
 - **Method & Path**: `GET /api/v1/results/analytics/assembly/:stateId`
-- **Purpose**: Aggregates party-wise seats won, leading seats, vote share percentages, and turnout metrics.
-- **Auth / Role**: Public.
 - **Responses**: `200 OK`.
-
-### 7.6 Export Constituency Result CSV
-- **Method & Path**: `GET /api/v1/results/:sessionId/export/csv`
-- **Purpose**: Downloads RFC-4180 compliant CSV report with formula injection escaping.
-- **Auth / Role**: Public (if published) or Admin.
-- **Responses**: `200 OK` (`Content-Type: text/csv`).
 
 ---
 
@@ -375,33 +319,40 @@
 - **Method & Path**: `POST /api/v1/admin/auth/login`
 - **Purpose**: Authenticates administrative officer with Officer Code and Passcode.
 - **Request Body**: `{ "officerCode": "ECI-SUPER-001", "passcode": "admin123" }`
-- **Responses**: `200 OK` (issues 2FA OTP challenge).
+- **Responses**: `200 OK` (issues 2FA challenge).
 
-### 8.2 Create or Update Election Record
-- **Method & Path**: `POST /api/v1/admin/elections`
-- **Method & Path**: `PATCH /api/v1/admin/elections/:electionId`
-- **Purpose**: Creates/modifies election parameters and schedule milestones.
+### 8.2 Officer Election Scopes Management
+- **Method & Path**: `GET /api/v1/admin/officers/:id/scopes`
+- **Method & Path**: `POST /api/v1/admin/officers/:id/scopes`
+  - **Body**: `{ "electionId": "LS-2029" }`
+- **Method & Path**: `DELETE /api/v1/admin/officers/:id/scopes/:electionId`
+- **Purpose**: Assigns or revokes specific election jurisdictions for `ELECTION_OFFICER` admins in the normalized `admin_election_scopes` table.
+- **Auth / Role**: `SUPER_ADMIN` or `NATIONAL_ADMIN`.
+
+### 8.3 Portal Announcements Management
+- **Method & Path**: `POST /api/v1/admin/announcements`
+- **Purpose**: Publishes portal announcements with strictly typed audience and constituency targeting.
 - **Auth / Role**: `SUPER_ADMIN`, `NATIONAL_ADMIN`, or scoped `STATE_ADMIN`.
-- **Validation**: Enforces 8-point chronological order and type rules.
-- **Responses**: `201 Created` / `200 OK`.
+- **Request Body**:
+  ```json
+  {
+    "title": "Polling Date Notification",
+    "summary": "Official polling schedule for Kolkata South.",
+    "message": "...",
+    "category": "ELECTION_SCHEDULE",
+    "targetAudience": "SPECIFIC_CONSTITUENCY",
+    "targetStateId": "WB",
+    "targetElectionId": "LS-2029",
+    "targetConstituencyType": "PARLIAMENTARY",
+    "targetParliamentaryConstituencyId": "PC-WB-KOLKATA-SOUTH",
+    "targetAssemblyConstituencyId": null,
+    "publicationDate": "2029-04-01",
+    "expiryDate": "2029-04-30"
+  }
+  ```
+- **Responses**: `201 Created`.
 
-### 8.3 Candidate Scrutiny & Approval
-- **Method & Path**: `PATCH /api/v1/admin/candidates/:candidateId/nominations/:nominationId/approval`
-- **Purpose**: Approves, rejects, or suspends a candidate nomination.
-- **Auth / Role**: Authorized Admin.
-- **Request Body**: `{ "decision": "APPROVED", "scrutinyNote": "Verified documents." }`
-- **Responses**: `200 OK`.
-
-### 8.4 Audit Logs
+### 8.4 Audit Logs & 17-Rule Data Integrity
 - **Method & Path**: `GET /api/v1/admin/audit-logs`
-- **Purpose**: Queries sanitized append-only administrative audit records.
-- **Auth / Role**: Any ECI Admin (including `READ_ONLY_AUDITOR`).
-- **Query Parameters**: `domain`, `actionType`, `startDate`, `endDate`, `page`, `pageSize`.
-- **Responses**: `200 OK`.
-
-### 8.5 17-Rule Data Integrity Audit
 - **Method & Path**: `GET /api/v1/admin/integrity-audit`
-- **Purpose**: Executes all 17 relational, geographic, and privacy integrity checks across PostgreSQL datasets.
-- **Auth / Role**: Any ECI Admin.
-- **Responses**:
-  - `200 OK`: `{ "success": true, "data": { "isHealthy": true, "rulesPassed": 17, "totalRules": 17, "ruleResults": [...] } }`
+- **Responses**: `200 OK`.

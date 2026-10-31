@@ -15,8 +15,9 @@
     "clean": "rm -rf dist server.js",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "node --import ./tests/loader.mjs --test tests/electionArchitecture.test.mjs",
+    "test": "node --import ./tests/loader.mjs --test tests/electionArchitecture.test.mjs && node --import ./tests/loader.mjs --test tests/architectureConsistency.test.mjs",
     "test:unit": "node --import ./tests/loader.mjs --test tests/electionArchitecture.test.mjs",
+    "test:architecture": "node --import ./tests/loader.mjs --test tests/architectureConsistency.test.mjs",
     "test:e2e": "playwright test"
   },
   "dependencies": {

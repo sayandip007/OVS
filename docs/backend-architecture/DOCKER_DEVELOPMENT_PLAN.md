@@ -1,4 +1,4 @@
-# OVS Docker & Local Development Architecture
+# OVS Docker & Local Development Architecture (Phase 8.1.1 Corrected)
 
 ## 1. Local Containerized Topology Overview
 
@@ -23,7 +23,7 @@ The OVS local development environment is designed to provide reproducible, isola
 └────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-> **SCOPE REMINDER**: This file is an architectural blueprint. Docker containers will be created and launched in subsequent implementation phases, not in Phase 8.1.
+> **SCOPE REMINDER**: This file is an architectural blueprint. Docker containers will be created and launched in subsequent implementation phases, not in Phase 8.1.1.
 
 ---
 
@@ -155,9 +155,10 @@ cp .env.example .env
 # 2. Start PostgreSQL and Redis backing services
 docker compose up -d postgres-db redis-cache
 
-# 3. Apply Prisma migrations and seed initial dataset
+# 3. Apply Prisma migrations and custom SQL integrity constraints
 cd backend
 npx prisma migrate dev --name init
+psql $DATABASE_URL -f prisma/migrations/custom_integrity_constraints.sql
 npx prisma db seed
 
 # 4. Start backend API service

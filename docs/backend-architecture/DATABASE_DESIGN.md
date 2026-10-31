@@ -1,19 +1,22 @@
-# OVS PostgreSQL Database Design
+# OVS PostgreSQL Database Design (Phase 8.1.1 Corrected)
 
 ## 1. Relational Modeling Strategy & Design Goals
 
-The OVS database is structured as a **3NF-normalized relational schema** implemented in PostgreSQL 16+. It reflects the electoral geography of India, dual-constituency voter assignment, concurrent election lifecycles, and a strict decoupling between voter participation and counting simulations.
+The OVS database is structured as a **3NF-normalized relational schema** implemented in PostgreSQL 16+. It reflects the electoral geography of India, dual-constituency voter assignment, concurrent election lifecycles, and a strict architectural decoupling between simulated voter participation and independent counting sessions.
 
-### Key Design Goals:
-1. **Relational Integrity Over Arbitrary JSON**: All core domain relationships (states, districts, constituencies, nominations, schedules, counting rounds) are modeled using dedicated relational tables with foreign keys and check constraints. JSONB is reserved strictly for audit metadata and flexible configuration overrides.
+### Key Design Invariants:
+1. **Relational Integrity Over Arbitrary JSON**: All core domain relationships (states, districts, constituencies, nominations, schedules, counting rounds, admin scopes) are modeled using dedicated relational tables with composite foreign keys, partial unique indexes, and explicit check constraints. JSONB is reserved strictly for audit metadata and flexible configuration overrides.
 2. **Data Provenance (`MetadataSource`)**: Every entity tracks whether it represents verified official Election Commission of India data (`VERIFIED_OFFICIAL`) or demonstration sample data (`DEMO_SAMPLE`).
 3. **Dual-Constituency Invariant**: Every registered voter profile references exactly one Parliamentary Constituency (`parliamentaryConstituencyId`) and one Assembly Constituency (`assemblyConstituencyId`).
-4. **Strict Ballot Secrecy & Decoupling Invariant**: The `demo_participations` table records that a voter completed participation in an election (`status = 'VOTED'`), but contains **no foreign keys or fields** referencing candidates, parties, or choices. Counting sessions exist in independent tables.
-5. **Auditable Lifecycle History**: Critical state changes (election status transitions, candidate scrutiny decisions, administrative result corrections) are captured in dedicated append-only history tables.
+4. **Geographic Hierarchy Invariant**: Composite foreign keys guarantee that an Assembly Constituency must belong to its parent Parliamentary Constituency and District within the same State. A voter profile cannot be assigned to an AC that belongs to an unrelated PC or District.
+5. **Strict Ballot Secrecy & Decoupling Invariant**: The `demo_participations` table records that a voter completed participation in an election (`status = 'VOTED'`), but contains **no foreign keys or fields** referencing candidates, parties, or choices. Counting sessions exist in independent tables.
+6. **Candidate & Tally Party Integrity**: Candidate tallies enforce candidate-party consistency via composite foreign keys `(candidateId, partyId) REFERENCES candidates(id, partyId)`.
+7. **Auditable Lifecycle History**: Critical state changes (election status transitions, candidate scrutiny decisions, administrative result corrections) are captured in dedicated append-only history tables.
+8. **Audited Admin Scoping**: Admin user jurisdiction is normalized via the `admin_election_scopes` table rather than unstructured arrays.
 
 ---
 
-## 2. Entity Groups & Detailed Table Specifications
+## 2. Entity Groups & Detailed Table Specifications (24 Models, 17 Enums)
 
 ### 2.1 Group A: Electoral Geography
 
@@ -27,8 +30,8 @@ Represents the 28 States and 8 Union Territories of India.
 - `totalLokSabhaSeats` (INTEGER, NOT NULL): Total sanctioned Parliamentary seats (summing to 543 nationally).
 - `totalAssemblySeats` (INTEGER, NOT NULL): Total sanctioned State Legislative Assembly seats (summing to 4,123 nationally).
 - `metadataSource` (ENUM `MetadataSource`, NOT NULL DEFAULT `'VERIFIED_OFFICIAL'`).
-- `createdAt` (TIMESTAMPTZ, NOT NULL DEFAULT NOW()).
-- `updatedAt` (TIMESTAMPTZ, NOT NULL DEFAULT NOW()).
+- `createdAt` (TIMESTAMPTZ(6), NOT NULL DEFAULT NOW()).
+- `updatedAt` (TIMESTAMPTZ(6), NOT NULL DEFAULT NOW()).
 
 #### Table: `districts`
 Administrative districts within each state/UT.
@@ -37,7 +40,8 @@ Administrative districts within each state/UT.
 - `name` (VARCHAR(100), NOT NULL): District name.
 - `headquarters` (VARCHAR(100), NOT NULL): Administrative headquarters.
 - `metadataSource` (ENUM `MetadataSource`, NOT NULL DEFAULT `'VERIFIED_OFFICIAL'`).
-- `createdAt` / `updatedAt` (TIMESTAMPTZ).
+- `createdAt` / `updatedAt` (TIMESTAMPTZ(6)).
+- **Composite Unique Key**: `UNIQUE (id, stateId)` (required for composite foreign key references).
 - **Index**: `CREATE INDEX idx_districts_state ON districts(stateId);`
 
 #### Table: `parliamentary_constituencies` (PCs)
@@ -49,41 +53,49 @@ Lok Sabha constituencies.
 - `reservationType` (ENUM `ReservationType`, NOT NULL DEFAULT `'GENERAL'`): `'GENERAL'`, `'SC'`, or `'ST'`.
 - `totalVoters` (INTEGER, NOT NULL DEFAULT 0): Official registered electorate count.
 - `metadataSource` (ENUM `MetadataSource`, NOT NULL DEFAULT `'VERIFIED_OFFICIAL'`).
-- `createdAt` / `updatedAt` (TIMESTAMPTZ).
+- `createdAt` / `updatedAt` (TIMESTAMPTZ(6)).
 - **Unique Constraint**: `UNIQUE (stateId, constituencyNumber)`.
+- **Composite Unique Key**: `UNIQUE (id, stateId)` (required for composite foreign key references).
 - **Index**: `CREATE INDEX idx_pcs_state ON parliamentary_constituencies(stateId);`
 
 #### Table: `assembly_constituencies` (ACs)
 State Legislative Assembly constituencies.
 - `id` (VARCHAR(50), PRIMARY KEY): Canonical AC code (e.g. `'AC-WB-BHABANIPUR'`).
 - `stateId` (VARCHAR(10), NOT NULL, FK -> `states.id` ON DELETE RESTRICT): Parent state.
-- `districtId` (VARCHAR(50), NOT NULL, FK -> `districts.id` ON DELETE RESTRICT): Primary district location.
-- `parentParliamentaryConstituencyId` (VARCHAR(50), NOT NULL, FK -> `parliamentary_constituencies.id` ON DELETE RESTRICT): Parent Lok Sabha constituency for dual mapping.
+- `districtId` (VARCHAR(50), NOT NULL): Primary district location.
+- `parentParliamentaryConstituencyId` (VARCHAR(50), NOT NULL): Parent Lok Sabha constituency for dual mapping.
 - `constituencyNumber` (INTEGER, NOT NULL): Official AC sequence number.
 - `name` (VARCHAR(150), NOT NULL): Official constituency name.
 - `reservationType` (ENUM `ReservationType`, NOT NULL DEFAULT `'GENERAL'`): `'GENERAL'`, `'SC'`, or `'ST'`.
 - `totalVoters` (INTEGER, NOT NULL DEFAULT 0): Official registered electorate count.
 - `metadataSource` (ENUM `MetadataSource`, NOT NULL DEFAULT `'VERIFIED_OFFICIAL'`).
-- `createdAt` / `updatedAt` (TIMESTAMPTZ).
+- `createdAt` / `updatedAt` (TIMESTAMPTZ(6)).
 - **Unique Constraint**: `UNIQUE (stateId, constituencyNumber)`.
-- **Index**: `CREATE INDEX idx_acs_parent_pc ON assembly_constituencies(parentParliamentaryConstituencyId);`
-- **Index**: `CREATE INDEX idx_acs_district ON assembly_constituencies(districtId);`
+- **Composite Unique Keys**:
+  - `UNIQUE (id, stateId)`
+  - `UNIQUE (id, parentParliamentaryConstituencyId)`
+- **Composite Foreign Keys**:
+  - `FOREIGN KEY (districtId, stateId) REFERENCES districts(id, stateId) ON DELETE RESTRICT`
+  - `FOREIGN KEY (parentParliamentaryConstituencyId, stateId) REFERENCES parliamentary_constituencies(id, stateId) ON DELETE RESTRICT`
+- **Indexes**:
+  - `CREATE INDEX idx_acs_parent_pc ON assembly_constituencies(parentParliamentaryConstituencyId);`
+  - `CREATE INDEX idx_acs_district ON assembly_constituencies(districtId);`
 
 ---
 
 ### 2.2 Group B: User & Voter Management
 
 #### Table: `users`
-Base authentication account (for voters, admins, and auditors).
+Base authentication account (for voters and admins).
 - `id` (UUID, PRIMARY KEY DEFAULT gen_random_uuid()).
 - `userType` (ENUM `UserType`, NOT NULL): `'VOTER'` or `'ADMIN'`.
 - `identifier` (VARCHAR(100), UNIQUE NOT NULL): EPIC voter ID (e.g. `'WBX1234567'`) or Admin Officer Code (e.g. `'ECI-SUPER-001'`).
 - `passwordHash` (VARCHAR(255), NOT NULL): Argon2id password/passcode hash.
 - `isActive` (BOOLEAN, NOT NULL DEFAULT TRUE).
 - `failedLoginAttempts` (INTEGER, NOT NULL DEFAULT 0).
-- `lockoutUntil` (TIMESTAMPTZ, NULL).
-- `lastLoginAt` (TIMESTAMPTZ, NULL).
-- `createdAt` / `updatedAt` (TIMESTAMPTZ).
+- `lockoutUntil` (TIMESTAMPTZ(6), NULL).
+- `lastLoginAt` (TIMESTAMPTZ(6), NULL).
+- `createdAt` / `updatedAt` (TIMESTAMPTZ(6)).
 
 #### Table: `voter_profiles`
 Voter demographic and constituency mapping.
@@ -98,13 +110,17 @@ Voter demographic and constituency mapping.
 - `address` (TEXT, NOT NULL): Residential street address.
 - `pinCode` (VARCHAR(10), NOT NULL): 6-digit Indian Postal PIN code.
 - `stateId` (VARCHAR(10), NOT NULL, FK -> `states.id` ON DELETE RESTRICT).
-- `districtId` (VARCHAR(50), NOT NULL, FK -> `districts.id` ON DELETE RESTRICT).
-- `parliamentaryConstituencyId` (VARCHAR(50), NOT NULL, FK -> `parliamentary_constituencies.id` ON DELETE RESTRICT).
-- `assemblyConstituencyId` (VARCHAR(50), NOT NULL, FK -> `assembly_constituencies.id` ON DELETE RESTRICT).
-- `registrationDate` (TIMESTAMPTZ, NOT NULL DEFAULT NOW()).
+- `districtId` (VARCHAR(50), NOT NULL).
+- `parliamentaryConstituencyId` (VARCHAR(50), NOT NULL).
+- `assemblyConstituencyId` (VARCHAR(50), NOT NULL).
+- `registrationDate` (TIMESTAMPTZ(6), NOT NULL DEFAULT NOW()).
 - `isVerified` (BOOLEAN, NOT NULL DEFAULT TRUE).
 - `metadataSource` (ENUM `MetadataSource`, NOT NULL DEFAULT `'DEMO_SAMPLE'`).
-- `createdAt` / `updatedAt` (TIMESTAMPTZ).
+- `createdAt` / `updatedAt` (TIMESTAMPTZ(6)).
+- **Composite Foreign Keys**:
+  - `FOREIGN KEY (districtId, stateId) REFERENCES districts(id, stateId) ON DELETE RESTRICT`
+  - `FOREIGN KEY (parliamentaryConstituencyId, stateId) REFERENCES parliamentary_constituencies(id, stateId) ON DELETE RESTRICT`
+  - `FOREIGN KEY (assemblyConstituencyId, parliamentaryConstituencyId) REFERENCES assembly_constituencies(id, parentParliamentaryConstituencyId) ON DELETE RESTRICT`
 - **Index**: `CREATE INDEX idx_voters_geography ON voter_profiles(stateId, parliamentaryConstituencyId, assemblyConstituencyId);`
 
 #### Table: `user_sessions`
@@ -113,8 +129,8 @@ Server-backed session tracking for authenticated users.
 - `userId` (UUID, NOT NULL, FK -> `users.id` ON DELETE CASCADE).
 - `userAgent` (TEXT, NULL).
 - `ipAddress` (VARCHAR(45), NULL).
-- `expiresAt` (TIMESTAMPTZ, NOT NULL).
-- `createdAt` (TIMESTAMPTZ, NOT NULL DEFAULT NOW()).
+- `expiresAt` (TIMESTAMPTZ(6), NOT NULL).
+- `createdAt` (TIMESTAMPTZ(6), NOT NULL DEFAULT NOW()).
 - **Index**: `CREATE INDEX idx_sessions_user_expiry ON user_sessions(userId, expiresAt);`
 
 #### Table: `auth_challenges`
@@ -124,9 +140,9 @@ Tracks OTP authentication challenges.
 - `otpHash` (VARCHAR(255), NOT NULL): Hashed simulated/generated OTP.
 - `attempts` (INTEGER, NOT NULL DEFAULT 0).
 - `maxAttempts` (INTEGER, NOT NULL DEFAULT 3).
-- `expiresAt` (TIMESTAMPTZ, NOT NULL): 120-second default validity.
-- `consumedAt` (TIMESTAMPTZ, NULL).
-- `createdAt` (TIMESTAMPTZ, NOT NULL DEFAULT NOW()).
+- `expiresAt` (TIMESTAMPTZ(6), NOT NULL): 120-second default validity.
+- `consumedAt` (TIMESTAMPTZ(6), NULL).
+- `createdAt` (TIMESTAMPTZ(6), NOT NULL DEFAULT NOW()).
 - **Index**: `CREATE INDEX idx_challenges_lookup ON auth_challenges(identifier, consumedAt, expiresAt);`
 
 ---
@@ -156,19 +172,31 @@ Master record for national and state elections.
 - `demoSandboxMode` (VARCHAR(50), NOT NULL DEFAULT `'CONCURRENT_SIMULATION_SANDBOX'`).
 - `description` (TEXT, NOT NULL DEFAULT '').
 - `metadataSource` (ENUM `MetadataSource`, NOT NULL DEFAULT `'DEMO_SAMPLE'`).
-- `createdAt` / `updatedAt` (TIMESTAMPTZ).
+- `createdAt` / `updatedAt` (TIMESTAMPTZ(6)).
+- **Check Constraint**: `CHECK ((type = 'LOK_SABHA' AND state_id IS NULL) OR (type = 'STATE_ASSEMBLY' AND state_id IS NOT NULL))`
 - **Index**: `CREATE INDEX idx_elections_status_type ON elections(status, type);`
 
 #### Table: `election_constituencies`
-Many-to-many junction mapping elections to participating constituencies.
+Junction mapping elections to participating constituencies with strict type mutual exclusivity.
 - `id` (UUID, PRIMARY KEY DEFAULT gen_random_uuid()).
 - `electionId` (VARCHAR(50), NOT NULL, FK -> `elections.id` ON DELETE CASCADE).
 - `constituencyType` (ENUM `ConstituencyType`, NOT NULL): `'PARLIAMENTARY'` or `'ASSEMBLY'`.
 - `parliamentaryConstituencyId` (VARCHAR(50), NULL, FK -> `parliamentary_constituencies.id` ON DELETE CASCADE).
 - `assemblyConstituencyId` (VARCHAR(50), NULL, FK -> `assembly_constituencies.id` ON DELETE CASCADE).
-- `createdAt` (TIMESTAMPTZ, NOT NULL DEFAULT NOW()).
-- **Unique Constraint**: `UNIQUE (electionId, parliamentaryConstituencyId, assemblyConstituencyId)`.
-- **Check Constraint**: Enforces PC is set if type=PARLIAMENTARY, and AC is set if type=ASSEMBLY.
+- `createdAt` (TIMESTAMPTZ(6), NOT NULL DEFAULT NOW()).
+- **Check Constraint**:
+  ```sql
+  CHECK (
+    (constituency_type = 'PARLIAMENTARY' AND parliamentary_constituency_id IS NOT NULL AND assembly_constituency_id IS NULL)
+    OR
+    (constituency_type = 'ASSEMBLY' AND assembly_constituency_id IS NOT NULL AND parliamentary_constituency_id IS NULL)
+  );
+  ```
+- **Partial Unique Indexes** (Replaces buggy standard nullable unique constraint):
+  ```sql
+  CREATE UNIQUE INDEX uq_election_constituency_pc ON election_constituencies (election_id, parliamentary_constituency_id) WHERE parliamentary_constituency_id IS NOT NULL;
+  CREATE UNIQUE INDEX uq_election_constituency_ac ON election_constituencies (election_id, assembly_constituency_id) WHERE assembly_constituency_id IS NOT NULL;
+  ```
 
 #### Table: `election_lifecycle_history`
 Append-only log of election status transitions.
@@ -177,7 +205,7 @@ Append-only log of election status transitions.
 - `fromStatus` (ENUM `ElectionStatus`, NOT NULL).
 - `toStatus` (ENUM `ElectionStatus`, NOT NULL).
 - `changedByAdminId` (UUID, NULL, FK -> `admin_users.id` ON DELETE SET NULL).
-- `changedAt` (TIMESTAMPTZ, NOT NULL DEFAULT NOW()).
+- `changedAt` (TIMESTAMPTZ(6), NOT NULL DEFAULT NOW()).
 - `note` (TEXT, NOT NULL DEFAULT '').
 - `metadata` (JSONB, NOT NULL DEFAULT '{}').
 
@@ -197,7 +225,7 @@ Registered national and state political parties.
 - `headquarters` (VARCHAR(150), NULL).
 - `status` (ENUM `PartyStatus`, NOT NULL DEFAULT `'ACTIVE'`): `'ACTIVE'`, `'INACTIVE'`, or `'ARCHIVED'`.
 - `metadataSource` (ENUM `MetadataSource`, NOT NULL DEFAULT `'DEMO_SAMPLE'`).
-- `createdAt` / `updatedAt` (TIMESTAMPTZ).
+- `createdAt` / `updatedAt` (TIMESTAMPTZ(6)).
 
 #### Table: `candidates`
 Individual candidate profiles.
@@ -213,24 +241,37 @@ Individual candidate profiles.
 - `photoUrl` (VARCHAR(500), NULL).
 - `bio` (TEXT, NOT NULL DEFAULT '').
 - `partyId` (VARCHAR(50), NOT NULL, FK -> `political_parties.id` ON DELETE RESTRICT).
-- `createdAt` / `updatedAt` (TIMESTAMPTZ).
+- `createdAt` / `updatedAt` (TIMESTAMPTZ(6)).
+- **Composite Unique Key**: `UNIQUE (id, partyId)` (enables candidate-party verification in tallies).
 
 #### Table: `candidate_nominations`
-Maps candidate nominations to specific elections and constituencies.
+Maps candidate nominations to specific elections and constituencies with strict type mutual exclusivity.
 - `id` (UUID, PRIMARY KEY DEFAULT gen_random_uuid()).
 - `candidateId` (VARCHAR(50), NOT NULL, FK -> `candidates.id` ON DELETE CASCADE).
 - `electionId` (VARCHAR(50), NOT NULL, FK -> `elections.id` ON DELETE CASCADE).
 - `constituencyType` (ENUM `ConstituencyType`, NOT NULL).
 - `parliamentaryConstituencyId` (VARCHAR(50), NULL, FK -> `parliamentary_constituencies.id` ON DELETE CASCADE).
 - `assemblyConstituencyId` (VARCHAR(50), NULL, FK -> `assembly_constituencies.id` ON DELETE CASCADE).
-- `nominationDate` (TIMESTAMPTZ, NOT NULL DEFAULT NOW()).
+- `nominationDate` (TIMESTAMPTZ(6), NOT NULL DEFAULT NOW()).
 - `status` (ENUM `CandidateNominationStatus`, NOT NULL DEFAULT `'APPROVED'`): `'DRAFT'`, `'SUBMITTED'`, `'UNDER_REVIEW'`, `'APPROVED'`, `'REJECTED'`, `'WITHDRAWN'`, `'SUSPENDED'`, `'ARCHIVED'`.
 - `scrutinyNote` (TEXT, NOT NULL DEFAULT '').
-- `scrutinyDate` (TIMESTAMPTZ, NULL).
+- `scrutinyDate` (TIMESTAMPTZ(6), NULL).
 - `scrutinizedByAdminId` (UUID, NULL, FK -> `admin_users.id` ON DELETE SET NULL).
-- `createdAt` / `updatedAt` (TIMESTAMPTZ).
+- `createdAt` / `updatedAt` (TIMESTAMPTZ(6)).
 - **Unique Constraint**: `UNIQUE (candidateId, electionId)`.
-- **Index**: `CREATE INDEX idx_nominations_election_constituency ON candidate_nominations(electionId, status);`
+- **Check Constraint**:
+  ```sql
+  CHECK (
+    (constituency_type = 'PARLIAMENTARY' AND parliamentary_constituency_id IS NOT NULL AND assembly_constituency_id IS NULL)
+    OR
+    (constituency_type = 'ASSEMBLY' AND assembly_constituency_id IS NOT NULL AND parliamentary_constituency_id IS NULL)
+  );
+  ```
+- **Partial Unique Indexes**:
+  ```sql
+  CREATE UNIQUE INDEX uq_nomination_candidate_pc ON candidate_nominations (election_id, parliamentary_constituency_id, candidate_id) WHERE parliamentary_constituency_id IS NOT NULL;
+  CREATE UNIQUE INDEX uq_nomination_candidate_ac ON candidate_nominations (election_id, assembly_constituency_id, candidate_id) WHERE assembly_constituency_id IS NOT NULL;
+  ```
 
 ---
 
@@ -245,9 +286,18 @@ ECI administrative officers.
 - `designation` (VARCHAR(150), NOT NULL).
 - `role` (ENUM `AdminRole`, NOT NULL): `'SUPER_ADMIN'`, `'NATIONAL_ADMIN'`, `'STATE_ADMIN'`, `'ELECTION_OFFICER'`, or `'READ_ONLY_AUDITOR'`.
 - `assignedStateId` (VARCHAR(10), NULL, FK -> `states.id` ON DELETE RESTRICT): Scope filter for `STATE_ADMIN` / `ELECTION_OFFICER`.
-- `assignedElectionIds` (TEXT[], NOT NULL DEFAULT '{}'): Scope filter for `ELECTION_OFFICER`.
 - `isActive` (BOOLEAN, NOT NULL DEFAULT TRUE).
-- `createdAt` / `updatedAt` (TIMESTAMPTZ).
+- `createdAt` / `updatedAt` (TIMESTAMPTZ(6)).
+
+#### Table: `admin_election_scopes`
+Normalized relation mapping `ELECTION_OFFICER` admins to their assigned election jurisdictions (replaces unstructured arrays).
+- `id` (UUID, PRIMARY KEY DEFAULT gen_random_uuid()).
+- `adminUserId` (UUID, NOT NULL, FK -> `admin_users.id` ON DELETE CASCADE).
+- `electionId` (VARCHAR(50), NOT NULL, FK -> `elections.id` ON DELETE CASCADE).
+- `assignedAt` (TIMESTAMPTZ(6), NOT NULL DEFAULT NOW()).
+- `assignedByAdminId` (UUID, NULL, FK -> `admin_users.id` ON DELETE SET NULL).
+- **Unique Constraint**: `UNIQUE (adminUserId, electionId)`.
+- **Index**: `CREATE INDEX idx_admin_scopes_election ON admin_election_scopes(electionId);`
 
 #### Table: `admin_action_logs`
 Sanitized, append-only administrative audit log.
@@ -258,7 +308,7 @@ Sanitized, append-only administrative audit log.
 - `targetEntityId` (VARCHAR(100), NOT NULL).
 - `details` (JSONB, NOT NULL DEFAULT '{}'): Sanitized details (sensitive secrets, passwords, and OTPs redacted).
 - `ipAddress` (VARCHAR(45), NULL).
-- `timestamp` (TIMESTAMPTZ, NOT NULL DEFAULT NOW()).
+- `timestamp` (TIMESTAMPTZ(6), NOT NULL DEFAULT NOW()).
 - **Index**: `CREATE INDEX idx_admin_logs_target ON admin_action_logs(domain, targetEntityId, timestamp);`
 
 ---
@@ -273,8 +323,8 @@ Voter demo participation tracking with zero candidate-choice storage.
 - `status` (ENUM `ParticipationStatus`, NOT NULL DEFAULT `'VOTED'`).
 - `demoReference` (VARCHAR(30), NOT NULL): Non-sensitive reference (e.g. `'DEMO-LS-000001'`).
 - `referenceId` (VARCHAR(60), NOT NULL): Composite reference (e.g. `'DEMO-REF-LS2029-VOTER001'`).
-- `participatedAt` (TIMESTAMPTZ, NOT NULL): Simulated event timestamp from centralized clock.
-- `recordedAt` (TIMESTAMPTZ, NOT NULL DEFAULT NOW()): Actual server execution timestamp.
+- `participatedAt` (TIMESTAMPTZ(6), NOT NULL): Simulated event timestamp from centralized clock.
+- `recordedAt` (TIMESTAMPTZ(6), NOT NULL DEFAULT NOW()): Actual server execution timestamp.
 - `metadata` (JSONB, NOT NULL DEFAULT '{}'): Sanitized non-choice metadata.
 - **Unique Constraint**: `UNIQUE (voterId, electionId)`. Enforces one demo participation record per voter per election.
 - **Index**: `CREATE INDEX idx_participations_lookup ON demo_participations(voterId, electionId);`
@@ -295,7 +345,7 @@ Independent deterministic constituency counting sessions.
 - `assemblyConstituencyId` (VARCHAR(50), NULL, FK -> `assembly_constituencies.id` ON DELETE CASCADE).
 - `totalConfiguredRounds` (INTEGER, NOT NULL DEFAULT 5).
 - `currentRound` (INTEGER, NOT NULL DEFAULT 0).
-- `status` (ENUM `ResultStatus`, NOT NULL DEFAULT `'DRAFT'`): Lifecycle state (`DRAFT`, `COUNTING_IN_PROGRESS`, `COUNTING_PAUSED`, `COUNTING_COMPLETED`, `RESULT_READY_FOR_REVIEW`, `PUBLISHED`, `TIED`, `CORRECTED`, etc.).
+- `status` (ENUM `ResultStatus`, NOT NULL DEFAULT `'DRAFT'`): Lifecycle state (`DRAFT`, `COUNTING_IN_PROGRESS`, `COUNTING_PAUSED`, `COUNTING_COMPLETED`, `RESULT_READY_FOR_REVIEW`, `PUBLISHED`, `TIED`, `UNDER_REVIEW`, `CORRECTED`, `UNPUBLISHED`).
 - `totalVoters` (INTEGER, NOT NULL): Sanctioned electorate for turnout calculation.
 - `totalCountedVotes` (INTEGER, NOT NULL DEFAULT 0).
 - `notaVotes` (INTEGER, NOT NULL DEFAULT 0).
@@ -304,11 +354,24 @@ Independent deterministic constituency counting sessions.
 - `runnerUpCandidateId` (VARCHAR(50), NULL, FK -> `candidates.id` ON DELETE SET NULL).
 - `victoryMargin` (INTEGER, NOT NULL DEFAULT 0).
 - `isPublished` (BOOLEAN, NOT NULL DEFAULT FALSE).
-- `publishedAt` (TIMESTAMPTZ, NULL).
+- `publishedAt` (TIMESTAMPTZ(6), NULL).
 - `publishedByAdminId` (UUID, NULL, FK -> `admin_users.id` ON DELETE SET NULL).
-- `createdAt` / `updatedAt` (TIMESTAMPTZ).
-- **Unique Constraint**: `UNIQUE (electionId, parliamentaryConstituencyId, assemblyConstituencyId)`.
-- **Index**: `CREATE INDEX idx_counting_sessions_pub ON counting_sessions(isPublished, electionId);`
+- `createdAt` / `updatedAt` (TIMESTAMPTZ(6)).
+- **Check Constraints**:
+  ```sql
+  CHECK (
+    (constituency_type = 'PARLIAMENTARY' AND parliamentary_constituency_id IS NOT NULL AND assembly_constituency_id IS NULL)
+    OR
+    (constituency_type = 'ASSEMBLY' AND assembly_constituency_id IS NOT NULL AND parliamentary_constituency_id IS NULL)
+  );
+  CHECK (current_round <= total_configured_rounds);
+  CHECK (nota_votes >= 0 AND rejected_votes >= 0 AND total_counted_votes >= 0);
+  ```
+- **Partial Unique Indexes**:
+  ```sql
+  CREATE UNIQUE INDEX uq_counting_session_pc ON counting_sessions (election_id, parliamentary_constituency_id) WHERE parliamentary_constituency_id IS NOT NULL;
+  CREATE UNIQUE INDEX uq_counting_session_ac ON counting_sessions (election_id, assembly_constituency_id) WHERE assembly_constituency_id IS NOT NULL;
+  ```
 
 #### Table: `counting_rounds`
 Sequential round progression records.
@@ -319,21 +382,24 @@ Sequential round progression records.
 - `cumulativeVotes` (INTEGER, NOT NULL DEFAULT 0).
 - `leadingCandidateId` (VARCHAR(50), NULL, FK -> `candidates.id` ON DELETE SET NULL).
 - `leadMargin` (INTEGER, NOT NULL DEFAULT 0).
-- `processedAt` (TIMESTAMPTZ, NOT NULL DEFAULT NOW()).
+- `processedAt` (TIMESTAMPTZ(6), NOT NULL DEFAULT NOW()).
 - `processedByAdminId` (UUID, NULL, FK -> `admin_users.id` ON DELETE SET NULL).
 - **Unique Constraint**: `UNIQUE (sessionId, roundNumber)`.
 - **Index**: `CREATE INDEX idx_rounds_session ON counting_rounds(sessionId, roundNumber);`
 
 #### Table: `candidate_tallies`
-Independent candidate vote counts per counting session.
+Independent candidate vote counts per counting session with verified candidate-party consistency.
 - `id` (UUID, PRIMARY KEY DEFAULT gen_random_uuid()).
 - `sessionId` (VARCHAR(100), NOT NULL, FK -> `counting_sessions.id` ON DELETE CASCADE).
-- `candidateId` (VARCHAR(50), NOT NULL, FK -> `candidates.id` ON DELETE CASCADE).
-- `partyId` (VARCHAR(50), NOT NULL, FK -> `political_parties.id` ON DELETE RESTRICT).
+- `candidateId` (VARCHAR(50), NOT NULL).
+- `partyId` (VARCHAR(50), NOT NULL).
 - `votes` (INTEGER, NOT NULL DEFAULT 0).
 - `voteSharePercentage` (NUMERIC(5, 2), NOT NULL DEFAULT 0.00).
-- `createdAt` / `updatedAt` (TIMESTAMPTZ).
+- `createdAt` / `updatedAt` (TIMESTAMPTZ(6)).
 - **Unique Constraint**: `UNIQUE (sessionId, candidateId)`.
+- **Composite Foreign Key**:
+  `FOREIGN KEY (candidateId, partyId) REFERENCES candidates(id, partyId) ON DELETE RESTRICT`
+- **Check Constraint**: `CHECK (votes >= 0 AND vote_share_percentage >= 0.00 AND vote_share_percentage <= 100.00)`
 
 #### Table: `result_correction_history`
 Documented administrative audit trail for result revisions.
@@ -343,14 +409,14 @@ Documented administrative audit trail for result revisions.
 - `correctedState` (JSONB, NOT NULL).
 - `reason` (TEXT, NOT NULL).
 - `correctedByAdminId` (UUID, NOT NULL, FK -> `admin_users.id` ON DELETE RESTRICT).
-- `correctedAt` (TIMESTAMPTZ, NOT NULL DEFAULT NOW()).
+- `correctedAt` (TIMESTAMPTZ(6), NOT NULL DEFAULT NOW()).
 
 ---
 
 ### 2.8 Group H: Announcements & Notifications
 
 #### Table: `announcements`
-Portal announcements issued by ECI administrators.
+Portal announcements issued by ECI administrators with strictly typed constituency targeting.
 - `id` (VARCHAR(50), PRIMARY KEY): (e.g. `'ANN-001'`).
 - `title` (VARCHAR(200), NOT NULL).
 - `summary` (TEXT, NOT NULL).
@@ -359,12 +425,24 @@ Portal announcements issued by ECI administrators.
 - `targetAudience` (ENUM `AnnouncementAudience`, NOT NULL DEFAULT `'ALL_VOTERS'`): `'ALL_VOTERS'`, `'SPECIFIC_STATE'`, `'SPECIFIC_ELECTION'`, `'SPECIFIC_CONSTITUENCY'`.
 - `targetStateId` (VARCHAR(10), NULL, FK -> `states.id` ON DELETE SET NULL).
 - `targetElectionId` (VARCHAR(50), NULL, FK -> `elections.id` ON DELETE SET NULL).
-- `targetConstituencyId` (VARCHAR(50), NULL).
+- `targetConstituencyType` (ENUM `ConstituencyType`, NULL).
+- `targetParliamentaryConstituencyId` (VARCHAR(50), NULL, FK -> `parliamentary_constituencies.id` ON DELETE SET NULL).
+- `targetAssemblyConstituencyId` (VARCHAR(50), NULL, FK -> `assembly_constituencies.id` ON DELETE SET NULL).
 - `publicationDate` (DATE, NOT NULL).
 - `expiryDate` (DATE, NOT NULL).
 - `status` (ENUM `AnnouncementStatus`, NOT NULL DEFAULT `'PUBLISHED'`): `'DRAFT'`, `'PUBLISHED'`, `'ARCHIVED'`.
 - `createdByAdminId` (UUID, NULL, FK -> `admin_users.id` ON DELETE SET NULL).
-- `createdAt` / `updatedAt` (TIMESTAMPTZ).
+- `createdAt` / `updatedAt` (TIMESTAMPTZ(6)).
+- **Check Constraint**:
+  ```sql
+  CHECK (
+    (target_constituency_type IS NULL AND target_parliamentary_constituency_id IS NULL AND target_assembly_constituency_id IS NULL)
+    OR
+    (target_constituency_type = 'PARLIAMENTARY' AND target_parliamentary_constituency_id IS NOT NULL AND target_assembly_constituency_id IS NULL)
+    OR
+    (target_constituency_type = 'ASSEMBLY' AND target_assembly_constituency_id IS NOT NULL AND target_parliamentary_constituency_id IS NULL)
+  );
+  ```
 - **Index**: `CREATE INDEX idx_announcements_audience ON announcements(status, targetAudience, publicationDate);`
 
 #### Table: `voter_notifications`
@@ -374,7 +452,125 @@ Targeted notification feed for individual voter profiles.
 - `type` (ENUM `NotificationType`, NOT NULL): `'ELECTION_ANNOUNCEMENT'`, `'POLLING_SCHEDULE'`, `'ELECTION_REMINDER'`, `'RESULT_PUBLISHED'`, etc.
 - `title` (VARCHAR(200), NOT NULL).
 - `message` (TEXT, NOT NULL).
-- `timestamp` (TIMESTAMPTZ, NOT NULL DEFAULT NOW()).
+- `timestamp` (TIMESTAMPTZ(6), NOT NULL DEFAULT NOW()).
 - `isRead` (BOOLEAN, NOT NULL DEFAULT FALSE).
-- `readAt` (TIMESTAMPTZ, NULL).
+- `readAt` (TIMESTAMPTZ(6), NULL).
 - **Index**: `CREATE INDEX idx_notifications_voter_unread ON voter_notifications(voterId, isRead);`
+
+---
+
+## 3. Custom SQL Migrations Required (Beyond Prisma Capabilities)
+
+Prisma Schema Language (PSL) cannot natively express PostgreSQL conditional `CHECK` constraints, partial indexes (`WHERE` clauses), or composite foreign keys spanning self-referencing and parent-child tables. The following custom SQL migration script must be applied:
+
+```sql
+-- migration_custom_integrity.sql
+
+-- 1. Partial Unique Indexes for Nullable Composite Uniqueness
+CREATE UNIQUE INDEX uq_election_constituency_pc 
+  ON election_constituencies (election_id, parliamentary_constituency_id) 
+  WHERE parliamentary_constituency_id IS NOT NULL;
+
+CREATE UNIQUE INDEX uq_election_constituency_ac 
+  ON election_constituencies (election_id, assembly_constituency_id) 
+  WHERE assembly_constituency_id IS NOT NULL;
+
+CREATE UNIQUE INDEX uq_nomination_candidate_pc 
+  ON candidate_nominations (election_id, parliamentary_constituency_id, candidate_id) 
+  WHERE parliamentary_constituency_id IS NOT NULL;
+
+CREATE UNIQUE INDEX uq_nomination_candidate_ac 
+  ON candidate_nominations (election_id, assembly_constituency_id, candidate_id) 
+  WHERE assembly_constituency_id IS NOT NULL;
+
+CREATE UNIQUE INDEX uq_counting_session_pc 
+  ON counting_sessions (election_id, parliamentary_constituency_id) 
+  WHERE parliamentary_constituency_id IS NOT NULL;
+
+CREATE UNIQUE INDEX uq_counting_session_ac 
+  ON counting_sessions (election_id, assembly_constituency_id) 
+  WHERE assembly_constituency_id IS NOT NULL;
+
+-- 2. Constituency Type Mutual Exclusivity CHECK Constraints
+ALTER TABLE election_constituencies
+  ADD CONSTRAINT chk_election_constituency_type_exclusivity
+  CHECK (
+    (constituency_type = 'PARLIAMENTARY' AND parliamentary_constituency_id IS NOT NULL AND assembly_constituency_id IS NULL)
+    OR
+    (constituency_type = 'ASSEMBLY' AND assembly_constituency_id IS NOT NULL AND parliamentary_constituency_id IS NULL)
+  );
+
+ALTER TABLE candidate_nominations
+  ADD CONSTRAINT chk_nomination_constituency_type_exclusivity
+  CHECK (
+    (constituency_type = 'PARLIAMENTARY' AND parliamentary_constituency_id IS NOT NULL AND assembly_constituency_id IS NULL)
+    OR
+    (constituency_type = 'ASSEMBLY' AND assembly_constituency_id IS NOT NULL AND parliamentary_constituency_id IS NULL)
+  );
+
+ALTER TABLE counting_sessions
+  ADD CONSTRAINT chk_counting_session_constituency_type_exclusivity
+  CHECK (
+    (constituency_type = 'PARLIAMENTARY' AND parliamentary_constituency_id IS NOT NULL AND assembly_constituency_id IS NULL)
+    OR
+    (constituency_type = 'ASSEMBLY' AND assembly_constituency_id IS NOT NULL AND parliamentary_constituency_id IS NULL)
+  );
+
+-- 3. Election Type Scope CHECK Constraints
+ALTER TABLE elections
+  ADD CONSTRAINT chk_election_type_state_scope
+  CHECK (
+    (type = 'LOK_SABHA' AND state_id IS NULL)
+    OR
+    (type = 'STATE_ASSEMBLY' AND state_id IS NOT NULL)
+  );
+
+-- 4. Counting & Tally Numerical Integrity CHECK Constraints
+ALTER TABLE counting_sessions
+  ADD CONSTRAINT chk_counting_round_bounds
+  CHECK (current_round <= total_configured_rounds);
+
+ALTER TABLE counting_sessions
+  ADD CONSTRAINT chk_counting_vote_non_negative
+  CHECK (nota_votes >= 0 AND rejected_votes >= 0 AND total_counted_votes >= 0);
+
+ALTER TABLE candidate_tallies
+  ADD CONSTRAINT chk_tally_vote_and_share_bounds
+  CHECK (votes >= 0 AND vote_share_percentage >= 0.00 AND vote_share_percentage <= 100.00);
+
+-- 5. Announcement Constituency Targeting CHECK Constraints
+ALTER TABLE announcements
+  ADD CONSTRAINT chk_announcement_constituency_targeting
+  CHECK (
+    (target_constituency_type IS NULL AND target_parliamentary_constituency_id IS NULL AND target_assembly_constituency_id IS NULL)
+    OR
+    (target_constituency_type = 'PARLIAMENTARY' AND target_parliamentary_constituency_id IS NOT NULL AND target_assembly_constituency_id IS NULL)
+    OR
+    (target_constituency_type = 'ASSEMBLY' AND target_assembly_constituency_id IS NOT NULL AND target_parliamentary_constituency_id IS NULL)
+  );
+
+-- 6. Trigger to Prevent Result Publication on Incomplete Counting or Ties
+CREATE OR REPLACE FUNCTION verify_counting_session_publication()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.is_published = TRUE AND OLD.is_published = FALSE THEN
+    IF NEW.status NOT IN ('RESULT_READY_FOR_REVIEW', 'PUBLISHED') THEN
+      RAISE EXCEPTION 'Cannot publish result when status is %', NEW.status;
+    END IF;
+    IF NEW.current_round < NEW.total_configured_rounds THEN
+      RAISE EXCEPTION 'Cannot publish result before counting completes (current round % of %)', 
+        NEW.current_round, NEW.total_configured_rounds;
+    END IF;
+    IF NEW.status = 'TIED' THEN
+      RAISE EXCEPTION 'Cannot publish result while in TIED status without formal resolution';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_verify_counting_session_publication
+  BEFORE UPDATE ON counting_sessions
+  FOR EACH ROW
+  EXECUTE FUNCTION verify_counting_session_publication();
+```

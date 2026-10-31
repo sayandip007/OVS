@@ -1,4 +1,4 @@
-# OVS Frontend-to-Backend Migration Plan
+# OVS Frontend-to-Backend Migration Plan (Phase 8.1.1 Corrected)
 
 ## 1. Executive Migration Strategy
 
@@ -8,6 +8,8 @@ To ensure **zero regressions** and complete operational safety during backend in
 1. **Dual-Mode Operation**: The application will support both `LOCAL_DEMO` mode (using existing `localStorage` and seeded JS data) and `BACKEND_API` mode (connecting to `/api/v1/*` via Express and PostgreSQL).
 2. **Runtime Mode Switch**: Controlled via environment variable `VITE_DATA_SOURCE_MODE=BACKEND_API | LOCAL_DEMO` with an in-app fallback toggle for development.
 3. **Preserved Service Contracts**: Frontend services retain their method signatures. The implementation inside the service switches between calling local helper functions or executing asynchronous HTTP queries (`apiClient`).
+4. **Cookie & CSRF Discipline**: `apiClient` configures `credentials: 'include'` to send `ovs_session` HttpOnly cookies automatically, and includes the `X-CSRF-Token` header on state-modifying requests (`POST`, `PUT`, `PATCH`, `DELETE`).
+5. **RFC 9457 Error Interception**: `apiClient` interceptors normalize `application/problem+json` error responses directly into user-friendly notifications.
 
 ---
 
@@ -22,7 +24,7 @@ To ensure **zero regressions** and complete operational safety during backend in
 | **`src/services/countingService.js`** | `/api/v1/admin/counting-sessions` & `/api/v1/results` | Standings calculations remain in frontend for instantaneous chart responsiveness; round advancements and result publication transition to `/api/v1/admin/counting-sessions/*`. |
 | **`src/services/dataIntegrityService.js`** | `/api/v1/admin/integrity-audit` | Retains client-side diagnostic suite while adding remote verification calling the backend 17-rule integrity audit endpoint. |
 | **`src/services/adminPermissionService.js`** | `/api/v1/admin/*` & Middleware | Retains client-side UI permission checks (`canAdminAccessRoute`, `canAdminPerformAction`) for responsive navigation while backend middleware strictly enforces permissions on every request. |
-| **`src/context/AuthContext.jsx`** | `/api/v1/auth/*` | Replaces in-memory credential checks with `POST /api/v1/auth/login` and `POST /api/v1/auth/otp/verify`, storing session via HttpOnly cookies. |
+| **`src/context/AuthContext.jsx`** | `/api/v1/auth/*` | Replaces in-memory credential checks with `POST /api/v1/auth/login` and `POST /api/v1/auth/otp/verify`, storing session via HttpOnly cookies and retaining CSRF token. |
 | **`src/context/ElectionContext.jsx`** | Master Domain API Client | Fetches initial elections, candidates, results, announcements, and audit logs via React query / TanStack Query hooks or structured `useEffect` fetches. |
 | **`src/context/VoterContext.jsx`** | `/api/v1/voters/me/*` | Replaces local voter state with `/api/v1/voters/me`, providing live server-backed `eligibleElections` and participation summaries. |
 
@@ -47,7 +49,9 @@ To ensure **zero regressions** and complete operational safety during backend in
 │     LOCAL DEMO IMPLEMENTATION   │    │      API CLIENT IMPLEMENTATION   │
 │  - Browser localStorage         │    │  - fetch / Axios to /api/v1     │
 │  - In-memory mock OTPs          │    │  - HttpOnly Cookie sessions     │
-│  - Instantaneous demo resets    │    │  - PostgreSQL persistent state  │
+│  - Instantaneous demo resets    │    │  - credentials: 'include'       │
+│                                 │    │  - X-CSRF-Token header          │
+│                                 │    │  - PostgreSQL persistent state  │
 └─────────────────────────────────┘    └─────────────────────────────────┘
 ```
 
@@ -64,7 +68,7 @@ export async function recordSimulatedParticipation(params) {
     return recordLocalSimulatedParticipation(params);
   }
 
-  // Backend API Mode
+  // Backend API Mode (Cookie transmitted automatically via credentials: 'include')
   const response = await apiClient.post('/api/v1/demo-participation', {
     electionId: params.electionId,
   });
@@ -85,7 +89,7 @@ export async function recordSimulatedParticipation(params) {
 ## 4. Phased Migration Schedule
 
 ### Phase 8.2 — API Client & Read-Only Domain Integration
-- Introduce `apiClient` with base URL configuration and interceptors.
+- Introduce `apiClient` with base URL configuration, credentials inclusion, CSRF header handling, and RFC 9457 error normalization.
 - Connect `geography`, `parties`, and `elections` read endpoints.
 - Validate that the Public Portal renders from PostgreSQL data without any UI changes.
 

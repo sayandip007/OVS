@@ -1,15 +1,20 @@
-# OVS Authentication & Authorization Architecture
+# OVS Authentication & Authorization Architecture (Phase 8.1.1 Corrected)
 
 ## 1. Executive Summary & Design Principles
 
-Authentication and authorization in the Online Voting System (OVS) backend are designed with defense-in-depth, strict role-based access control (RBAC), jurisdictional scoping, and zero trust in client-side claims.
+Authentication and authorization in the Online Voting System (OVS) backend are designed with defense-in-depth, strict role-based access control (RBAC), normalized jurisdictional scoping, and zero trust in client-side claims.
 
 ### Core Principles:
-1. **Server-Authoritative Enforcement**: Client-side route guards (e.g. `AppRoutes.jsx`) provide UI convenience only. Every backend API route independently validates identity, role membership, and geographic/election scope.
-2. **Separation of Voter and Administrative Identities**: Citizen voters authenticate using their EPIC identifier and mobile verification, while ECI Officers authenticate using Officer Codes, high-entropy passcodes, and mandatory two-factor authentication (MFA).
-3. **Session Security**: Session tokens are cryptographically random 256-bit values stored in server-side session stores and delivered via secure `HttpOnly`, `SameSite=Strict`, `Secure` cookies.
-4. **Honest Distinctions (Educational Demo vs. Production Reality)**:
-   - In demonstration mode, OTPs are simulated (`123456`, resend `654321`) to facilitate testing without external SMS gateways.
+1. **Server-Authoritative Enforcement**: Client-side route guards (e.g. `AppRoutes.jsx`) provide UI convenience only. Every backend API route independently validates identity, role membership, and geographic/election jurisdiction via database lookup.
+2. **Separation of Voter and Administrative Identities**: Citizen voters authenticate using their EPIC identifier and mobile OTP verification, while ECI Officers authenticate using Officer Codes, high-entropy passcodes, and mandatory two-factor authentication (MFA).
+3. **Session Security (Cookie Discipline)**: Pure HttpOnly cookie (`ovs_session`). No Bearer tokens or client-side storage of authentication tokens in LocalStorage/SessionStorage.
+4. **CSRF Defense-in-Depth**:
+   - `SameSite=Strict` attribute on the `ovs_session` cookie.
+   - Mandatory anti-CSRF custom header (`X-CSRF-Token`) for all mutating HTTP requests (`POST`, `PUT`, `PATCH`, `DELETE`).
+   - Strict server-side verification of incoming `Origin` and `Referer` headers against allowed domain white-lists.
+5. **Standardized RFC 9457 Errors**: All authorization failures, validation errors, and authentication challenges return `application/problem+json` formatted responses.
+6. **Honest Distinctions (Educational Demo vs. Production Reality)**:
+   - In demonstration mode, OTPs are simulated (`123456`, resend `654321`) with prominent educational UI banners to facilitate testing without external SMS gateways.
    - For any theoretical real-world system, Aadhaar e-KYC, physical EVM-VVPAT protocols, hardware security modules (HSM), and cryptographically verifiable mixnets would be legally mandated.
 
 ---
@@ -40,8 +45,14 @@ Set-Cookie: ovs_session=s%3A7a1b8c...; Path=/api/v1; Max-Age=28800; HttpOnly; Se
 
 ### 3.2 Session Rotation & Invalidation
 - **Login Rotation**: When a user logs in or completes an OTP challenge, any prior session is immediately revoked, and a fresh session ID is issued. This eliminates session fixation vulnerabilities.
-- **Explicit Invalidation**: `POST /api/v1/auth/logout` destroys the session record in PostgreSQL / Redis and sends an expired cookie header (`Max-Age=0`).
+- **Explicit Invalidation**: `POST /api/v1/auth/logout` destroys the session record in PostgreSQL (`user_sessions`) and sends an expired cookie header (`Max-Age=0`).
 - **Inactivity Timeout**: Automatic expiration after 30 minutes of inactivity.
+
+### 3.3 CSRF Mitigation Architecture
+Because the system uses cookie-based authentication, mutating endpoints require multi-layered CSRF defense:
+1. **Cookie Flag**: `SameSite=Strict` ensures cross-site GET or POST requests from external domains do not transmit the session cookie.
+2. **Double-Submit / Session-Bound CSRF Token**: Upon successful login, the server generates a cryptographically random CSRF token tied to the session and returns it in the response payload. The client must include this token in the `X-CSRF-Token` header on all `POST`, `PUT`, `PATCH`, and `DELETE` requests.
+3. **Origin / Referer Validation**: Middleware verifies that the `Origin` or `Referer` header matches the trusted server origin.
 
 ---
 
@@ -62,7 +73,7 @@ Set-Cookie: ovs_session=s%3A7a1b8c...; Path=/api/v1; Max-Age=28800; HttpOnly; Se
 
 ---
 
-## 5. Role-Based Access Control (RBAC) & Scoping
+## 5. Role-Based Access Control (RBAC) & Normalized Scoping
 
 The backend implements the 5 ECI administrative roles defined in `adminPermissionService.js`:
 
@@ -83,7 +94,7 @@ The backend implements the 5 ECI administrative roles defined in `adminPermissio
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │
 ┌───────────────────────────────────▼────────────────────────────────────┐
-│             ELECTION_OFFICER (RO Scoped to assignedElectionIds)        │
+│         ELECTION_OFFICER (RO Scoped via admin_election_scopes)         │
 │   Candidate scrutiny, schedule updates, counting simulation rounds     │
 └───────────────────────────────────┬────────────────────────────────────┘
                                     │
@@ -100,48 +111,77 @@ The backend implements the 5 ECI administrative roles defined in `adminPermissio
 | **System Demo Reset** | Allowed | Denied | Denied | Denied | Denied |
 | **Manage States / UTs** | Allowed | Allowed | Denied | Denied | Denied |
 | **Manage Political Parties** | Allowed | Allowed | Denied | Denied | Denied |
-| **Manage Lok Sabha Elections** | Allowed | Allowed | Denied | Scoped | Denied |
+| **Manage Lok Sabha Elections** | Allowed | Allowed | Denied | Scoped (`electionId`) | Denied |
 | **Manage State Assembly Elections**| Allowed | Allowed | Scoped (`stateId`) | Scoped (`electionId`)| Denied |
+| **Assign Officer Scopes** | Allowed | Allowed | Denied | Denied | Denied |
 | **Candidate Scrutiny / Approval** | Allowed | Allowed | Scoped (`stateId`) | Scoped (`electionId`)| Denied |
 | **Advance Counting Rounds** | Allowed | Allowed | Scoped (`stateId`) | Scoped (`electionId`)| Denied |
 | **Publish Official Results** | Allowed | Allowed | Scoped (`stateId`) | Denied | Denied |
 | **View Audit Logs & Integrity Audit**| Allowed | Allowed | Allowed | Allowed | Allowed |
 
-### 5.2 Scope Guard Middleware Implementation Pattern
+### 5.2 Scope Guard Middleware Implementation Pattern (Normalized)
 
 ```typescript
 // middleware/authorize.ts
+import { Request, Response, NextFunction } from 'express';
+import { prisma } from '../db/client';
+
 export function requireAdminScope(requiredAction: AdminAction) {
   return async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     const admin = req.adminUser;
     if (!admin) {
-      return res.status(403).json({ error: 'ECI Officer credentials required.' });
+      return res.status(403).json({
+        type: 'https://ovs.eci.gov.in/errors/forbidden',
+        title: 'Forbidden',
+        status: 403,
+        detail: 'ECI Officer credentials required.'
+      });
     }
 
     // 1. Check Role Permission
-    if (admin.role === AdminRole.READ_ONLY_AUDITOR && requiredAction !== AdminAction.READ) {
-      return res.status(403).json({ error: 'Read-only auditors cannot perform write operations.' });
+    if (admin.role === 'READ_ONLY_AUDITOR' && requiredAction !== AdminAction.READ) {
+      return res.status(403).json({
+        type: 'https://ovs.eci.gov.in/errors/forbidden',
+        title: 'Forbidden',
+        status: 403,
+        detail: 'Read-only auditors cannot perform write operations.'
+      });
     }
-    if (admin.role === AdminRole.SUPER_ADMIN) {
+    if (admin.role === 'SUPER_ADMIN') {
       return next(); // Unrestricted
     }
 
     // 2. Check Geographic Scope (STATE_ADMIN)
     const targetStateId = req.params.stateId || req.body.stateId;
-    if (admin.role === AdminRole.STATE_ADMIN) {
+    if (admin.role === 'STATE_ADMIN') {
       if (targetStateId && targetStateId !== admin.assignedStateId) {
         return res.status(403).json({
-          error: `Scope violation: Officer is restricted to state ${admin.assignedStateId}.`
+          type: 'https://ovs.eci.gov.in/errors/scope-violation',
+          title: 'Jurisdiction Scope Violation',
+          status: 403,
+          detail: `Officer is restricted to state ${admin.assignedStateId}.`
         });
       }
     }
 
-    // 3. Check Election Scope (ELECTION_OFFICER)
+    // 3. Check Normalized Election Scope (ELECTION_OFFICER)
     const targetElectionId = req.params.electionId || req.body.electionId;
-    if (admin.role === AdminRole.ELECTION_OFFICER) {
-      if (targetElectionId && !admin.assignedElectionIds.includes(targetElectionId)) {
+    if (admin.role === 'ELECTION_OFFICER' && targetElectionId) {
+      const hasScope = await prisma.adminElectionScope.findUnique({
+        where: {
+          adminUserId_electionId: {
+            adminUserId: admin.id,
+            electionId: targetElectionId
+          }
+        }
+      });
+
+      if (!hasScope) {
         return res.status(403).json({
-          error: `Scope violation: Election ${targetElectionId} is not assigned to officer.`
+          type: 'https://ovs.eci.gov.in/errors/scope-violation',
+          title: 'Election Scope Violation',
+          status: 403,
+          detail: `Election ${targetElectionId} is not assigned to this officer.`
         });
       }
     }

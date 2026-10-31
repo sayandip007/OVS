@@ -1,4 +1,4 @@
-# OVS Data Migration & Seed Architecture
+# OVS Data Migration & Seed Architecture (Phase 8.1.1 Corrected)
 
 ## 1. Migration Overview & Seed Strategy
 
@@ -12,7 +12,7 @@ The frontend application currently relies on a structured, normalized set of Jav
 - `voters.js`: 6 multi-state demo voters, 5 ECI administrative officers, voter notifications, and audit logs.
 - `results.js`: Seeded constituency counting sessions and published result records.
 
-The migration strategy translates these static definitions into an **idempotent, relational PostgreSQL seed script** (`prisma/seed.ts`) using Prisma `upsert` queries.
+The migration strategy translates these static definitions into an **idempotent, relational PostgreSQL seed script** (`prisma/seed.ts`) covering all **24 models and 17 enums** using Prisma `upsert` queries.
 
 ---
 
@@ -32,19 +32,20 @@ The seed pipeline must execute in strict dependency order to satisfy relational 
 
 ```text
 Step 1: States & Union Territories (states.js)
-  └── Step 2: Districts (districts.js)
-        └── Step 3: Parliamentary Constituencies (constituencies.js)
+  └── Step 2: Districts (districts.js) [UNIQUE (id, stateId)]
+        └── Step 3: Parliamentary Constituencies (constituencies.js) [UNIQUE (id, stateId)]
               └── Step 4: Assembly Constituencies with parent PC links (constituencies.js)
                     └── Step 5: Political Parties (parties.js)
                           └── Step 6: Elections (elections.js)
-                                ├── Step 7: Election Constituencies junction
-                                ├── Step 8: Candidates & Nominations (candidates.js)
+                                ├── Step 7: Election Constituencies junction (mutual exclusivity enforced)
+                                ├── Step 8: Candidates & Nominations (candidates.js) [UNIQUE (id, partyId)]
                                 ├── Step 9: Users, Admin Officers & Demo Voters (voters.js)
-                                ├── Step 10: Announcements (elections.js)
+                                │     └── Step 9a: Admin Election Scopes (admin_election_scopes)
+                                ├── Step 10: Announcements with typed constituency targeting (elections.js)
                                 └── Step 11: Counting Sessions, Rounds & Tallies (results.js)
 ```
 
-### 3.1 Idempotent Seed Pattern (`prisma/seed.ts`)
+### 3.1 Idempotent Seed Implementation Highlights (`prisma/seed.ts`)
 
 ```typescript
 // prisma/seed.ts snippet
@@ -80,7 +81,7 @@ async function main() {
     });
   }
 
-  // 2. Districts
+  // 2. Districts (satisfies composite unique key [id, stateId])
   for (const dist of INITIAL_DISTRICTS) {
     await prisma.district.upsert({
       where: { id: dist.id },
@@ -95,7 +96,7 @@ async function main() {
     });
   }
 
-  // 3. Parliamentary Constituencies
+  // 3. Parliamentary Constituencies (satisfies composite unique key [id, stateId])
   const pcs = INITIAL_CONSTITUENCIES.filter(c => c.type === 'PARLIAMENTARY');
   for (const pc of pcs) {
     await prisma.parliamentaryConstituency.upsert({
@@ -113,7 +114,7 @@ async function main() {
     });
   }
 
-  // 4. Assembly Constituencies (with parent PC link)
+  // 4. Assembly Constituencies (satisfies composite FKs with parent PC and district)
   const acs = INITIAL_CONSTITUENCIES.filter(c => c.type === 'ASSEMBLY');
   for (const ac of acs) {
     await prisma.assemblyConstituency.upsert({
@@ -129,6 +130,25 @@ async function main() {
         reservationType: ac.reservationType || 'GENERAL',
         totalVoters: ac.totalVoters,
         metadataSource: MetadataSource.VERIFIED_OFFICIAL,
+      },
+    });
+  }
+
+  // 5. Admin Election Scopes (Normalizing officer jurisdiction)
+  // Maps ELECTION_OFFICER accounts explicitly to active elections
+  const electionOfficers = await prisma.adminUser.findMany({ where: { role: 'ELECTION_OFFICER' } });
+  for (const officer of electionOfficers) {
+    await prisma.adminElectionScope.upsert({
+      where: {
+        adminUserId_electionId: {
+          adminUserId: officer.id,
+          electionId: 'LS-2029',
+        },
+      },
+      update: {},
+      create: {
+        adminUserId: officer.id,
+        electionId: 'LS-2029',
       },
     });
   }
