@@ -16,6 +16,11 @@ import {
   RESULT_STATUSES,
   DEMO_CLOCK_CONFIG,
   getDemoReferenceDate,
+  getDemoReferenceIso,
+  setDemoClockConfig,
+  resetDemoClockConfig,
+  isValidIsoDateString,
+  isValidIsoTimestamp,
 } from '../src/utils/constants.js';
 import {
   validateVoterInput,
@@ -2736,6 +2741,270 @@ test('PHASE 7.5.3 — End-to-End User Journey Simulations (Scenarios A–G) & Do
     }
   }
 });
+
+// ============================================================================
+// PHASE 7.6 — FINAL VERIFICATION PATCH: TIMESTAMP & DEMO CLOCK CONSISTENCY
+// ============================================================================
+
+test('PHASE 7.6.1 — Participation Timestamp Consistency: Centralized Demo Clock, Distinct recordedAt, and Zero Candidate Choice Leakage', () => {
+  resetDemoClockConfig();
+  const baseVoter = structuredClone(
+    INITIAL_VOTERS.find((v) => (v.id || v.voterId) === 'VOTER-001')
+  );
+  const lsElection = INITIAL_ELECTIONS.find((e) => e.id === 'LS-2029');
+
+  // 1. Default participation uses configured DEMO_CLOCK_CONFIG.referenceTimestamp (2029-04-20T10:30:00.000Z)
+  const res1 = recordSimulatedParticipation({
+    voter: baseVoter,
+    electionId: 'LS-2029',
+    election: lsElection,
+    selectedCandidateId: 'CAND-LS29-KRN-1',
+    partyId: 'PARTY-INC',
+  });
+  assert.equal(res1.ok, true);
+  assert.equal(res1.participatedAt, '2029-04-20T10:30:00.000Z');
+  assert.equal(
+    res1.voter.elections['LS-2029'].participatedAt,
+    '2029-04-20T10:30:00.000Z'
+  );
+
+  // 2. Changing the centralized demo clock changes the participation timestamp (participatedAt)
+  try {
+    setDemoClockConfig({
+      referenceDate: '2029-05-12',
+      referenceTimestamp: '2029-05-12T14:15:00.000Z',
+    });
+    assert.equal(getDemoReferenceDate(), '2029-05-12');
+    assert.equal(getDemoReferenceIso(), '2029-05-12T14:15:00.000Z');
+
+    const res2 = recordSimulatedParticipation({
+      voter: baseVoter,
+      electionId: 'WB-ASSEMBLY-2029',
+      election: INITIAL_ELECTIONS.find((e) => e.id === 'WB-ASSEMBLY-2029'),
+    });
+    assert.equal(res2.ok, true);
+    assert.equal(res2.participatedAt, '2029-05-12T14:15:00.000Z');
+    assert.equal(
+      res2.voter.elections['WB-ASSEMBLY-2029'].participatedAt,
+      '2029-05-12T14:15:00.000Z'
+    );
+  } finally {
+    resetDemoClockConfig();
+  }
+  assert.equal(DEMO_CLOCK_CONFIG.referenceDate, '2029-04-20');
+  assert.equal(DEMO_CLOCK_CONFIG.referenceTimestamp, '2029-04-20T10:30:00.000Z');
+
+  // 3. Actual recording timestamp (recordedAt) remains distinct from simulated participation timestamp (participatedAt)
+  assert.ok(typeof res1.recordedAt === 'string' && res1.recordedAt.length > 0);
+  assert.equal(isValidIsoTimestamp(res1.recordedAt), true);
+  assert.notEqual(
+    res1.recordedAt,
+    res1.participatedAt,
+    'System recording timestamp (recordedAt) must remain distinct from simulated event timestamp (participatedAt)'
+  );
+  // By default, technical recordedAt is NOT exposed on voter-facing election entries
+  assert.equal('recordedAt' in res1.voter.elections['LS-2029'], false);
+
+  // When includeSystemTimestamp: true is explicitly requested for diagnostics, recordedAt is included
+  const diagRes = recordSimulatedParticipation({
+    voter: baseVoter,
+    electionId: 'LS-2029',
+    election: lsElection,
+    simulatedTimestamp: '2029-04-21T09:00:00.000Z',
+    includeSystemTimestamp: true,
+  });
+  assert.equal(diagRes.ok, true);
+  assert.equal(diagRes.participatedAt, '2029-04-21T09:00:00.000Z');
+  assert.equal(
+    diagRes.voter.elections['LS-2029'].recordedAt,
+    diagRes.recordedAt
+  );
+
+  // 4. Existing participation behavior is not broken & 5. Candidate choices are never added
+  const voterJson = JSON.stringify(res1.voter);
+  assert.equal(voterJson.includes('CAND-LS29-KRN-1'), false);
+  assert.equal(voterJson.includes('PARTY-INC'), false);
+  assert.deepEqual(Object.keys(res1.voter.elections['LS-2029']).sort(), [
+    'demoReference',
+    'participated',
+    'participatedAt',
+    'referenceId',
+    'status',
+  ]);
+});
+
+test('PHASE 7.6.2 — Centralized Demo Clock in dataIntegrityService.js: Zero Hardcoded Fallback & Edge-Case Date Validation', () => {
+  resetDemoClockConfig();
+
+  // 1. Verify src/services/dataIntegrityService.js contains zero hardcoded '2029-04-20' string literals
+  const dataIntegritySrc = fs.readFileSync(
+    path.resolve('src/services/dataIntegrityService.js'),
+    'utf8'
+  );
+  assert.equal(
+    dataIntegritySrc.includes("'2029-04-20'") ||
+      dataIntegritySrc.includes('"2029-04-20"'),
+    false,
+    'dataIntegrityService.js must not contain any hardcoded 2029-04-20 date literal'
+  );
+  assert.equal(
+    dataIntegritySrc.includes('getDemoReferenceDate'),
+    true,
+    'dataIntegrityService.js must use getDemoReferenceDate from src/utils/constants.js'
+  );
+
+  // 2. Configured demo date (2029-04-20): election with pollingStartDate 2029-05-01 and status POLLING_ACTIVE fails Rule 13
+  const futurePollingElection = {
+    ...structuredClone(INITIAL_ELECTIONS[0]),
+    id: 'TEST-FUTURE-EL',
+    electionId: 'TEST-FUTURE-EL',
+    status: 'POLLING_ACTIVE',
+    pollingStartDate: '2029-05-01',
+    pollingEndDate: '2029-05-05',
+    countingDate: '2029-05-10',
+    resultDate: '2029-05-12',
+    simulationClockDate: undefined,
+  };
+  const auditDefaultClock = auditElectionDataIntegrity({
+    elections: [futurePollingElection, ...INITIAL_ELECTIONS],
+  });
+  const rule13Default = auditDefaultClock.ruleResults.find(
+    (r) => r.ruleNumber === 13
+  );
+  assert.equal(rule13Default.passed, false);
+  assert.ok(
+    rule13Default.issues.some((msg) =>
+      msg.includes('at reference date 2029-04-20')
+    )
+  );
+
+  // 3. Consistent results when centralized demo clock changes (e.g. advancing demo clock to 2029-05-02 makes 2029-05-01 valid)
+  try {
+    setDemoClockConfig({ referenceDate: '2029-05-02' });
+    const auditShiftedClock = auditElectionDataIntegrity({
+      elections: [futurePollingElection],
+      candidates: [],
+      results: [],
+      voters: [],
+    });
+    const rule13Shifted = auditShiftedClock.ruleResults.find(
+      (r) => r.ruleNumber === 13
+    );
+    assert.equal(
+      rule13Shifted.passed,
+      true,
+      'Advancing centralized demo clock past pollingStartDate should satisfy Rule 13 without per-election clock'
+    );
+  } finally {
+    resetDemoClockConfig();
+  }
+
+  // 4. Election-specific simulationClockDate overrides default clock for that election
+  const electionWithSpecificClock = {
+    ...futurePollingElection,
+    simulationClockDate: '2029-05-03',
+  };
+  const auditSpecificClock = auditElectionDataIntegrity({
+    elections: [electionWithSpecificClock],
+    candidates: [],
+    results: [],
+    voters: [],
+  });
+  const rule13Specific = auditSpecificClock.ruleResults.find(
+    (r) => r.ruleNumber === 13
+  );
+  assert.equal(rule13Specific.passed, true);
+
+  // 5. Missing simulation date (null / empty string) falls back cleanly to centralized demo clock
+  const electionWithEmptyClock = {
+    ...futurePollingElection,
+    simulationClockDate: '',
+  };
+  const auditEmptyClock = auditElectionDataIntegrity({
+    elections: [electionWithEmptyClock],
+    candidates: [],
+    results: [],
+    voters: [],
+  });
+  const rule13Empty = auditEmptyClock.ruleResults.find(
+    (r) => r.ruleNumber === 13
+  );
+  assert.equal(rule13Empty.passed, false);
+  assert.ok(
+    rule13Empty.issues.some((msg) =>
+      msg.includes('at reference date 2029-04-20')
+    )
+  );
+
+  // 6. Invalid simulation date is caught and reported by Rule 13 while falling back safely
+  const electionWithInvalidClock = {
+    ...futurePollingElection,
+    status: 'UPCOMING',
+    simulationClockDate: 'not-a-valid-date',
+  };
+  const auditInvalidClock = auditElectionDataIntegrity({
+    elections: [electionWithInvalidClock],
+    candidates: [],
+    results: [],
+    voters: [],
+  });
+  const rule13Invalid = auditInvalidClock.ruleResults.find(
+    (r) => r.ruleNumber === 13
+  );
+  assert.equal(rule13Invalid.passed, false);
+  assert.ok(
+    rule13Invalid.issues.some((msg) =>
+      msg.includes('Invalid simulationClockDate (not-a-valid-date)')
+    )
+  );
+});
+
+test('PHASE 7.6.3 — Playwright Browser E2E Suite Structure, Vite Config Modernization & Package Script Alignment', () => {
+  // 1. Verify playwright.config.js exists and configures ./tests/e2e
+  assert.equal(fs.existsSync(path.resolve('playwright.config.js')), true);
+  const pwConfig = fs.readFileSync(path.resolve('playwright.config.js'), 'utf8');
+  assert.ok(pwConfig.includes('./tests/e2e'));
+
+  // 2. Verify all 11 required E2E spec files exist under tests/e2e/
+  const requiredE2eFiles = [
+    'tests/e2e/public-portal.spec.js',
+    'tests/e2e/voter-registration.spec.js',
+    'tests/e2e/voter-authentication.spec.js',
+    'tests/e2e/lok-sabha-ballot.spec.js',
+    'tests/e2e/assembly-ballot.spec.js',
+    'tests/e2e/simultaneous-elections.spec.js',
+    'tests/e2e/candidate-choice-privacy.spec.js',
+    'tests/e2e/admin-election-management.spec.js',
+    'tests/e2e/candidate-management.spec.js',
+    'tests/e2e/counting-results.spec.js',
+    'tests/e2e/data-integrity.spec.js',
+    'tests/e2e/recovery-reset.spec.js',
+  ];
+
+  for (const specPath of requiredE2eFiles) {
+    assert.equal(
+      fs.existsSync(path.resolve(specPath)),
+      true,
+      `Missing required Playwright E2E spec file: ${specPath}`
+    );
+    const content = fs.readFileSync(path.resolve(specPath), 'utf8');
+    assert.ok(content.includes('@playwright/test'));
+    assert.ok(content.includes('test.describe'));
+  }
+
+  // 3. Verify vite.config.ts uses import.meta.dirname instead of deprecated __dirname
+  const viteConfigSrc = fs.readFileSync(path.resolve('vite.config.ts'), 'utf8');
+  assert.equal(viteConfigSrc.includes('__dirname'), false);
+  assert.equal(viteConfigSrc.includes('import.meta.dirname'), true);
+
+  // 4. Verify package.json scripts distinguish typecheck, lint, test:unit, and test:e2e
+  const pkgJson = JSON.parse(fs.readFileSync(path.resolve('package.json'), 'utf8'));
+  assert.equal(pkgJson.scripts.typecheck, 'tsc --noEmit');
+  assert.equal(pkgJson.scripts['test:e2e'], 'playwright test');
+  assert.ok(pkgJson.devDependencies['@playwright/test']);
+});
+
+
 
 
 

@@ -7,6 +7,7 @@ export default function Modal({
   title,
   subtitle,
   children,
+  footer,
   maxWidth = 'max-w-lg',
 }) {
   const titleId = useId();
@@ -58,6 +59,11 @@ export default function Modal({
           </button>
         </div>
         <div className="p-6 max-h-[80vh] overflow-y-auto">{children}</div>
+        {footer && (
+          <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex items-center justify-end gap-3">
+            {footer}
+          </div>
+        )}
       </div>
     </div>
   );

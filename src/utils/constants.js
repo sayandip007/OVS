@@ -298,11 +298,11 @@ export const RESULT_STATUS_LABELS = {
 };
 
 /**
- * Centralized Demonstration Clock & Election Lifecycle Configuration (Phase 7.5 Section 2).
+ * Centralized Demonstration Clock & Election Lifecycle Configuration (Phase 7.5 / 7.6).
  * Prevents scattered hardcoded dates across components and provides a single source of truth
  * for evaluating past, active simulated, upcoming, and completed elections.
  */
-export const DEMO_CLOCK_CONFIG = {
+const DEFAULT_DEMO_CLOCK_CONFIG = Object.freeze({
   referenceDate: '2029-04-20',
   referenceTimestamp: '2029-04-20T10:30:00.000Z',
   portalNoticeDefaultDate: '2029-04-10',
@@ -312,14 +312,68 @@ export const DEMO_CLOCK_CONFIG = {
   sandboxConcurrencyMode: 'CONCURRENT_SIMULATION_SANDBOX',
   simulationDisclaimer:
     'DEMO / SIMULATION — Centralized demonstration clock set to 20 April 2029 for concurrent evaluation of active 2029 polling, upcoming 2029 schedules, and historical 2024 declared results.',
+});
+
+export const DEMO_CLOCK_CONFIG = {
+  ...DEFAULT_DEMO_CLOCK_CONFIG,
 };
 
+export function isValidIsoDateString(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value.trim())) {
+    return false;
+  }
+  const parsed = new Date(`${value.trim()}T00:00:00.000Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().startsWith(value.trim());
+}
+
+export function isValidIsoTimestamp(value) {
+  if (typeof value !== 'string' || !value.trim()) {
+    return false;
+  }
+  const parsed = new Date(value.trim());
+  return !Number.isNaN(parsed.getTime());
+}
+
+export function setDemoClockConfig(overrides = {}) {
+  if (overrides.referenceDate && isValidIsoDateString(overrides.referenceDate)) {
+    DEMO_CLOCK_CONFIG.referenceDate = overrides.referenceDate.trim();
+    if (!overrides.referenceTimestamp) {
+      DEMO_CLOCK_CONFIG.referenceTimestamp = `${DEMO_CLOCK_CONFIG.referenceDate}T10:30:00.000Z`;
+    }
+  }
+  if (overrides.referenceTimestamp && isValidIsoTimestamp(overrides.referenceTimestamp)) {
+    DEMO_CLOCK_CONFIG.referenceTimestamp = new Date(overrides.referenceTimestamp.trim()).toISOString();
+    if (!overrides.referenceDate) {
+      DEMO_CLOCK_CONFIG.referenceDate = DEMO_CLOCK_CONFIG.referenceTimestamp.slice(0, 10);
+    }
+  }
+  return { ...DEMO_CLOCK_CONFIG };
+}
+
+export function resetDemoClockConfig() {
+  Object.assign(DEMO_CLOCK_CONFIG, DEFAULT_DEMO_CLOCK_CONFIG);
+  return { ...DEMO_CLOCK_CONFIG };
+}
+
 export function getDemoReferenceDate(customDate = null) {
-  return customDate || DEMO_CLOCK_CONFIG.referenceDate;
+  if (isValidIsoDateString(customDate)) {
+    return customDate.trim();
+  }
+  if (isValidIsoTimestamp(customDate)) {
+    return new Date(customDate.trim()).toISOString().slice(0, 10);
+  }
+  return DEMO_CLOCK_CONFIG.referenceDate;
 }
 
 export function getDemoReferenceIso(customTimestamp = null) {
-  return customTimestamp || DEMO_CLOCK_CONFIG.referenceTimestamp;
+  if (isValidIsoDateString(customTimestamp)) {
+    return `${customTimestamp.trim()}T10:30:00.000Z`;
+  }
+  if (isValidIsoTimestamp(customTimestamp)) {
+    return new Date(customTimestamp.trim()).toISOString();
+  }
+  return DEMO_CLOCK_CONFIG.referenceTimestamp;
 }
+
 
 

@@ -1,6 +1,6 @@
 # OVS Testing, Verification & Quality Assurance Guide
 
-This document details the automated test suites, end-to-end user journey verifications, static analysis checks, and production build validations for the Online Voting System (OVS) frontend prototype.
+This document details the automated Node.js unit/integration test suites, real Chromium browser End-to-End (E2E) Playwright test suites, TypeScript static typechecking, and production build validations for the Online Voting System (OVS) frontend prototype.
 
 ---
 
@@ -8,15 +8,19 @@ This document details the automated test suites, end-to-end user journey verific
 
 | Check | Command | Target / Scope |
 | :--- | :--- | :--- |
-| **Unit, Service & E2E Journey Tests** | `npm test` | Runs `node --test tests/electionArchitecture.test.mjs` (32 comprehensive test suites) |
-| **ESLint Static Analysis** | `npm run lint` | Runs `eslint .` across all `.js` and `.jsx` files in `src/` |
-| **Production Bundle Build** | `npm run build` | Runs `vite build` to verify zero unresolved imports or bundle errors |
+| **Node.js Unit & Integration Tests** | `npm test` (or `npm run test:unit`) | Runs `node --import ./tests/loader.mjs --test tests/electionArchitecture.test.mjs` (**35 comprehensive test suites**) |
+| **Real Browser E2E Tests (Playwright)** | `npm run test:e2e` (or `npx playwright test`) | Runs **12 real Chromium browser E2E test suites** in `tests/e2e/*.spec.js` against `http://localhost:3000` |
+| **TypeScript Static Typecheck** | `npm run typecheck` (alias: `npm run lint`) | Runs `tsc --noEmit` to verify project TypeScript configuration (`tsconfig.json` & `vite.config.ts`) |
+| **Production Bundle Build** | `npm run build` | Runs `vite build` (`vite v8.3.5`) to verify zero unresolved imports, deprecation warnings, or bundle errors |
+
+> **Clarification on `npm run typecheck` vs `npm run lint`**:
+> `package.json` defines `"typecheck": "tsc --noEmit"` and `"lint": "tsc --noEmit"` for backward compatibility. It executes the TypeScript compiler in check-only mode (`tsc --noEmit`) rather than ESLint.
 
 ---
 
-## 2. Automated Test Suite Coverage (`tests/electionArchitecture.test.mjs`)
+## 2. Automated Node.js Test Suite Coverage (`tests/electionArchitecture.test.mjs`)
 
-The automated test runner (`tests/electionArchitecture.test.mjs`) executes **32 test suites** covering Phases 1 through 7.5:
+The automated Node.js test runner (`tests/electionArchitecture.test.mjs`) executes **35 test suites** covering Phases 1 through 7.6:
 
 ### Phases 1 & 2 — Core Geography & Election Architecture
 1. **Routing, Navigation, 36 States/UTs, PC/AC Separation, and Election Creation**:
@@ -70,9 +74,33 @@ The automated test runner (`tests/electionArchitecture.test.mjs`) executes **32 
     - Programmatically executes Scenarios A through G (Public Portal -> Voter Registration/Login -> Simultaneous Lok Sabha & Assembly Ballots -> Admin RBAC & Counting Simulation -> Reset & Corruption Recovery).
     - Parses `README.md`, `ARCHITECTURE.md`, `TESTING.md`, `SECURITY-LIMITATIONS.md`, and `plan.md` and verifies that every `src/...` path referenced in documentation exists on disk.
 
+### Phase 7.6 — Participation Timestamp Consistency & Centralized Demo Clock Verification
+33. **Phase 7.6.1 — Participation Timestamp Uses Centralized Demo Clock (`DEMO_CLOCK_CONFIG`)**:
+    - Verifies default `participatedAt` equals `2029-04-20T10:30:00.000Z` (`DEMO_CLOCK_CONFIG.referenceTimestamp`).
+    - Verifies runtime updates via `setDemoClockConfig` (`2029-05-12T14:15:00.000Z`) propagate to `recordSimulatedParticipation`.
+    - Verifies custom per-election `simulationClockDate` (`2029-04-25`) resolves to `2029-04-25T10:30:00.000Z`.
+34. **Phase 7.6.2 — Separation of Simulated `participatedAt` vs System `recordedAt` & Zero Candidate Choice**:
+    - Verifies `recordedAt` is omitted from voter-facing `voter.elections[electionId]` by default, included only when `includeSystemTimestamp: true` is passed, and that forbidden candidate/party keys (`candidateId`, `partyId`, `selectedCandidateId`, `ballotChoice`) are never stored.
+35. **Phase 7.6.3 — Data Integrity Service Uses Centralized Demo Clock Without Hardcoded Fallbacks**:
+    - Verifies `src/services/dataIntegrityService.js` contains zero hardcoded `'2029-04-20'` literals, flags malformed `simulationClockDate` values, and respects updated `DEMO_CLOCK_CONFIG` dates.
+
 ---
 
-## 3. Browser E2E Verification Notes
+## 3. Real Browser E2E Test Suite (`playwright.config.js` & `tests/e2e/`)
 
-- In environments where headless browser binaries (Chromium/Playwright) are installed, browser-level journeys can be run against `http://localhost:3000`.
-- In container environments without system browser binaries, Scenarios A–G are verified deterministically via the Phase 7.5.3 integration journey suite in `tests/electionArchitecture.test.mjs` alongside `npm run build` and `npm run lint`.
+Playwright (`@playwright/test`) runs **12 real headless Chromium browser test suites** against the live application on `http://localhost:3000`:
+
+| Spec File | Requirement Covered | Key Browser Assertions |
+| :--- | :--- | :--- |
+| `tests/e2e/public-portal.spec.js` | **A. Public Portal** | Home page, educational prototype disclaimer, Election Information, Candidate Directory filters, Results Hub, Lok Sabha & Assembly results, Constituency Result detail, Feedback form submission |
+| `tests/e2e/voter-registration.spec.js` | **B. Voter Registration** | Invalid underage/mobile rejection, cascading `WB` -> `DIST-WB-KOL` -> `PC-WB-KOLKATA-SOUTH` -> `AC-WB-BHABANIPUR` selection, registration completion (`WBX4455667`), duplicate EPIC rejection |
+| `tests/e2e/voter-authentication.spec.js` | **C. Voter Authentication** | Invalid EPIC/mobile error, wrong OTP rejection, valid login with OTP `123456`, Voter Dashboard dual-constituency cards, logout and route guard protection |
+| `tests/e2e/lok-sabha-ballot.spec.js` | **D. Lok Sabha Ballot** | `/voter/elections/LS-2029/ballot`, PC candidate cards + NOTA, Candidate Profile modal, Ballot Review, Demo Confirmation modal, Receipt (`DEMO-LS-...`), duplicate ballot prevention |
+| `tests/e2e/assembly-ballot.spec.js` | **E. State Assembly Ballot** | `/voter/elections/WB-ASSEMBLY-2029/ballot`, AC candidate cards + NOTA, Ballot Review, Demo Confirmation modal, Receipt (`DEMO-ASM-...`), duplicate ballot prevention |
+| `tests/e2e/simultaneous-elections.spec.js` | **F. Simultaneous Elections** | Logs in as `WBX1234567`, verifies both `LS-2029` and `WB-ASSEMBLY-2029` start `PENDING`, completes `LS-2029`, verifies `WB-ASSEMBLY-2029` remains `PENDING`, then completes `WB-ASSEMBLY-2029` (`2/2`) |
+| `tests/e2e/candidate-choice-privacy.spec.js` | **G. Candidate Choice Privacy** | Completes ballot in real browser, inspects `localStorage` (`ovs_v3_0_voters`, `ovs_v3_0_tallies`, `ovs_v3_0_results`, `ovs_v3_0_audit_logs`), verifies zero candidate/party choice keys and `2029-04-20` demo timestamp |
+| `tests/e2e/admin-election-management.spec.js` | **H. Admin Portal & RBAC** | `SUPER_ADMIN` login (`ECI-SUPER-001` / `admin123` / `123456`), Election Management, Schedule validation, Monitoring, Announcements, Audit Logs, and `READ_ONLY_AUDITOR` write-restriction enforcement |
+| `tests/e2e/candidate-management.spec.js` | **H. Candidate Scrutiny** | Candidate Management table, PC/AC type validation rules, nomination status filtering |
+| `tests/e2e/counting-results.spec.js` | **I. Counting & Results** | Starts/advances round-by-round counting on `/eci/results`, verifies unpublished results stay hidden on `/results`, publishes completed result, verifies public visibility |
+| `tests/e2e/data-integrity.spec.js` | **J. Data Integrity Audit** | Navigates to `/eci/settings`, verifies 17-rule Data Integrity Audit passes with 0 errors and displays centralized demo clock (`2029-04-20`) |
+| `tests/e2e/recovery-reset.spec.js` | **J. Recovery & Reset** | Mutates `localStorage`, triggers Reset Demo Data in UI, injects corrupted JSON into `ovs_v3_0_voters` and `ovs_v3_0_elections`, reloads page, verifies automatic self-healing recovery |

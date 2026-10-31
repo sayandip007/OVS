@@ -57,7 +57,19 @@ export function safeParseJSON(raw, fallback) {
 export function getDurableItem(key, fallback) {
   const storage = getLocalStorage();
   const raw = storage.getItem(key);
-  return safeParseJSON(raw, fallback);
+  if (raw === null || raw === undefined || raw === '') return fallback;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    if (fallback !== undefined) {
+      try {
+        storage.setItem(key, JSON.stringify(fallback));
+      } catch {
+        // Ignore storage write error during self-healing
+      }
+    }
+    return fallback;
+  }
 }
 
 export function setDurableItem(key, value) {

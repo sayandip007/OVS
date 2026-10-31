@@ -3,6 +3,8 @@ import {
   CONSTITUENCY_TYPES,
   METADATA_SOURCES,
   RESULT_STATUSES,
+  getDemoReferenceDate,
+  isValidIsoDateString,
 } from '../utils/constants';
 import { INITIAL_STATES } from '../data/states';
 import { INITIAL_DISTRICTS } from '../data/districts';
@@ -30,6 +32,7 @@ export function auditElectionDataIntegrity({
   voters = INITIAL_VOTERS,
   results = INITIAL_RESULTS,
   announcements = INITIAL_ANNOUNCEMENTS,
+  referenceDate = null,
 } = {}) {
   const errors = [];
   const warnings = [];
@@ -530,7 +533,21 @@ export function auditElectionDataIntegrity({
     }
 
     const status = el.status || 'DRAFT';
-    const refClock = el.simulationClockDate || '2029-04-20';
+    const fallbackClock = getDemoReferenceDate(referenceDate);
+    let refClock = fallbackClock;
+    if (
+      el.simulationClockDate !== undefined &&
+      el.simulationClockDate !== null &&
+      String(el.simulationClockDate).trim() !== ''
+    ) {
+      if (!isValidIsoDateString(String(el.simulationClockDate))) {
+        rule13Errors.push(
+          `Election "${elId}" schedule violation: Invalid simulationClockDate (${el.simulationClockDate}); falling back to ${fallbackClock}.`
+        );
+      } else {
+        refClock = getDemoReferenceDate(String(el.simulationClockDate));
+      }
+    }
     if (
       (status === 'POLLING_ACTIVE' || status === 'ACTIVE') &&
       el.pollingStartDate &&

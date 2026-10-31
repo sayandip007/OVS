@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { ELECTION_TYPES } from '../../utils/constants';
+import { ELECTION_TYPES, getDemoReferenceIso } from '../../utils/constants';
 
 /**
  * Non-Sensitive Demo Confirmation Receipt Component.
@@ -32,9 +32,8 @@ export default function DemoReceipt({
     participationRecord?.demoReference ||
     participationRecord?.referenceId ||
     (isLokSabha ? 'DEMO-LS-000001' : 'DEMO-ASM-000001');
-  const participatedAt = participationRecord?.participatedAt
-    ? new Date(participationRecord.participatedAt).toLocaleString('en-IN')
-    : new Date().toLocaleString('en-IN');
+  const rawTimestamp = participationRecord?.participatedAt || getDemoReferenceIso();
+  const participatedAt = new Date(rawTimestamp).toLocaleString('en-IN');
 
   const handlePrint = () => {
     if (typeof window !== 'undefined' && typeof window.print === 'function') {

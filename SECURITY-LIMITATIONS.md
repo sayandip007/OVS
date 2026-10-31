@@ -10,15 +10,18 @@ The **Online Voting System (OVS)** is an **educational frontend architecture pro
 
 ## 2. Enforced Frontend Security & Privacy Controls
 
-### 2.1 Strict Ballot Secrecy & Zero Candidate-Choice Persistence
+### 2.1 Strict Ballot Secrecy, Simulated Timestamp Normalization & Zero Candidate-Choice Persistence
 - **Volatile Selection Only**: In `src/pages/voter/BallotPage.jsx` and `src/components/ballot/BallotReview.jsx`, the voter's selected candidate or `NOTA` option is held exclusively in temporary React component state (`useState`).
 - **Non-Revealing Participation Record**: When the voter clicks **Complete demo participation** in `src/components/ballot/DemoConfirmationModal.jsx`, `recordSimulatedParticipation` (`src/services/electionService.js`) records **only**:
   - `status: 'VOTED'`
   - `participated: true`
-  - `participatedAt: <ISO-8601 timestamp>`
+  - `participatedAt: '2029-04-20T10:30:00.000Z'` (normalized to the centralized demo clock via `getDemoReferenceIso` in `src/utils/constants.js` so participation metadata never leaks fine-grained host wall-clock timing by default)
   - `demoReference: 'DEMO-LS-000001'` or `'DEMO-ASM-000001'`
   - `referenceId: 'DEMO-REF-<ELECTION>-<VOTER>'`
-- **Automated Privacy Audit (Rule 12)**: `auditElectionDataIntegrity` (`src/services/dataIntegrityService.js`) continuously scans all voter participation records to ensure forbidden keys (`candidateId`, `selectedCandidateId`, `selectedCandidateIdOrNota`, `partyId`, `ballotChoice`, `selectedOptionId`) are never present.
+- **Separation of `participatedAt` and `recordedAt`**: Any actual system recording timestamp (`recordedAt`) is kept distinct from `participatedAt` and is omitted from persisted voter records (`voter.elections[electionId]`) unless `includeSystemTimestamp: true` is explicitly passed for diagnostic testing.
+- **Automated Privacy Audit (Rule 12 & Browser E2E Verification)**:
+  - `auditElectionDataIntegrity` (`src/services/dataIntegrityService.js`) continuously scans all voter participation records to ensure forbidden keys (`candidateId`, `selectedCandidateId`, `selectedCandidateIdOrNota`, `partyId`, `ballotChoice`, `selectedOptionId`) are never present.
+  - Real Chromium browser E2E test `tests/e2e/candidate-choice-privacy.spec.js` inspects `localStorage` (`ovs_v3_0_voters`, `ovs_v3_0_tallies`, `ovs_v3_0_results`, `ovs_v3_0_audit_logs`), `sessionStorage`, and the rendered DOM receipt after ballot completion to verify zero candidate-choice persistence.
 
 ### 2.2 Complete Decoupling of Voter Ballots and Counting Simulation
 - Confirming a demo ballot in the Voter Portal **never** increments candidate vote tallies or counting session records (`recordSimulatedParticipation` leaves `tallies` untouched and returns `ballotCountingSeparation: 'STRICT_DECOUPLED'`).

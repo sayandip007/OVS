@@ -2,6 +2,7 @@ import {
   ELECTION_TYPES,
   CONSTITUENCY_TYPES,
   METADATA_SOURCES,
+  getDemoReferenceIso,
 } from '../utils/constants';
 import { validateElectionInput } from '../utils/validation';
 
@@ -174,6 +175,8 @@ export function recordSimulatedParticipation({
   electionId,
   election,
   tallies = {},
+  simulatedTimestamp = null,
+  includeSystemTimestamp = false,
 }) {
   const targetElectionId = electionId || election?.id || election?.electionId;
   const targetElectionType =
@@ -206,22 +209,39 @@ export function recordSimulatedParticipation({
     targetElectionType,
     voter.id || voter.voterId
   );
-  const participatedAt = new Date().toISOString();
 
-  // PRIVACY & COUNTING SEPARATION REQUIREMENT (Phase 7.5 Section 3):
+  const customElectionClockDate =
+    election?.simulationClockDate &&
+    election.simulationClockDate !== '2029-04-20'
+      ? `${election.simulationClockDate}T10:30:00.000Z`
+      : null;
+  const resolvedClockInput =
+    simulatedTimestamp ||
+    election?.simulationTimestamp ||
+    customElectionClockDate;
+  const participatedAt = getDemoReferenceIso(resolvedClockInput);
+  const recordedAt = new Date().toISOString();
+
+  // PRIVACY & COUNTING SEPARATION REQUIREMENT (Phase 7.5 / 7.6):
   // 1. Never store candidateId, partyId, or ballot selection in voter.elections
   // 2. Never increment candidate tallies from voter ballot participation; counting simulation uses independent demo counting datasets only
+  // 3. Do not expose unnecessary technical system timestamps (recordedAt) to voter-facing records unless explicitly requested
+  const voterElectionEntry = {
+    status: 'VOTED',
+    participated: true,
+    participatedAt,
+    demoReference,
+    referenceId,
+  };
+  if (includeSystemTimestamp) {
+    voterElectionEntry.recordedAt = recordedAt;
+  }
+
   const updatedVoter = {
     ...voter,
     elections: {
       ...(voter.elections || {}),
-      [targetElectionId]: {
-        status: 'VOTED',
-        participated: true,
-        participatedAt,
-        demoReference,
-        referenceId,
-      },
+      [targetElectionId]: voterElectionEntry,
     },
   };
 
@@ -234,7 +254,9 @@ export function recordSimulatedParticipation({
     demoReference,
     referenceId,
     participatedAt,
+    recordedAt,
     ballotCountingSeparation: 'STRICT_DECOUPLED',
   };
 }
+
 

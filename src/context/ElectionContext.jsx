@@ -2385,12 +2385,16 @@ export function ElectionProvider({ children }) {
       if (!targetVoter) {
         return { ok: false, error: 'Voter profile not found.' };
       }
+      const targetElection = store.elections.find(
+        (e) => (e.id || e.electionId) === electionId
+      );
 
-      // Phase 7.5 Section 3: Strict separation of demo ballot and counting engine.
-      // Voter participation updates ONLY voter.elections[electionId] and never modifies tallies.
+      // Phase 7.5 / 7.6: Strict separation of demo ballot and counting engine,
+      // and centralized demo clock timestamp for participatedAt.
       const result = recordSimulatedParticipation({
         voter: targetVoter,
         electionId,
+        election: targetElection,
         tallies: store.tallies,
       });
 
@@ -2406,9 +2410,16 @@ export function ElectionProvider({ children }) {
         voters: nextVoters,
       }));
 
-      return { ok: true, voter: enrichVoter(result.voter) };
+      return {
+        ok: true,
+        voter: enrichVoter(result.voter),
+        referenceId: result.referenceId,
+        demoReference: result.demoReference,
+        participatedAt: result.participatedAt,
+        recordedAt: result.recordedAt,
+      };
     },
-    [store.voters, store.tallies]
+    [store.voters, store.elections, store.tallies]
   );
 
   // Phase 3 helper: Simulate participation status for one election without ballot submission
@@ -2449,6 +2460,8 @@ export function ElectionProvider({ children }) {
         voter: enrichVoter(result.voter),
         referenceId: result.referenceId,
         demoReference: result.demoReference,
+        participatedAt: result.participatedAt,
+        recordedAt: result.recordedAt,
       };
     },
     [store.voters, store.elections, store.tallies, syncKey, addVoterNotification]

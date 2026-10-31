@@ -16,14 +16,14 @@ The application wraps `AppRoutes` in four React Context providers (defined in `s
 
 ### 1.2 Domain Services (`src/services/`)
 All business logic is extracted into pure, unit-tested ES module services:
-- **`storageService.js`**: Durable `localStorage` persistence with schema version check (`STORAGE_VERSION = 'ovs_v3_0'`), safe JSON parsing, automatic recovery from corrupted storage, and `resetAllDemoData()`.
-- **`electionService.js`**: Creates/updates election records (`createElectionRecord`, `updateElectionRecord`), generates non-sensitive participation references (`generateNonSensitiveDemoReference`), and records voter participation (`recordSimulatedParticipation`) with strict ballot-to-counting separation.
+- **`storageService.js`**: Durable `localStorage` persistence with schema version check (`STORAGE_VERSION = 'ovs_v3_0'`), safe JSON parsing, automatic self-healing recovery from corrupted storage (`getDurableItem`), and `resetAllDemoData()`.
+- **`electionService.js`**: Creates/updates election records (`createElectionRecord`, `updateElectionRecord`), generates non-sensitive participation references (`generateNonSensitiveDemoReference`), and records voter participation (`recordSimulatedParticipation`) using the centralized demo clock (`getDemoReferenceIso`) with strict ballot-to-counting separation.
 - **`constituencyService.js`**: Validates and manages `PARLIAMENTARY` and `ASSEMBLY` constituencies (`createConstituencyRecord`, `updateConstituencyRecord`).
 - **`candidateService.js`**: Enforces election-to-constituency type matching (`LOK_SABHA` -> `PARLIAMENTARY`, `STATE_ASSEMBLY` -> `ASSEMBLY`) and state matching during candidate creation/editing.
 - **`ballotValidationService.js`**: Implements the 8-point pre-ballot eligibility & status validator (`validateBallotAccess`), candidate search/filter/sort (`filterAndSortBallotCandidates`), and volatile in-memory selection resolution (`resolveTemporaryBallotSelection`).
 - **`adminPermissionService.js`**: Enforces the 5-role RBAC route matrix (`canAdminAccessRoute`), action scope checks (`canAdminPerformAction`), election lifecycle transitions (`validateElectionStatusTransition`), timeline consistency validation (`validateElectionTimelineConsistency`), 8+ milestone schedule chronology (`validateElectionSchedule`), schedule conflict detection (`detectScheduleConflicts`), and sanitized audit logging (`createSanitizedAuditLogEntry`).
 - **`countingService.js`**: Deterministic FNV-1a round-by-round counting engine (`createCountingSession`, `startCountingSession`, `processNextCountingRound`, `pauseCountingSession`, `resumeCountingSession`, `completeCountingSession`, `resetCountingSession`, `transitionResultPublicationStatus`, `applyAdminResultCorrection`), 12-rule result validator (`validateResultRecord`), public visibility filter (`getPubliclyVisibleResults`), analytics engines (`computeLokSabhaNationalAnalytics`, `computeStateAssemblyAnalytics`, `computePartyWiseAnalytics`, `computeSimultaneousElectionOverview`), and RFC-4180 CSV exporters.
-- **`dataIntegrityService.js`**: Runs 17 automated relational, geographic, chronological, ballot-privacy, counting-completion, and provenance rules (`auditElectionDataIntegrity`).
+- **`dataIntegrityService.js`**: Runs 17 automated relational, geographic, chronological, ballot-privacy, counting-completion, and provenance rules (`auditElectionDataIntegrity`), using centralized `getDemoReferenceDate` and `isValidIsoDateString` from `src/utils/constants.js` with zero hardcoded fallback dates.
 
 ### 1.3 Seeded Data Layer (`src/data/`)
 - **`states.js`**: 28 States + 8 Union Territories (`METADATA_SOURCES.VERIFIED_OFFICIAL`).
@@ -42,12 +42,17 @@ All business logic is extracted into pure, unit-tested ES module services:
 ### 2.1 Centralized Reference Clock (`DEMO_CLOCK_CONFIG`)
 Defined in `src/utils/constants.js`:
 - `referenceDate`: `'2029-04-20'`
+- `referenceTimestamp`: `'2029-04-20T10:30:00.000Z'`
 - `simulationMode`: `'SIMULATED_ELECTION_TIMELINE'`
 - `sandboxConcurrencyMode`: `'CONCURRENT_SIMULATION_SANDBOX'`
+- Helper APIs: `getDemoReferenceDate()`, `getDemoReferenceIso()`, `isValidIsoDateString()`, `isValidIsoTimestamp()`, `setDemoClockConfig()`, and `resetDemoClockConfig()`.
+- **Participation vs. System Timestamp Separation**:
+  - `participatedAt`: Derived from the centralized demo clock (`getDemoReferenceIso(electionClockOverride || DEMO_CLOCK_CONFIG.referenceTimestamp)`), ensuring participation timestamps always fall within the active `2029` simulated election window rather than the host machine's wall-clock year.
+  - `recordedAt`: Represents the actual runtime wall-clock timestamp (`new Date().toISOString()`). By default, `recordedAt` is returned only in the transient service response (`recordSimulatedParticipation`) and omitted from persisted `voter.elections[electionId]` records unless `includeSystemTimestamp: true` is explicitly passed.
 
 ### 2.2 Supported Election Lifecycle States & Seeded Scenarios
 | Election ID | Type | State | Status | Polling Window | Purpose in Simulation |
-| :--- | :--- | :--- | :--- | :--- | :--- |
+| :--- | :--- | :--- | :--- :--- | :--- | :--- |
 | `LS-2024` | `LOK_SABHA` | All India | `RESULTS_DECLARED` | `2024-04-19` to `2024-06-01` | Past completed election with historical declared results |
 | `LS-2029` | `LOK_SABHA` | All India | `POLLING_ACTIVE` | `2029-04-10` to `2029-05-15` | Active nationwide Lok Sabha polling + concurrent counting demo |
 | `WB-ASSEMBLY-2029` | `STATE_ASSEMBLY` | `WB` | `POLLING_ACTIVE` | `2029-04-12` to `2029-05-10` | Active simultaneous State Assembly election for West Bengal |
@@ -74,7 +79,7 @@ Defined in `src/utils/constants.js`:
 │     voter.elections[electionId] = {                      │
 │       status: 'VOTED',                                   │
 │       participated: true,                                │
-│       participatedAt: ISO_TIMESTAMP,                     │
+│       participatedAt: getDemoReferenceIso(),             │
 │       demoReference: 'DEMO-LS-000001',                   │
 │       referenceId: 'DEMO-REF-LS2029-VOTER001'            │
 │     }                                                    │

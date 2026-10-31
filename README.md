@@ -5,7 +5,7 @@
 
 ---
 
-## 1. Key Capabilities (Phases 1–7.5)
+## 1. Key Capabilities (Phases 1–7.6)
 
 1. **Pan-India Electoral Geography (36 Jurisdictions)**
    - **28 Indian States** and **8 Union Territories** with official seat counts (**543 Lok Sabha seats**, **4,123 State Assembly seats**).
@@ -16,7 +16,7 @@
      - One **Assembly Constituency (`ASSEMBLY`)** for State Legislative Assembly Elections (`STATE_ASSEMBLY`).
    - Completing participation in a Lok Sabha election (`LS-2029`) never alters the voter's status in a simultaneous State Assembly election (`WB-ASSEMBLY-2029` or `DL-ASSEMBLY-2029`), and vice versa.
 3. **Centralized Demo Clock & Logical Election Timeline (`DEMO_CLOCK_CONFIG`)**
-   - Centralized demonstration reference clock (`2029-04-20` in `src/utils/constants.js`) governs timeline evaluation across:
+   - Centralized demonstration reference clock (`referenceDate: '2029-04-20'`, `referenceTimestamp: '2029-04-20T10:30:00.000Z'` in `src/utils/constants.js`) governs timeline evaluation, participation timestamps (`participatedAt`), and integrity audits (`src/services/dataIntegrityService.js`) across:
      - **Past Completed Election**: `LS-2024` (`RESULTS_DECLARED`)
      - **Active Simulated Simultaneous Elections**: `LS-2029`, `WB-ASSEMBLY-2029`, `DL-ASSEMBLY-2029` (`POLLING_ACTIVE`)
      - **Upcoming Scheduled Election**: `MH-ASSEMBLY-2029` (`UPCOMING`, polling starts `2029-09-10`)
@@ -24,7 +24,7 @@
    - Enforces chronological order across registration, nominations, scrutiny, withdrawal, campaigning, polling, counting, and result declaration.
 4. **Strict Separation of Demo Ballot & Counting Engine**
    - Candidate or NOTA selection on `/voter/elections/:electionId/ballot` exists **only** in volatile React component memory (`useState`) during ballot review.
-   - Confirming participation calls `recordSimulatedParticipation` (`src/services/electionService.js`), which updates **only** `voter.elections[electionId]` (`status: 'VOTED'`, `participatedAt`, `demoReference`, `referenceId`).
+   - Confirming participation calls `recordSimulatedParticipation` (`src/services/electionService.js`), which updates **only** `voter.elections[electionId]` (`status: 'VOTED'`, `participated: true`, `participatedAt` from centralized `getDemoReferenceIso`, `demoReference`, `referenceId`).
    - Individual voter ballot confirmations **never** store candidate choices and **never** increment candidate vote tallies.
    - Constituency counting sessions (`src/services/countingService.js`) run independently on deterministic FNV-1a seeded demonstration datasets.
 5. **Complete Voter Portal (`/voter/*`)**
@@ -41,8 +41,10 @@
 ```text
 ├── index.html
 ├── package.json
-├── vite.config.js
-├── eslint.config.js
+├── package-lock.json
+├── vite.config.ts
+├── tsconfig.json
+├── playwright.config.js
 ├── README.md
 ├── ARCHITECTURE.md
 ├── TESTING.md
@@ -50,6 +52,8 @@
 ├── plan.md
 ├── PHASE_7_5_AUDIT.md
 ├── PHASE_7_5_FINAL_REPORT.md
+├── PHASE_7_6_AUDIT.md
+├── PHASE_7_6_FINAL_REPORT.md
 ├── src/
 │   ├── main.jsx
 │   ├── App.jsx
@@ -161,7 +165,21 @@
 │           ├── AuditLogs.jsx
 │           └── AdminSettings.jsx
 └── tests/
-    └── electionArchitecture.test.mjs
+    ├── loader.mjs
+    ├── electionArchitecture.test.mjs
+    └── e2e/
+        ├── public-portal.spec.js
+        ├── voter-registration.spec.js
+        ├── voter-authentication.spec.js
+        ├── lok-sabha-ballot.spec.js
+        ├── assembly-ballot.spec.js
+        ├── simultaneous-elections.spec.js
+        ├── candidate-choice-privacy.spec.js
+        ├── admin-election-management.spec.js
+        ├── candidate-management.spec.js
+        ├── counting-results.spec.js
+        ├── data-integrity.spec.js
+        └── recovery-reset.spec.js
 ```
 
 ---
@@ -195,11 +213,15 @@
 # Start development server on port 3000
 npm run dev
 
-# Run ESLint static analysis
+# Run TypeScript typechecking (`tsc --noEmit`)
+npm run typecheck
 npm run lint
 
-# Run automated Node test suite (32 suites covering Phases 1–7.5)
+# Run automated Node unit & integration test suite (35 suites covering Phases 1–7.6)
 npm test
+
+# Run real Chromium browser End-to-End (E2E) test suite with Playwright (12 spec files)
+npm run test:e2e
 
 # Build production bundle
 npm run build
