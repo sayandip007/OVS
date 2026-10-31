@@ -1,0 +1,1134 @@
+OVS PROJECT — PHASE 7: COMPLETE QUALITY ASSURANCE, SECURITY REVIEW, BUG FIXING AND FINAL REFINEMENT
+
+You are acting as a senior software architect, React engineer, QA automation engineer, frontend security reviewer, accessibility specialist, and performance engineer.
+
+Your task is to perform a complete technical audit and final refinement of my existing Online Voting System (OVS) project.
+
+This is Phase 7, the final major development phase.
+
+Your objective is to ensure that all functionality implemented in Phases 1–6 works correctly together.
+
+Do not simply perform a visual review.
+
+Inspect the actual source code, run the application, execute automated tests, identify defects, fix them, and verify the fixes.
+
+Work directly on the existing project.
+
+Do not create a new application.
+
+Do not unnecessarily rewrite working modules.
+
+Do not introduce a backend.
+
+All functionality must remain frontend-only with local demonstration data.
+
+IMPORTANT: This project is an educational election-system prototype. Do not claim that it is suitable for conducting legally binding public elections. A frontend-only application cannot provide secure identity verification, secret-ballot guarantees, tamper-resistant vote storage, or authoritative election results.
+
+---
+
+1. COMPLETE PROJECT AUDIT
+
+Begin by inspecting the entire repository.
+
+Inspect:
+
+- package.json.
+- Vite configuration.
+- React entry points.
+- Routing.
+- Context providers.
+- Services.
+- Utility functions.
+- Data models.
+- Seed datasets.
+- Public pages.
+- Voter pages.
+- Admin pages.
+- Ballot components.
+- Counting engine.
+- Results components.
+- Local storage implementation.
+- CSS and Tailwind configuration.
+- Existing tests.
+- Existing documentation.
+
+Create a dependency map showing how the major modules interact.
+
+Audit the following seven phases.
+
+Phase 1 — Application Foundation
+
+Verify:
+
+- React architecture.
+- Component organisation.
+- Reusable components.
+- React Router.
+- Public layout.
+- Voter layout.
+- Admin layout.
+- State management.
+- Local data persistence.
+- Error handling.
+
+Phase 2 — Election Architecture
+
+Verify:
+
+- All 28 states.
+- All 8 union territories.
+- District relationships.
+- Parliamentary constituencies.
+- Assembly constituencies.
+- Election models.
+- Party models.
+- Candidate models.
+- Stable unique IDs.
+- Election-specific data relationships.
+- Metadata provenance.
+
+Do not assume that sample constituency data is complete or officially verified.
+
+Phase 3 — Voter Portal
+
+Verify:
+
+- Registration.
+- Login.
+- Simulated OTP.
+- Voter profile.
+- Constituency mapping.
+- Election eligibility.
+- Dashboard.
+- Notifications.
+- Participation history.
+- Session handling.
+
+Phase 4 — Voting Experience
+
+Verify:
+
+- Lok Sabha ballot.
+- Assembly ballot.
+- Candidate filtering.
+- NOTA.
+- Candidate profile display.
+- Candidate selection.
+- Review flow.
+- Demo confirmation.
+- Independent participation status.
+- Simultaneous election workflow.
+- Non-sensitive confirmation receipt.
+
+Phase 5 — ECI Admin Portal
+
+Verify:
+
+- Admin authentication demo.
+- Role-based navigation.
+- Role-based action restrictions.
+- Election management.
+- Candidate management.
+- Party management.
+- Constituency management.
+- Voter management.
+- Schedule management.
+- Election monitoring.
+- Announcement management.
+- Audit logs.
+- Demo reset.
+
+Phase 6 — Results and Analytics
+
+Verify:
+
+- Counting simulation.
+- Counting rounds.
+- Vote totals.
+- Vote percentages.
+- Winner determination.
+- Runner-up determination.
+- Victory margin.
+- Tie detection.
+- NOTA accounting.
+- Independent candidate handling.
+- Lok Sabha national results.
+- State Assembly results.
+- Simultaneous results.
+- Result publication.
+- CSV exports.
+- Public results portal.
+
+Do not stop after producing an audit report. Continue to fix all defects found.
+
+---
+
+2. APPLICATION-WIDE FUNCTIONALITY AUDIT
+
+Test every visible button, link, form, tab, filter, dropdown, modal, and navigation item.
+
+Identify:
+
+- Buttons without actions.
+- Links leading to invalid routes.
+- Forms that submit without validation.
+- Filters that do not actually filter.
+- Search fields that do not search.
+- Dropdowns with incorrect options.
+- Modals that cannot close.
+- Confirmation dialogs that do not work.
+- Broken browser back navigation.
+- Missing loading indicators.
+- Missing empty states.
+- Inconsistent success notifications.
+- Incorrect error messages.
+- Components displaying stale data.
+
+Every visible interactive control must perform its advertised action.
+
+Do not leave placeholder functionality.
+
+Check every page on desktop, tablet, and mobile.
+
+---
+
+3. CRITICAL ELECTION DATA INTEGRITY AUDIT
+
+This is one of the highest-priority tasks.
+
+Audit all relationships between:
+
+- States.
+- Districts.
+- Parliamentary constituencies.
+- Assembly constituencies.
+- Elections.
+- Parties.
+- Candidates.
+- Voters.
+- Participation records.
+- Counting datasets.
+- Published results.
+
+Implement reusable data-integrity validation utilities.
+
+Check:
+
+1. Every entity has a unique ID.
+2. Every foreign-key-like reference points to an existing entity.
+3. Every Assembly constituency has a valid state association.
+4. Every parliamentary constituency has valid geographical associations.
+5. Constituency types are not mixed.
+6. Election types match constituency types.
+7. Assembly elections have valid state associations.
+8. Lok Sabha candidates are assigned to parliamentary constituencies.
+9. Assembly candidates are assigned to Assembly constituencies.
+10. Candidates belong to the correct election.
+11. Party references are valid.
+12. Voter constituency references are valid.
+13. Election schedules are valid.
+14. Result records reference valid elections.
+15. Counting rounds reference valid result sessions.
+16. Published results reference valid candidates.
+17. Archived records do not silently break historical relationships.
+
+Handle missing references gracefully.
+
+Never silently substitute an unrelated candidate, constituency, party, or election.
+
+Generate a data-integrity report.
+
+Do not invent official data to fill missing records.
+
+Clearly distinguish official-source data from sample demonstration records.
+
+---
+
+4. SIMULTANEOUS ELECTION WORKFLOW AUDIT
+
+Test the entire Lok Sabha and Assembly workflow.
+
+Example voter:
+
+State: West Bengal.
+Parliamentary constituency: Krishnanagar.
+Assembly constituency: Krishnanagar Uttar.
+
+Eligible elections:
+
+- Lok Sabha 2029.
+- West Bengal Assembly 2029.
+
+Test all scenarios.
+
+SCENARIO A:
+Both elections are pending.
+
+Expected:
+Both appear independently.
+
+SCENARIO B:
+Lok Sabha demo participation completed.
+
+Expected:
+Lok Sabha = VOTED.
+Assembly = PENDING.
+
+SCENARIO C:
+Assembly demo participation completed.
+
+Expected:
+Assembly = VOTED.
+Lok Sabha = PENDING.
+
+SCENARIO D:
+Both completed.
+
+Expected:
+Both = VOTED.
+
+SCENARIO E:
+Voter eligible only for Lok Sabha.
+
+Expected:
+No Assembly ballot is shown as eligible.
+
+SCENARIO F:
+Voter eligible only for Assembly.
+
+Expected:
+No Lok Sabha ballot is shown as eligible.
+
+SCENARIO G:
+One election is cancelled.
+
+Expected:
+Only the affected election becomes unavailable.
+
+SCENARIO H:
+One election is published while the other is still counting.
+
+Expected:
+Their public result statuses remain independent.
+
+SCENARIO I:
+Voter refreshes the page.
+
+Expected:
+Participation statuses remain consistent.
+
+SCENARIO J:
+Voter switches accounts.
+
+Expected:
+Participation records are not mixed between demo users.
+
+SCENARIO K:
+Admin changes one election's schedule.
+
+Expected:
+Only the relevant election's schedule updates.
+
+SCENARIO L:
+Admin updates a candidate in one constituency.
+
+Expected:
+Other constituencies remain unaffected.
+
+Do not allow one election's operations to accidentally change another election's data.
+
+---
+
+5. VOTING DEMONSTRATION AND PRIVACY AUDIT
+
+Inspect the entire Phase 4 implementation.
+
+This project must not claim to implement a secure real-world voting system.
+
+Verify that:
+
+- Candidate selection is temporary.
+- Candidate choice is not stored in localStorage.
+- Candidate choice is not stored in sessionStorage.
+- Candidate choice is not added to participation history.
+- Candidate choice is not exposed in receipts.
+- Candidate choice is not exposed in voter profile.
+- Candidate choice is not exposed in admin voter management.
+- Candidate choice is not included in audit logs.
+- Candidate choice is not exposed in analytics.
+- Participation records contain only non-sensitive status information.
+- Candidate selections are cleared when the ballot workflow ends.
+- Candidate selections are cleared when the voter logs out.
+- Switching election IDs clears stale selection state.
+
+Search the repository for accidental persistence or logging of ballot selections.
+
+Remove any such persistence.
+
+Do not create candidate-linked participation records.
+
+Add explicit demonstration disclaimers to the appropriate voting screens.
+
+---
+
+6. AUTHENTICATION AND ROLE-PERMISSION REVIEW
+
+Review the simulated authentication system.
+
+Test:
+
+- Voter login.
+- Admin login.
+- OTP verification.
+- OTP expiry.
+- Incorrect OTP.
+- Maximum OTP attempts.
+- Logout.
+- Session restoration.
+- Invalid session.
+- Route guards.
+- Role restrictions.
+
+Test each admin role:
+
+SUPER_ADMIN.
+NATIONAL_ADMIN.
+STATE_ADMIN.
+ELECTION_OFFICER.
+READ_ONLY_AUDITOR.
+
+Verify that:
+
+- Read-only auditors cannot modify records.
+- State admins cannot modify records outside their assigned demo state.
+- Election officers cannot modify unrelated elections.
+- Voters cannot access admin pages.
+- Unauthenticated users cannot access protected pages.
+- Invalid routes show a proper fallback.
+
+Enforce permission checks in action handlers and service functions, not only by hiding UI elements.
+
+Clearly document that client-side permissions are demonstration logic and can be bypassed by modifying browser data.
+
+Do not claim real authentication or authorisation security.
+
+---
+
+7. LOCAL STORAGE AND DATA PERSISTENCE AUDIT
+
+Inspect every localStorage and sessionStorage operation.
+
+Implement or improve a central storage abstraction.
+
+Requirements:
+
+- Versioned storage schema.
+- Safe JSON parsing.
+- Error handling.
+- Missing-key handling.
+- Malformed-data recovery.
+- Storage quota handling.
+- Default seed data.
+- Data migration where needed.
+- Reset demo data.
+- User-specific state separation.
+
+Test:
+
+1. Fresh installation.
+2. First application load.
+3. Registration.
+4. Login.
+5. Profile update.
+6. Election creation.
+7. Candidate update.
+8. Party update.
+9. Schedule update.
+10. Participation update.
+11. Counting progress.
+12. Result publication.
+13. Browser refresh.
+14. Logout.
+15. Account switching.
+16. Demo reset.
+
+Ensure the application does not crash if browser storage is unavailable or corrupted.
+
+Avoid unnecessary storage writes and stale React state.
+
+Ensure that resetting demo data restores the correct initial application state.
+
+Do not erase unrelated browser data.
+
+---
+
+8. COUNTING ENGINE AND RESULTS AUDIT
+
+Inspect the Phase 6 counting engine.
+
+Verify:
+
+- Counting rounds are sequential.
+- Duplicate rounds are prevented.
+- Cumulative votes are calculated correctly.
+- Total votes never exceed configured limits.
+- Vote percentages use the correct denominator.
+- NOTA is handled separately.
+- Independent candidates are handled correctly.
+- Candidate and party associations are correct.
+- Winner is determined only after counting completion.
+- Runner-up is calculated correctly.
+- Victory margin is correct.
+- Tied results are detected.
+- Missing results are not treated as zero-vote results.
+- Draft results are hidden publicly.
+- Only published results are publicly visible.
+- Published result corrections are audited.
+- Simultaneous election results remain independent.
+- Assembly results remain state-specific.
+
+Test numerical edge cases:
+
+- Zero votes.
+- One candidate.
+- Multiple candidates.
+- All votes assigned to NOTA.
+- Two candidates tied.
+- Multiple candidates tied.
+- Missing candidate references.
+- Very large vote totals.
+- Incomplete counting.
+- Completed counting.
+- Result correction.
+
+Do not use random vote values that change on refresh.
+
+Do not use voter participation records as candidate vote totals.
+
+All results must remain explicitly labelled as simulated.
+
+---
+
+9. SECURITY REVIEW — FRONTEND PROTOTYPE
+
+Perform a practical frontend security review.
+
+Inspect:
+
+- Hardcoded credentials.
+- Sensitive data in source code.
+- Sensitive data in browser storage.
+- Unsafe HTML rendering.
+- dangerouslySetInnerHTML usage.
+- Unvalidated user input.
+- File upload validation.
+- Untrusted image URLs.
+- URL parameter handling.
+- Dependency vulnerabilities.
+- Exposed debug information.
+- Accidental candidate-choice logging.
+- Unnecessary personal information in admin tables.
+- CSV injection risks in exports.
+
+Implement appropriate frontend protections:
+
+- Input validation.
+- Output escaping.
+- Safe rendering.
+- File type validation.
+- File size limits.
+- Safe image fallbacks.
+- CSV cell escaping and formula-injection protection.
+- Safe error messages.
+- Removal of unnecessary sensitive data.
+
+Do not introduce fake encryption or claim that localStorage is secure.
+
+Do not claim that frontend validation prevents tampering.
+
+Do not add unnecessary security dependencies.
+
+Run available dependency audit commands and document any vulnerabilities.
+
+Do not blindly upgrade all packages if it risks breaking the project.
+
+---
+
+10. ACCESSIBILITY AUDIT
+
+Make the application usable for a broad range of users.
+
+Check:
+
+- Semantic HTML.
+- Proper heading hierarchy.
+- Form labels.
+- Keyboard navigation.
+- Focus visibility.
+- Accessible modals.
+- Screen-reader labels.
+- Alt text.
+- Button names.
+- Table accessibility.
+- Chart text alternatives.
+- Colour contrast.
+- Status indicators that do not rely only on colour.
+
+Add:
+
+- Font-size controls if not already present.
+- High-contrast mode if practical.
+- Keyboard-friendly navigation.
+- Accessible validation messages.
+- Focus management for dialogs.
+- Reduced-motion support.
+
+Test the most important workflows using keyboard navigation alone.
+
+Prioritise voter registration, login, election navigation, ballot demonstration, and result browsing.
+
+---
+
+11. RESPONSIVE DESIGN AUDIT
+
+Test the entire application at representative viewport sizes:
+
+Mobile:
+
+- 320px.
+- 375px.
+- 390px.
+- 430px.
+
+Tablet:
+
+- 768px.
+- 1024px.
+
+Desktop:
+
+- 1280px.
+- 1440px.
+- 1920px.
+
+Check:
+
+- Navigation.
+- Sidebar.
+- Dashboard cards.
+- Forms.
+- Data tables.
+- Modals.
+- Candidate cards.
+- Ballot screens.
+- Results charts.
+- Admin dashboard.
+- Election management forms.
+
+Fix:
+
+- Horizontal overflow.
+- Text clipping.
+- Overlapping controls.
+- Unreadable tables.
+- Oversized modals.
+- Broken dropdowns.
+- Inaccessible mobile navigation.
+- Buttons that are difficult to tap.
+
+Use responsive card layouts for data-heavy tables on small screens where appropriate.
+
+---
+
+12. PERFORMANCE AUDIT
+
+Inspect application performance.
+
+Check:
+
+- Unnecessary React re-renders.
+- Large component trees.
+- Repeated data filtering.
+- Expensive calculations.
+- Unnecessary dependencies.
+- Large image assets.
+- Unoptimised rendering.
+- Excessive localStorage writes.
+- Unnecessary state duplication.
+- Large initial bundles.
+
+Optimise where justified.
+
+Possible improvements:
+
+- React.memo where useful.
+- useMemo for expensive derived datasets.
+- useCallback where it meaningfully helps.
+- Lazy loading routes.
+- Image size optimisation.
+- Pagination.
+- Efficient search and filtering.
+- Avoiding unnecessary state updates.
+
+Do not add memoisation everywhere without reason.
+
+Do not sacrifice readability for negligible performance improvements.
+
+Inspect the production build output.
+
+Document large bundles and possible improvements.
+
+---
+
+13. END-TO-END TESTING
+
+Create comprehensive end-to-end tests using the existing framework.
+
+If no suitable browser automation framework exists, configure Playwright where compatible.
+
+Do not unnecessarily replace existing unit-testing tools.
+
+Create end-to-end test journeys.
+
+JOURNEY 1 — NEW VOTER
+
+1. Open homepage.
+2. Open registration.
+3. Complete demo registration.
+4. Select state.
+5. Select district.
+6. Select parliamentary constituency.
+7. Select Assembly constituency.
+8. Review registration.
+9. Submit.
+10. Log in.
+11. Open voter dashboard.
+12. Verify both constituency associations.
+
+JOURNEY 2 — SIMULTANEOUS ELECTIONS
+
+1. Log in as a voter eligible for both elections.
+2. Open My Elections.
+3. Verify Lok Sabha card.
+4. Verify Assembly card.
+5. Open the Lok Sabha demo ballot.
+6. Complete the demo workflow.
+7. Verify Assembly remains pending.
+8. Open the Assembly demo ballot.
+9. Complete the demo workflow.
+10. Verify both participation statuses.
+11. Refresh.
+12. Verify persistence.
+
+JOURNEY 3 — ADMIN ELECTION MANAGEMENT
+
+1. Log in as Super Admin.
+2. Create a Lok Sabha demo election.
+3. Create a State Assembly demo election.
+4. Assign constituencies.
+5. Verify election records.
+6. Update a schedule.
+7. Verify voter-facing updates.
+8. Cancel a test election.
+9. Verify ballot unavailability.
+
+JOURNEY 4 — CANDIDATE MANAGEMENT
+
+1. Register a demo candidate.
+2. Select election type.
+3. Select election.
+4. Select constituency.
+5. Submit candidate.
+6. Approve candidate.
+7. Verify candidate appears in the correct directory.
+8. Verify candidate appears in the correct demo ballot.
+9. Verify candidate does not appear in unrelated constituencies.
+
+JOURNEY 5 — COUNTING AND RESULTS
+
+1. Open admin results management.
+2. Select an election.
+3. Select a constituency.
+4. Start counting.
+5. Process counting rounds.
+6. Verify cumulative totals.
+7. Complete counting.
+8. Review the result.
+9. Publish simulated results.
+10. Open public results portal.
+11. Verify published result.
+12. Verify unpublished results remain hidden.
+
+JOURNEY 6 — ROLE PERMISSIONS
+
+Test all demo roles.
+
+Verify each role can only perform its permitted demonstration actions.
+
+JOURNEY 7 — DATA RESET
+
+1. Modify election data.
+2. Modify candidate data.
+3. Update voter profile.
+4. Change demo participation status.
+5. Change counting data.
+6. Publish demo results.
+7. Reset demo data.
+8. Verify the original seeded dataset is restored.
+
+---
+
+14. ERROR HANDLING AND EDGE CASES
+
+Handle:
+
+- Invalid route.
+- Missing election.
+- Missing constituency.
+- Missing candidate.
+- Missing party.
+- Invalid voter ID.
+- Expired session.
+- Malformed localStorage.
+- Empty election list.
+- Empty candidate list.
+- No published results.
+- Invalid result records.
+- Invalid dates.
+- Missing images.
+- Failed file uploads.
+- Browser storage unavailable.
+- Duplicate records.
+- Stale references.
+- Invalid URL parameters.
+- Unexpected application errors.
+
+Add an appropriate error boundary.
+
+Display useful error messages.
+
+Do not expose stack traces or internal technical information to normal users.
+
+Provide a recovery path wherever possible.
+
+---
+
+15. UI CONSISTENCY AND FINAL DESIGN REFINEMENT
+
+Perform a complete visual review.
+
+Standardise:
+
+- Colours.
+- Typography.
+- Spacing.
+- Border radius.
+- Card styles.
+- Button styles.
+- Form controls.
+- Status badges.
+- Tables.
+- Modals.
+- Navigation.
+- Empty states.
+- Notification design.
+
+Ensure that public, voter, and admin areas feel like parts of the same application.
+
+Remove:
+
+- Duplicate UI patterns.
+- Unused components.
+- Dead code.
+- Inconsistent layouts.
+- Unnecessary decorative elements.
+- Obsolete styling.
+- Broken imports.
+
+Do not remove useful existing assets or functionality.
+
+Preserve existing branding assets where appropriate.
+
+Do not introduce unrelated redesigns.
+
+---
+
+16. AUTOMATED TESTING AND BUILD VALIDATION
+
+Run all existing automated tests.
+
+Add missing tests for critical business logic.
+
+Minimum test coverage areas:
+
+- Election eligibility.
+- Constituency relationships.
+- Candidate filtering.
+- Independent participation tracking.
+- Simultaneous election workflows.
+- Candidate-choice non-persistence.
+- Admin permissions.
+- Election lifecycle transitions.
+- Schedule validation.
+- Counting engine.
+- Result calculation.
+- Result publication.
+- Local storage recovery.
+- CSV exports.
+- Data reset.
+
+Run the following checks where scripts are available:
+
+npm install
+npm run lint
+npm test
+npm run build
+
+If the project uses npm ci and a lockfile, prefer npm ci for a reproducible clean installation.
+
+Run browser-based tests if configured.
+
+Do not claim any check passed unless it was actually executed.
+
+Fix:
+
+- Build errors.
+- Lint errors.
+- Failed tests.
+- Runtime errors.
+- Console errors.
+- Broken routes.
+- UI interaction failures.
+
+Do not suppress test failures just to obtain a successful build.
+
+If an existing failure is unrelated to your changes, document it accurately and explain its impact.
+
+---
+
+17. FINAL ACCEPTANCE CHECKLIST
+
+The project is ready for completion only when the following conditions are satisfied.
+
+APPLICATION:
+
+- [ ] Application starts successfully.
+- [ ] All primary routes work.
+- [ ] No broken navigation.
+- [ ] No critical runtime errors.
+- [ ] Public, voter and admin layouts work.
+
+ELECTION ARCHITECTURE:
+
+- [ ] Lok Sabha and Assembly remain separate.
+- [ ] Constituency relationships are valid.
+- [ ] Candidate associations are valid.
+- [ ] State and district references are valid.
+
+VOTER PORTAL:
+
+- [ ] Registration works.
+- [ ] Simulated login works.
+- [ ] Profile updates work.
+- [ ] Eligible elections display correctly.
+- [ ] Participation status is independent.
+- [ ] Simultaneous election workflow works.
+
+VOTING DEMONSTRATION:
+
+- [ ] Separate Lok Sabha ballot.
+- [ ] Separate Assembly ballot.
+- [ ] Candidate filtering works.
+- [ ] NOTA works.
+- [ ] Review flow works.
+- [ ] Demo confirmation works.
+- [ ] Candidate choices are not persisted.
+- [ ] Participation history reveals no candidate choice.
+
+ADMIN PORTAL:
+
+- [ ] Admin login works.
+- [ ] Role permissions work.
+- [ ] Election management works.
+- [ ] Candidate management works.
+- [ ] Party management works.
+- [ ] Constituency management works.
+- [ ] Schedule management works.
+- [ ] Announcements work.
+- [ ] Audit logs work.
+
+RESULTS:
+
+- [ ] Counting simulation works.
+- [ ] Vote calculations are correct.
+- [ ] Winner calculation works.
+- [ ] Tie detection works.
+- [ ] Lok Sabha results are independent.
+- [ ] Assembly results are independent.
+- [ ] Simultaneous results work.
+- [ ] Publication works.
+- [ ] CSV export works.
+
+DATA:
+
+- [ ] Persistence works.
+- [ ] Refresh does not corrupt state.
+- [ ] Account switching works.
+- [ ] Demo reset works.
+- [ ] Malformed storage is handled.
+
+QUALITY:
+
+- [ ] Mobile responsive.
+- [ ] Tablet responsive.
+- [ ] Desktop responsive.
+- [ ] Accessibility reviewed.
+- [ ] Performance reviewed.
+- [ ] Lint checks completed.
+- [ ] Automated tests executed.
+- [ ] Production build completed.
+
+Do not mark an item complete unless it has actually been verified.
+
+---
+
+18. FINAL DOCUMENTATION
+
+Update or create project documentation.
+
+Include:
+
+README.md
+
+- Project overview.
+- Features.
+- Technology stack.
+- Installation.
+- Development commands.
+- Production build.
+- Demo accounts.
+- Demo OTP instructions.
+- Application navigation.
+- Data architecture.
+- Demo data reset instructions.
+- Known limitations.
+
+ARCHITECTURE.md
+
+Document:
+
+- Application architecture.
+- Folder structure.
+- Routing.
+- Context providers.
+- Data models.
+- Election relationships.
+- Local persistence.
+- Counting simulation.
+- Results publication.
+
+TESTING.md
+
+Document:
+
+- Unit tests.
+- Integration tests.
+- End-to-end tests.
+- Test commands.
+- Test results.
+- Known failures.
+
+SECURITY-LIMITATIONS.md
+
+Explicitly document:
+
+- Frontend-only authentication.
+- Browser storage limitations.
+- Client-side role permission limitations.
+- No real electoral-roll verification.
+- No secure ballot storage.
+- No real vote transmission.
+- No cryptographic ballot secrecy.
+- No authoritative vote counting.
+- No legally valid election capability.
+
+Do not describe the project as production-secure.
+
+---
+
+19. FINAL IMPLEMENTATION REPORT
+
+At the end, provide a detailed report:
+
+1. Overall project condition before audit.
+2. Major defects discovered.
+3. Defects fixed.
+4. Files created.
+5. Files modified.
+6. Files removed and why.
+7. Data integrity improvements.
+8. Authentication and permission improvements.
+9. Privacy improvements.
+10. Accessibility improvements.
+11. Responsive design improvements.
+12. Performance improvements.
+13. Unit test results.
+14. Integration test results.
+15. End-to-end test results.
+16. Lint results.
+17. Production build results.
+18. Remaining limitations.
+19. Instructions to run the final project.
+
+Include exact test counts and build output only when verified.
+
+---
+
+20. STRICT EXECUTION RULES
+
+1. Work directly on the existing OVS project.
+2. Preserve all useful functionality from Phases 1–6.
+3. Do not create a new application.
+4. Do not implement backend functionality.
+5. Do not use fake API integrations.
+6. Do not fabricate official election data.
+7. Do not expose individual candidate selections.
+8. Do not mix Lok Sabha and Assembly data.
+9. Do not silently ignore data-integrity errors.
+10. Do not suppress failing tests.
+11. Do not claim unverified functionality works.
+12. Do not leave non-functional buttons.
+13. Do not leave core TODOs.
+14. Do not remove useful assets.
+15. Do not introduce unnecessary dependencies.
+16. Do not perform risky mass dependency upgrades without justification.
+17. Do not use fake security or encryption claims.
+18. Use deterministic demo data.
+19. Keep all functionality integrated.
+20. Fix defects rather than merely documenting them.
+
+FINAL EXECUTION INSTRUCTION
+
+Start with a full source-code audit.
+
+Then systematically test the entire application.
+
+Fix all identified defects.
+
+Run automated tests.
+
+Perform browser-based verification.
+
+Refine the UI.
+
+Update documentation.
+
+Run the final production build.
+
+Do not stop after the audit report.
+
+Do not start an unrelated Phase 8 or introduce unnecessary features.
+
+The final deliverable must be a stable, polished, responsive, fully integrated frontend demonstration of the OVS application, preserving all functionality from Phases 1–6.
+
+Prioritise correctness, data integrity, privacy, maintainability, usability, and verifiable test results.

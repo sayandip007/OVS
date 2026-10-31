@@ -1,20 +1,25 @@
 import React, { useState, useMemo } from 'react';
 import { useElection } from '../../context/ElectionContext';
+import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
 import SearchBar from '../../components/common/SearchBar';
 
 export default function DistrictManagement() {
   const { states, districts, constituencies, upsertDistrict } = useElection();
+  const { currentAdmin, canPerformAdminAction } = useAuth();
   const { notifySuccess, notifyError } = useNotification();
 
-  const [stateFilter, setStateFilter] = useState('ALL');
+  const [stateFilter, setStateFilter] = useState(
+    currentAdmin?.assignedStateId || 'ALL'
+  );
   const [search, setSearch] = useState('');
   const [form, setForm] = useState({
     districtId: '',
-    stateId: 'WB',
+    stateId: currentAdmin?.assignedStateId || 'WB',
     districtName: '',
     districtCode: '',
     headquarters: '',
+    isActive: true,
   });
 
   const filteredDistricts = useMemo(() => {
@@ -33,6 +38,14 @@ export default function DistrictManagement() {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    const perm = canPerformAdminAction('MANAGE_DISTRICT', {
+      stateId: form.stateId,
+    });
+    if (!perm.allowed) {
+      notifyError(perm.reason);
+      return;
+    }
+
     if (!form.districtName.trim() || !form.stateId) {
       notifyError('State and District Name are required.');
       return;
@@ -47,13 +60,17 @@ export default function DistrictManagement() {
         .toUpperCase()
         .replace(/[^A-Z0-9]+/g, '-')}`;
 
-    const saved = upsertDistrict({
-      districtId,
-      stateId: form.stateId,
-      districtName: form.districtName.trim(),
-      districtCode: cleanCode,
-      headquarters: form.headquarters.trim() || form.districtName.trim(),
-    });
+    const saved = upsertDistrict(
+      {
+        districtId,
+        stateId: form.stateId,
+        districtName: form.districtName.trim(),
+        districtCode: cleanCode,
+        headquarters: form.headquarters.trim() || form.districtName.trim(),
+        isActive: form.isActive !== false,
+      },
+      currentAdmin
+    );
 
     notifySuccess(`Saved district ${saved.districtName} in ${saved.stateId}`);
     setForm({
@@ -62,7 +79,25 @@ export default function DistrictManagement() {
       districtName: '',
       districtCode: '',
       headquarters: '',
+      isActive: true,
     });
+  };
+
+  const handleToggleStatus = (dist) => {
+    const perm = canPerformAdminAction('MANAGE_DISTRICT', {
+      stateId: dist.stateId,
+    });
+    if (!perm.allowed) {
+      notifyError(perm.reason);
+      return;
+    }
+    const nextActive = dist.isActive === false;
+    upsertDistrict({ ...dist, isActive: nextActive }, currentAdmin);
+    notifySuccess(
+      `District ${dist.districtName} marked as ${
+        nextActive ? 'Active' : 'Inactive'
+      }.`
+    );
   };
 
   return (
@@ -75,6 +110,9 @@ export default function DistrictManagement() {
           <h1 className="text-2xl font-extrabold text-slate-900 mt-0.5">
             Districts Management ({districts.length})
           </h1>
+          <p className="text-xs text-slate-600 mt-1">
+            Add, edit, or deactivate districts across Indian States and Union Territories. Districts linked to constituencies are protected from deletion.
+          </p>
         </div>
 
         <form
@@ -182,14 +220,20 @@ export default function DistrictManagement() {
                 <th className="py-3 px-4">District Name</th>
                 <th className="py-3 px-4">State</th>
                 <th className="py-3 px-4">Headquarters</th>
-                <th className="py-3 px-4">Assembly Seats</th>
-                <th className="py-3 px-4 text-right">Action</th>
+                <th className="py-3 px-4">Linked Constituencies</th>
+                <th className="py-3 px-4">Status</th>
+                <th className="py-3 px-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredDistricts.map((d) => {
                 const acCount = constituencies.filter(
                   (c) => c.districtId === d.districtId
+                ).length;
+                const pcCount = constituencies.filter(
+                  (c) =>
+                    Array.isArray(c.districtIds) &&
+                    c.districtIds.includes(d.districtId)
                 ).length;
                 return (
                   <tr key={d.districtId} className="hover:bg-slate-50">
@@ -199,17 +243,39 @@ export default function DistrictManagement() {
                     <td className="py-3 px-4 font-bold text-slate-900">
                       {d.districtName}
                     </td>
-                    <td className="py-3 px-4">{d.stateId}</td>
+                    <td className="py-3 px-4 font-semibold">{d.stateId}</td>
                     <td className="py-3 px-4">{d.headquarters}</td>
-                    <td className="py-3 px-4">{acCount} ACs</td>
-                    <td className="py-3 px-4 text-right">
-                      <button
-                        type="button"
-                        onClick={() => setForm(d)}
-                        className="px-3 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold cursor-pointer"
+                    <td className="py-3 px-4">
+                      {pcCount} PCs • {acCount} ACs
+                    </td>
+                    <td className="py-3 px-4">
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          d.isActive === false
+                            ? 'bg-slate-200 text-slate-700'
+                            : 'bg-emerald-100 text-emerald-800'
+                        }`}
                       >
-                        Edit
-                      </button>
+                        {d.isActive === false ? 'INACTIVE' : 'ACTIVE'}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 text-right">
+                      <div className="inline-flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setForm(d)}
+                          className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold cursor-pointer"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleStatus(d)}
+                          className="px-2.5 py-1 rounded border border-slate-300 text-slate-700 font-semibold cursor-pointer"
+                        >
+                          {d.isActive === false ? 'Activate' : 'Deactivate'}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );

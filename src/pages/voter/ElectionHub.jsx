@@ -1,44 +1,40 @@
 import React, { useState, useMemo } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useVoter } from '../../context/VoterContext';
 import { useElection } from '../../context/ElectionContext';
-import { useNotification } from '../../context/NotificationContext';
 import VotingStatus from '../../components/voter/VotingStatus';
 import ElectionCard from '../../components/voter/ElectionCard';
 import EmptyState from '../../components/common/EmptyState';
-import Modal from '../../components/common/Modal';
 import {
   ELECTION_TYPES,
   ELECTION_STATUSES,
   PARTICIPATION_STATUSES,
-  PARTICIPATION_STATUS_STYLES,
 } from '../../utils/constants';
 
 const HUB_TABS = [
   { id: 'ALL', label: 'All Elections' },
-  { id: 'ACTIVE', label: 'Active' },
+  { id: 'ACTIVE', label: 'Active Polling' },
   { id: 'UPCOMING', label: 'Upcoming' },
   { id: 'COMPLETED', label: 'Completed' },
   { id: 'PENDING_PARTICIPATION', label: 'Participation Pending' },
 ];
 
 export default function ElectionHub() {
-  const [searchParams] = useSearchParams();
-  const initialElectionId = searchParams.get('electionId');
+  const navigate = useNavigate();
 
   const {
     currentVoter,
+    voterState,
     voterParliamentaryConstituency,
     voterAssemblyConstituency,
     eligibleElections,
     participationSummary,
+    controlledDemoPollingMode,
+    setControlledDemoPollingMode,
     getElectionParticipationStatus,
     getConstituencyForVoterElection,
-    getCandidatesForVoterElection,
-    simulateParticipationForCurrentVoter,
   } = useVoter();
-  const { states, parties, candidates } = useElection();
-  const { notifySuccess, notifyError } = useNotification();
+  const { states, candidates } = useElection();
 
   const [activeTab, setActiveTab] = useState('ALL');
   const [typeFilter, setTypeFilter] = useState('ALL');
@@ -46,11 +42,6 @@ export default function ElectionHub() {
   const [stateFilter, setStateFilter] = useState('ALL');
   const [electionStatusFilter, setElectionStatusFilter] = useState('ALL');
   const [participationFilter, setParticipationFilter] = useState('ALL');
-
-  const [inspectedElection, setInspectedElection] = useState(() => {
-    if (!initialElectionId) return null;
-    return eligibleElections.find((e) => e.electionId === initialElectionId) || null;
-  });
 
   const availableYears = useMemo(() => {
     const yrs = new Set(eligibleElections.map((e) => String(e.year)));
@@ -60,17 +51,23 @@ export default function ElectionHub() {
   const filteredElections = useMemo(() => {
     return eligibleElections.filter((election) => {
       const partStatus = getElectionParticipationStatus(election);
+      const isPollingOpen =
+        election.status === 'POLLING_ACTIVE' || election.status === 'ACTIVE';
+      const isCompletedStatus =
+        election.status === 'RESULTS_DECLARED' ||
+        election.status === 'POLLING_COMPLETED' ||
+        election.status === 'COMPLETED';
 
       // Tab filter
-      if (activeTab === 'ACTIVE' && election.status !== ELECTION_STATUSES.ACTIVE) {
+      if (activeTab === 'ACTIVE' && !isPollingOpen) {
         return false;
       }
-      if (activeTab === 'UPCOMING' && election.status !== ELECTION_STATUSES.UPCOMING) {
+      if (activeTab === 'UPCOMING' && election.status !== 'UPCOMING') {
         return false;
       }
       if (
         activeTab === 'COMPLETED' &&
-        election.status !== ELECTION_STATUSES.COMPLETED &&
+        !isCompletedStatus &&
         partStatus !== PARTICIPATION_STATUSES.VOTED
       ) {
         return false;
@@ -83,11 +80,13 @@ export default function ElectionHub() {
       }
 
       // Dropdown filters
-      if (typeFilter !== 'ALL' && election.electionType !== typeFilter) return false;
-      if (yearFilter !== 'ALL' && String(election.year) !== yearFilter) return false;
+      const elType = election.type || election.electionType;
+      if (typeFilter !== 'ALL' && elType !== typeFilter) return false;
+      if (yearFilter !== 'ALL' && String(election.year) !== yearFilter)
+        return false;
       if (stateFilter !== 'ALL') {
         const elState = election.stateId || currentVoter?.stateId;
-        if (elState !== stateFilter && election.stateId !== 'ALL_INDIA') return false;
+        if (elState !== stateFilter && election.stateId !== null) return false;
       }
       if (
         electionStatusFilter !== 'ALL' &&
@@ -115,17 +114,6 @@ export default function ElectionHub() {
 
   if (!currentVoter) return null;
 
-  const handleSimulateParticipation = (election) => {
-    const res = simulateParticipationForCurrentVoter(election.electionId);
-    if (!res.ok) {
-      notifyError(res.error);
-      return;
-    }
-    notifySuccess(
-      `Demo participation status updated to VOTED for ${election.title} (Ref: ${res.referenceId}). Other eligible elections remain independent.`
-    );
-  };
-
   const resetFilters = () => {
     setActiveTab('ALL');
     setTypeFilter('ALL');
@@ -140,24 +128,43 @@ export default function ElectionHub() {
       {/* Simultaneous Election Progress Bar */}
       <VotingStatus summary={participationSummary} />
 
-      {/* Page Header & Phase 3 Notice */}
+      {/* Page Header & Controlled Demo Mode Toggle */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-5">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-200 pb-4">
           <div>
             <span className="text-xs font-bold uppercase tracking-wider text-[#002868]">
-              Voter Eligibility &amp; Simultaneous Election Tracker
+              Simultaneous &amp; Independent Election Selection Hub
             </span>
             <h1 className="text-2xl font-extrabold text-slate-900 mt-0.5">
               My Eligible Elections ({eligibleElections.length})
             </h1>
             <p className="text-xs text-slate-600 mt-1">
-              Displaying elections matched strictly to your Parliamentary Constituency (
-              <strong>{voterParliamentaryConstituency?.name} PC</strong>) and State Assembly
-              Constituency (<strong>{voterAssemblyConstituency?.name} AC</strong>).
+              Displaying elections matched strictly to your Parliamentary
+              Constituency (
+              <strong>{voterParliamentaryConstituency?.name} PC</strong>) and
+              State Assembly Constituency (
+              <strong>{voterAssemblyConstituency?.name} AC</strong>).
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() =>
+                setControlledDemoPollingMode((prev) => !prev)
+              }
+              data-testid="toggle-controlled-demo-polling-btn"
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${
+                controlledDemoPollingMode
+                  ? 'bg-amber-500 text-slate-950 border-amber-600'
+                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'
+              }`}
+              title="Enable controlled test polling mode to test upcoming elections without changing system dates"
+            >
+              {controlledDemoPollingMode
+                ? 'Controlled Demo Polling: ON'
+                : 'Enable Controlled Demo Polling Mode'}
+            </button>
             <Link
               to="/voter/history"
               className="px-4 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-xs font-bold text-slate-800"
@@ -207,7 +214,9 @@ export default function ElectionHub() {
             >
               <option value="ALL">All Types (LS &amp; Assembly)</option>
               <option value={ELECTION_TYPES.LOK_SABHA}>Lok Sabha (PC)</option>
-              <option value={ELECTION_TYPES.STATE_ASSEMBLY}>State Assembly (AC)</option>
+              <option value={ELECTION_TYPES.STATE_ASSEMBLY}>
+                State Assembly (AC)
+              </option>
             </select>
           </div>
 
@@ -259,9 +268,13 @@ export default function ElectionHub() {
               className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white"
             >
               <option value="ALL">All Schedule Statuses</option>
-              <option value={ELECTION_STATUSES.ACTIVE}>Active</option>
+              <option value={ELECTION_STATUSES.POLLING_ACTIVE}>
+                Polling Active
+              </option>
               <option value={ELECTION_STATUSES.UPCOMING}>Upcoming</option>
-              <option value={ELECTION_STATUSES.COMPLETED}>Completed</option>
+              <option value={ELECTION_STATUSES.RESULTS_DECLARED}>
+                Results Declared
+              </option>
             </select>
           </div>
 
@@ -276,7 +289,9 @@ export default function ElectionHub() {
             >
               <option value="ALL">All Participation States</option>
               <option value={PARTICIPATION_STATUSES.PENDING}>Pending</option>
-              <option value={PARTICIPATION_STATUSES.VOTED}>Voted (Completed)</option>
+              <option value={PARTICIPATION_STATUSES.VOTED}>
+                Voted (Completed)
+              </option>
               <option value={PARTICIPATION_STATUSES.UPCOMING}>Upcoming</option>
               <option value={PARTICIPATION_STATUSES.CLOSED}>Closed</option>
             </select>
@@ -295,165 +310,39 @@ export default function ElectionHub() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           {filteredElections.map((election) => {
+            const elId = election.id || election.electionId;
             const targetConstituency = getConstituencyForVoterElection(election);
             const partStatus = getElectionParticipationStatus(election);
-            const record = currentVoter.elections?.[election.electionId];
+            const record = currentVoter.elections?.[elId];
             const candidateCount = candidates.filter(
               (c) =>
-                c.electionId === election.electionId &&
-                c.constituencyId === targetConstituency?.constituencyId &&
-                c.approvalStatus === 'APPROVED'
+                c.electionId === elId &&
+                c.constituencyId ===
+                  (targetConstituency?.id ||
+                    targetConstituency?.constituencyId) &&
+                (c.status || c.approvalStatus) === 'APPROVED'
             ).length;
 
             return (
               <ElectionCard
-                key={election.electionId}
+                key={elId}
                 election={election}
                 constituency={targetConstituency}
+                stateName={voterState?.name || voterState?.stateName}
                 participationStatus={partStatus}
                 participatedAt={record?.participatedAt}
+                referenceId={record?.referenceId}
+                demoReference={record?.demoReference}
                 candidateCount={candidateCount}
-                onParticipate={(el) => setInspectedElection(el)}
-                onSimulateStatus={handleSimulateParticipation}
+                controlledDemoPollingMode={controlledDemoPollingMode}
+                onParticipate={(el) =>
+                  navigate(`/voter/elections/${el.id || el.electionId}/info`)
+                }
               />
             );
           })}
         </div>
       )}
-
-      {/* Election Inspection Modal (Displays Status, Schedule, and Contesting Candidates) */}
-      <Modal
-        isOpen={Boolean(inspectedElection)}
-        onClose={() => setInspectedElection(null)}
-        title={
-          inspectedElection
-            ? `${inspectedElection.title} (${inspectedElection.electionId})`
-            : 'Election Details'
-        }
-      >
-        {inspectedElection && (
-          <div className="space-y-4 text-xs">
-            {(() => {
-              const targetConst = getConstituencyForVoterElection(inspectedElection);
-              const partStatus = getElectionParticipationStatus(inspectedElection);
-              const statusStyle =
-                PARTICIPATION_STATUS_STYLES[partStatus] ||
-                PARTICIPATION_STATUS_STYLES.PENDING;
-              const elCandidates = getCandidatesForVoterElection(inspectedElection);
-              const record = currentVoter.elections?.[inspectedElection.electionId];
-
-              return (
-                <>
-                  <div className="p-4 rounded-xl bg-slate-900 text-white flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-amber-300 block">
-                        {inspectedElection.electionType === ELECTION_TYPES.LOK_SABHA
-                          ? 'Lok Sabha Parliamentary Constituency'
-                          : 'State Legislative Assembly Constituency'}
-                      </span>
-                      <h3 className="text-base font-extrabold mt-0.5">
-                        {targetConst?.name} ({targetConst?.code})
-                      </h3>
-                    </div>
-                    <span
-                      className={`px-3 py-1 rounded-full text-xs font-bold border ${statusStyle.bg} ${statusStyle.text} ${statusStyle.border}`}
-                    >
-                      {statusStyle.label}
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
-                      <span className="text-slate-500 block">Polling Date</span>
-                      <strong className="text-slate-900">
-                        {inspectedElection.schedule?.pollingDate || 'TBA'}
-                      </strong>
-                    </div>
-                    <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
-                      <span className="text-slate-500 block">Counting Date</span>
-                      <strong className="text-slate-900">
-                        {inspectedElection.schedule?.countingDate || 'TBA'}
-                      </strong>
-                    </div>
-                  </div>
-
-                  {record?.participated && (
-                    <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-950">
-                      <strong>Participation Completed:</strong> Marked VOTED on{' '}
-                      {new Date(record.participatedAt).toLocaleString('en-IN')} (Demo Ref:{' '}
-                      <code className="font-mono font-bold">
-                        {record.referenceId || 'DEMO-REF-VERIFIED'}
-                      </code>
-                      ). No candidate or party choice is stored in your voter record.
-                    </div>
-                  )}
-
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold uppercase text-slate-600">
-                        Contesting Candidates in {targetConst?.name} ({elCandidates.length})
-                      </span>
-                      <Link
-                        to={`/voter/candidates?electionId=${inspectedElection.electionId}`}
-                        className="font-bold text-[#002868] hover:underline"
-                      >
-                        Open in Candidate Directory &rarr;
-                      </Link>
-                    </div>
-                    <div className="divide-y divide-slate-200 border border-slate-200 rounded-xl overflow-hidden">
-                      {elCandidates.map((cand) => {
-                        const party = parties.find((p) => p.partyId === cand.partyId);
-                        return (
-                          <div
-                            key={cand.candidateId}
-                            className="p-2.5 bg-white flex items-center justify-between gap-3"
-                          >
-                            <div className="flex items-center gap-2.5">
-                              <img
-                                src={cand.photoUrl}
-                                alt={cand.name}
-                                className="w-9 h-9 rounded-lg object-cover border border-slate-200"
-                              />
-                              <div>
-                                <strong className="text-slate-900 block">
-                                  {cand.name}
-                                </strong>
-                                <span className="text-[11px] text-slate-500">
-                                  {party?.partyName} ({party?.abbreviation})
-                                </span>
-                              </div>
-                            </div>
-                            <span className="text-[11px] font-mono text-slate-500">
-                              Ballot #{cand.ballotNumber}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  <div className="p-3.5 rounded-xl bg-blue-50 border border-blue-200 text-slate-700 flex flex-wrap items-center justify-between gap-3">
-                    <span>
-                      <strong>Phase 3 Note:</strong> Actual ballot candidate selection and
-                      vote confirmation are scheduled for Phase 4. You can test independent
-                      participation status transitions below:
-                    </span>
-                    {partStatus === PARTICIPATION_STATUSES.PENDING && (
-                      <button
-                        type="button"
-                        onClick={() => handleSimulateParticipation(inspectedElection)}
-                        className="px-3.5 py-2 rounded-lg bg-[#002868] text-white font-bold cursor-pointer"
-                      >
-                        Simulate Participation (Mark VOTED)
-                      </button>
-                    )}
-                  </div>
-                </>
-              );
-            })()}
-          </div>
-        )}
-      </Modal>
     </div>
   );
 }

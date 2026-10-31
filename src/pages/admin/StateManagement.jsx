@@ -1,12 +1,14 @@
 import React, { useState, useMemo } from 'react';
 import { useElection } from '../../context/ElectionContext';
+import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
 import SearchBar from '../../components/common/SearchBar';
 import { CONSTITUENCY_TYPES } from '../../utils/constants';
 
 export default function StateManagement() {
   const { states, districts, constituencies, upsertState } = useElection();
-  const { notifySuccess } = useNotification();
+  const { currentAdmin, canPerformAdminAction } = useAuth();
+  const { notifySuccess, notifyError } = useNotification();
 
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('ALL');
@@ -30,9 +32,31 @@ export default function StateManagement() {
   const handleSaveEdit = (e) => {
     e.preventDefault();
     if (!editingState) return;
-    upsertState(editingState);
+    const perm = canPerformAdminAction('MANAGE_STATE', {
+      stateId: editingState.stateId,
+    });
+    if (!perm.allowed) {
+      notifyError(perm.reason);
+      return;
+    }
+    upsertState(editingState, currentAdmin);
     notifySuccess(`Updated State/UT record for ${editingState.stateName}`);
     setEditingState(null);
+  };
+
+  const handleToggleActive = (st) => {
+    const perm = canPerformAdminAction('MANAGE_STATE', {
+      stateId: st.stateId,
+    });
+    if (!perm.allowed) {
+      notifyError(perm.reason);
+      return;
+    }
+    const nextActive = st.isActive === false;
+    upsertState({ ...st, isActive: nextActive }, currentAdmin);
+    notifySuccess(
+      `${st.stateName} marked as ${nextActive ? 'Active' : 'Inactive'}.`
+    );
   };
 
   return (
@@ -46,8 +70,7 @@ export default function StateManagement() {
             States &amp; Union Territories Directory ({states.length})
           </h1>
           <p className="text-xs text-slate-600 mt-1">
-            All 28 States and 8 Union Territories with official Lok Sabha (PC) and
-            Legislative Assembly (AC) seat allocations.
+            All 28 States and 8 Union Territories with official Lok Sabha (PC) and Legislative Assembly (AC) seat allocations.
           </p>
         </div>
 
@@ -169,7 +192,8 @@ export default function StateManagement() {
                 <th className="py-3 px-4">Type &amp; Region</th>
                 <th className="py-3 px-4">Official Seats (PC / AC)</th>
                 <th className="py-3 px-4">Loaded Demo Hierarchy</th>
-                <th className="py-3 px-4 text-right">Action</th>
+                <th className="py-3 px-4">Status</th>
+                <th className="py-3 px-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -221,14 +245,34 @@ export default function StateManagement() {
                     <td className="py-3 px-4 text-slate-600">
                       {dCount} Districts • {pcCount} PCs • {acCount} ACs
                     </td>
-                    <td className="py-3 px-4 text-right">
-                      <button
-                        type="button"
-                        onClick={() => setEditingState(st)}
-                        className="px-3 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold cursor-pointer"
+                    <td className="py-3 px-4">
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          st.isActive === false
+                            ? 'bg-slate-200 text-slate-700'
+                            : 'bg-emerald-100 text-emerald-800'
+                        }`}
                       >
-                        Edit
-                      </button>
+                        {st.isActive === false ? 'INACTIVE' : 'ACTIVE'}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 text-right">
+                      <div className="inline-flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setEditingState(st)}
+                          className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold cursor-pointer"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleActive(st)}
+                          className="px-2.5 py-1 rounded border border-slate-300 text-slate-700 font-semibold cursor-pointer"
+                        >
+                          {st.isActive === false ? 'Activate' : 'Deactivate'}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );

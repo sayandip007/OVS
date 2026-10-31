@@ -8,13 +8,15 @@ import {
   Users,
   ArrowRight,
   Lock,
-  Sparkles,
+  FileCheck2,
+  Info,
 } from 'lucide-react';
 import {
   ELECTION_TYPES,
   ELECTION_STATUS_LABELS,
   PARTICIPATION_STATUS_STYLES,
 } from '../../utils/constants';
+import { getElectionStatusExplanation } from '../../services/ballotValidationService';
 
 export default function ElectionCard({
   election,
@@ -25,24 +27,38 @@ export default function ElectionCard({
   participationStatus = 'PENDING',
   participatedAt = null,
   referenceId = null,
+  demoReference = null,
+  controlledDemoPollingMode = false,
   onStartParticipation,
   onParticipate,
-  onSimulateStatus,
 }) {
-  const handleNavigateClick = onStartParticipation || onParticipate;
+  const elId = election.id || election.electionId;
   const isLokSabha =
     (election.type || election.electionType) === ELECTION_TYPES.LOK_SABHA;
   const statusStyle =
     PARTICIPATION_STATUS_STYLES[participationStatus] ||
     PARTICIPATION_STATUS_STYLES.PENDING;
   const isVoted = participationStatus === 'VOTED';
-  const isPollingActive = election.status === 'POLLING_ACTIVE';
+  const isPollingActive =
+    election.status === 'POLLING_ACTIVE' ||
+    election.status === 'ACTIVE' ||
+    controlledDemoPollingMode;
+  const canOpenBallot = !isVoted && isPollingActive && election.status !== 'CANCELLED';
 
   const countToDisplay =
     candidateCount !== undefined ? candidateCount : candidates.length;
+  const resolvedRef = demoReference || referenceId;
+  const handleCustomClick = onStartParticipation || onParticipate;
+
+  const ballotButtonLabel = isLokSabha
+    ? 'Open Lok Sabha Demo Ballot'
+    : 'Open Assembly Demo Ballot';
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-6 flex flex-col justify-between gap-5">
+    <div
+      data-testid={`election-card-${elId}`}
+      className="bg-white rounded-xl border border-slate-200 shadow-xs p-6 flex flex-col justify-between gap-5"
+    >
       <div>
         {/* Top Election Type & Participation Status Badges */}
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs mb-3">
@@ -59,13 +75,12 @@ export default function ElectionCard({
                 : 'State Assembly Election'}
             </span>
             <span className="font-mono text-slate-500">
-              {election.id || election.electionId} &middot;{' '}
-              {election.year || 2029}
+              {elId} &middot; {election.year || 2029}
             </span>
           </div>
 
           <span
-            data-testid={`election-status-badge-${election.id || election.electionId}`}
+            data-testid={`election-status-badge-${elId}`}
             className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${statusStyle.badgeClass}`}
           >
             <span className={`w-2 h-2 rounded-full ${statusStyle.dotClass}`} />
@@ -84,11 +99,11 @@ export default function ElectionCard({
           {election.name || election.title}
         </h3>
 
-        {election.description && (
-          <p className="text-xs text-slate-600 mt-1 line-clamp-2">
-            {election.description}
-          </p>
-        )}
+        <p className="text-xs font-bold text-[#002868] mt-1">
+          {isLokSabha
+            ? 'Parliamentary Election — Select your Member of Parliament.'
+            : 'State Legislative Assembly Election — Select your Member of Legislative Assembly.'}
+        </p>
 
         {/* Constituency, State & Schedule Details */}
         <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
@@ -104,7 +119,11 @@ export default function ElectionCard({
                 {constituency ? constituency.name : 'Unassigned'}
               </p>
               <p className="text-[11px] text-slate-500">
-                State: {stateName || election.stateId || constituency?.stateId || 'All India'}
+                State:{' '}
+                {stateName ||
+                  election.stateId ||
+                  constituency?.stateId ||
+                  'All India'}
               </p>
             </div>
           </div>
@@ -113,7 +132,10 @@ export default function ElectionCard({
             <Calendar className="w-4 h-4 text-[#002868] shrink-0 mt-0.5" />
             <div>
               <p className="text-slate-500">
-                Polling Schedule ({ELECTION_STATUS_LABELS[election.status] || election.status})
+                Status:{' '}
+                <strong className="text-slate-800">
+                  {ELECTION_STATUS_LABELS[election.status] || election.status}
+                </strong>
               </p>
               <p className="font-bold text-slate-900 tabular-nums">
                 {election.pollingStartDate || election.pollingDate || 'TBD'} to{' '}
@@ -128,80 +150,91 @@ export default function ElectionCard({
 
         {/* Contesting Candidates Summary */}
         <div className="mt-4 pt-3 border-t border-slate-100">
-          <div className="flex items-center justify-between text-xs text-slate-600 mb-2">
+          <div className="flex items-center justify-between text-xs text-slate-600">
             <span className="inline-flex items-center gap-1 font-medium">
               <Users className="w-3.5 h-3.5 text-slate-500" />
-              Contesting Candidates in {constituency?.name || 'Constituency'}
+              Contesting Demo Candidates in {constituency?.name || 'Constituency'}
             </span>
             <span className="font-mono font-bold text-slate-900 tabular-nums">
-              {countToDisplay} Nominated
+              {countToDisplay} Nominated + NOTA
             </span>
           </div>
-
-          {candidates.length > 0 && (
-            <ul className="space-y-1 text-xs text-slate-700">
-              {candidates.slice(0, 3).map((cand) => (
-                <li
-                  key={cand.id || cand.candidateId}
-                  className="flex items-center justify-between py-1 border-b border-slate-100 last:border-0"
-                >
-                  <span className="font-medium text-slate-900 truncate pr-2">
-                    {cand.name}
-                  </span>
-                  <span className="text-slate-500 shrink-0">
-                    {cand.partyAbbreviation || cand.partyId}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
         </div>
+
+        {/* Explanation if election is not active and not yet voted */}
+        {!canOpenBallot && !isVoted && (
+          <div className="mt-3 p-3 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-950 flex items-start gap-2">
+            <Info className="w-4 h-4 text-amber-800 shrink-0 mt-0.5" />
+            <span>{getElectionStatusExplanation(election.status)}</span>
+          </div>
+        )}
       </div>
 
-      {/* Footer Links & Phase 3 Navigation / Demo Participation Simulation */}
-      <div className="pt-4 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2">
+      {/* Footer Links & Ballot Actions */}
+      <div className="pt-4 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3 text-xs">
           <Link
-            to={`/voter/candidates?electionId=${
-              election.id || election.electionId
-            }&constituencyId=${
+            to={`/voter/candidates?electionId=${elId}&constituencyId=${
               constituency?.id || constituency?.constituencyId || ''
             }`}
             className="font-bold text-[#002868] hover:underline"
           >
-            View Candidate Information &rarr;
+            Candidate Directory &rarr;
+          </Link>
+
+          <Link
+            to={`/voter/elections/${elId}/info`}
+            className="font-bold text-slate-700 hover:text-[#002868] hover:underline"
+          >
+            Election Info
           </Link>
 
           {participatedAt && (
             <span className="text-emerald-800 font-medium tabular-nums">
-              Recorded: {new Date(participatedAt).toLocaleDateString()}
-              {referenceId ? ` (${referenceId})` : ''}
+              Recorded: {new Date(participatedAt).toLocaleDateString('en-IN')}
+              {resolvedRef ? ` (${resolvedRef})` : ''}
             </span>
           )}
         </div>
 
-        <div className="flex items-center gap-2">
-          {onSimulateStatus && !isVoted && isPollingActive && (
-            <button
-              type="button"
-              onClick={() => onSimulateStatus(election)}
-              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-100 hover:bg-amber-200 text-amber-950 border border-amber-300 transition-colors cursor-pointer"
-              title="Simulate completing this election's participation status for Phase 3 testing"
+        <div className="flex flex-wrap items-center gap-2">
+          {isVoted ? (
+            <Link
+              to={`/voter/elections/${elId}/receipt`}
+              data-testid={`view-receipt-btn-${elId}`}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold bg-emerald-800 text-white hover:bg-emerald-900 transition-colors"
             >
-              <Sparkles className="w-3.5 h-3.5" />
-              Simulate Demo Status: VOTED
-            </button>
-          )}
-
-          {handleNavigateClick && (
+              <FileCheck2 className="w-3.5 h-3.5" />
+              <span>View Demo Receipt</span>
+            </Link>
+          ) : canOpenBallot ? (
+            <Link
+              to={`/voter/elections/${elId}/ballot${
+                controlledDemoPollingMode ? '?demoMode=true' : ''
+              }`}
+              data-testid={`open-ballot-btn-${elId}`}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-extrabold bg-[#002868] text-white hover:bg-blue-900 transition-colors shadow-xs"
+            >
+              <span>{ballotButtonLabel}</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          ) : handleCustomClick ? (
             <button
               type="button"
-              onClick={() => handleNavigateClick(election, constituency)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold bg-[#002868] text-white hover:bg-blue-900 transition-colors cursor-pointer"
+              onClick={() => handleCustomClick(election, constituency)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold bg-slate-800 text-white hover:bg-slate-900 transition-colors cursor-pointer"
             >
               <span>Inspect Election Details</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
+          ) : (
+            <Link
+              to={`/voter/elections/${elId}/info`}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold bg-slate-800 text-white hover:bg-slate-900 transition-colors"
+            >
+              <span>View Election Schedule</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
           )}
         </div>
       </div>

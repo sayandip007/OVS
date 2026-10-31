@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useMemo, useCallback } from 'react';
+import React, { createContext, useContext, useState, useMemo, useCallback } from 'react';
 import { useAuth } from './AuthContext';
 import { useElection } from './ElectionContext';
 import {
@@ -9,6 +9,7 @@ import {
   getVoterProfileCompletion,
   getCandidatesForElectionConstituency,
 } from '../utils/electionHelpers';
+import { validateBallotAccess } from '../services/ballotValidationService';
 
 const VoterContext = createContext(null);
 
@@ -31,6 +32,9 @@ export function VoterProvider({ children }) {
     clearAllNotifications,
     recordCandidateView,
   } = useElection();
+
+  // Controlled Demo Test Polling Mode allows testing UPCOMING/READY elections without changing system dates
+  const [controlledDemoPollingMode, setControlledDemoPollingMode] = useState(false);
 
   const currentVoter = useMemo(() => {
     if (!isVoter || !activeVoterId) return null;
@@ -87,12 +91,14 @@ export function VoterProvider({ children }) {
         status: 'PENDING',
         participatedAt: null,
         referenceId: null,
+        demoReference: null,
       };
       return {
         electionId: elId,
         status: entry.status,
         participatedAt: entry.participatedAt,
         referenceId: entry.referenceId,
+        demoReference: entry.demoReference || entry.referenceId,
       };
     });
     return {
@@ -171,6 +177,19 @@ export function VoterProvider({ children }) {
     [currentVoter]
   );
 
+  const checkBallotEligibilityForVoter = useCallback(
+    (election, overrideDemoMode = false) => {
+      const constituency = getConstituencyForVoterElection(election);
+      return validateBallotAccess({
+        voter: currentVoter,
+        election,
+        constituency,
+        demoPollingOverride: controlledDemoPollingMode || overrideDemoMode,
+      });
+    },
+    [currentVoter, getConstituencyForVoterElection, controlledDemoPollingMode]
+  );
+
   const updateCurrentVoterProfile = useCallback(
     (updates, options = {}) => {
       if (!currentVoter) {
@@ -195,7 +214,12 @@ export function VoterProvider({ children }) {
     [currentVoter, updateVoterProfile]
   );
 
-  const simulateParticipationForCurrentVoter = useCallback(
+  /**
+   * Completes demo participation for a single election ID.
+   * Updates only participation status, timestamp, and non-sensitive demoReference.
+   * Never stores candidate or party selection in voter profile or participation history.
+   */
+  const completeDemoParticipationForCurrentVoter = useCallback(
     (electionId) => {
       if (!currentVoter) {
         return { ok: false, error: 'Voter not authenticated.' };
@@ -223,12 +247,16 @@ export function VoterProvider({ children }) {
         notifications: myNotifications,
         unreadNotificationCount,
         recentCandidates,
+        controlledDemoPollingMode,
+        setControlledDemoPollingMode,
         getConstituencyForVoterElection,
         getCandidatesForVoterElection,
         getElectionParticipationStatus,
         hasParticipatedInElection,
+        checkBallotEligibilityForVoter,
         updateCurrentVoterProfile,
-        simulateParticipationForCurrentVoter,
+        completeDemoParticipationForCurrentVoter,
+        simulateParticipationForCurrentVoter: completeDemoParticipationForCurrentVoter,
         markNotificationAsRead,
         markAllNotificationsAsRead,
         clearAllNotifications,

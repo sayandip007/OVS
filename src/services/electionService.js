@@ -10,8 +10,11 @@ export function createElectionRecord(
   existingElections = [],
   constituencies = []
 ) {
+  const explicitId = (input.id || input.electionId || '').trim().toUpperCase();
+
   const normalized = {
     ...input,
+    id: explicitId || undefined,
     name: input.name || input.title || '',
     type: input.type || input.electionType || ELECTION_TYPES.LOK_SABHA,
     year: Number(input.year) || 2029,
@@ -24,8 +27,11 @@ export function createElectionRecord(
     status: input.status || 'UPCOMING',
     nominationStartDate: input.nominationStartDate || null,
     nominationEndDate: input.nominationEndDate || null,
+    scrutinyDate: input.scrutinyDate || null,
+    withdrawalDeadline: input.withdrawalDeadline || null,
     pollingStartDate: input.pollingStartDate || input.pollingDate || null,
     pollingEndDate: input.pollingEndDate || input.pollingDate || null,
+    countingDate: input.countingDate || null,
     resultDate: input.resultDate || null,
     description: input.description ? input.description.trim() : '',
     metadataSource: METADATA_SOURCES.DEMO_SAMPLE,
@@ -58,29 +64,43 @@ export function createElectionRecord(
     }
   }
 
-  const validation = validateElectionInput(normalized, constituencies);
+  const validation = validateElectionInput(
+    normalized,
+    constituencies,
+    existingElections
+  );
   if (!validation.isValid) {
     return { ok: false, errors: validation.errors };
   }
 
-  const baseId =
-    input.id && input.id.trim()
-      ? input.id.trim().toUpperCase()
-      : normalized.type === ELECTION_TYPES.LOK_SABHA
-      ? `LS-${normalized.year}`
-      : `${normalized.stateId}-ASSEMBLY-${normalized.year}`;
+  let finalId = explicitId;
+  if (!finalId) {
+    const baseId =
+      normalized.type === ELECTION_TYPES.LOK_SABHA
+        ? `LS-${normalized.year}`
+        : `${normalized.stateId}-ASSEMBLY-${normalized.year}`;
 
-  let finalId = baseId;
-  let counter = 2;
-  while (existingElections.some((e) => (e.id || e.electionId) === finalId)) {
-    finalId = `${baseId}-${counter}`;
-    counter += 1;
+    finalId = baseId;
+    let counter = 2;
+    while (existingElections.some((e) => (e.id || e.electionId) === finalId)) {
+      finalId = `${baseId}-${counter}`;
+      counter += 1;
+    }
   }
 
   const record = {
     ...normalized,
     id: finalId,
     electionId: finalId,
+    lifecycleHistory: Array.isArray(input.lifecycleHistory)
+      ? input.lifecycleHistory
+      : [
+          {
+            status: normalized.status,
+            changedAt: new Date().toISOString(),
+            note: 'Election record created in ECI Admin Portal',
+          },
+        ],
   };
 
   return { ok: true, election: record };
@@ -99,10 +119,12 @@ export function updateElectionRecord(
     return { ok: false, errors: { id: 'Election not found.' } };
   }
 
-  const nextType = updates.type || updates.electionType || target.type || target.electionType;
+  const nextType =
+    updates.type || updates.electionType || target.type || target.electionType;
   const merged = {
     ...target,
     ...updates,
+    isUpdate: true,
     name: updates.name || updates.title || target.name || target.title,
     type: nextType,
     stateId:
@@ -113,18 +135,38 @@ export function updateElectionRecord(
         : target.stateId,
   };
 
-  const validation = validateElectionInput(merged, constituencies);
+  const validation = validateElectionInput(
+    merged,
+    constituencies,
+    existingElections
+  );
   if (!validation.isValid) {
     return { ok: false, errors: validation.errors };
   }
 
+  delete merged.isUpdate;
   return { ok: true, election: merged };
+}
+
+/**
+ * Generates a non-sensitive demonstration participation reference that never
+ * encodes candidate or party selection.
+ * Format: DEMO-LS-000001 or DEMO-ASM-000001
+ */
+export function generateNonSensitiveDemoReference(electionId, electionType, voterId) {
+  const isLS =
+    electionType === ELECTION_TYPES.LOK_SABHA ||
+    String(electionId || '').startsWith('LS');
+  const prefix = isLS ? 'DEMO-LS' : 'DEMO-ASM';
+  const numericDigits = String(voterId || '000001').replace(/\D/g, '');
+  const paddedSeq = (numericDigits || '1').padStart(6, '0').slice(-6);
+  return `${prefix}-${paddedSeq}`;
 }
 
 /**
  * Records simulated participation for ONE specific election without touching any other election.
  * Strictly omits storing which candidate or party was selected in the voter's participation record.
- * Generates a non-revealing demonstration participation reference (`referenceId`).
+ * Generates both `demoReference` (e.g. `DEMO-LS-000001`) and `referenceId` (`DEMO-REF-...`).
  */
 export function recordSimulatedParticipation({
   voter,
@@ -136,9 +178,16 @@ export function recordSimulatedParticipation({
   tallies = {},
 }) {
   const targetElectionId = electionId || election?.id || election?.electionId;
+  const targetElectionType =
+    election?.type ||
+    election?.electionType ||
+    (String(targetElectionId || '').startsWith('LS')
+      ? ELECTION_TYPES.LOK_SABHA
+      : ELECTION_TYPES.STATE_ASSEMBLY);
+
   const resolvedConstituencyId =
     constituencyId ||
-    ((election?.type || election?.electionType) === ELECTION_TYPES.LOK_SABHA
+    (targetElectionType === ELECTION_TYPES.LOK_SABHA
       ? voter?.parliamentaryConstituencyId
       : voter?.assemblyConstituencyId);
 
@@ -154,10 +203,20 @@ export function recordSimulatedParticipation({
     };
   }
 
-  const voterCode = (voter.id || voter.voterId || 'VOTER').replace(/[^A-Z0-9]/gi, '');
+  const voterCode = (voter.id || voter.voterId || 'VOTER001').replace(
+    /[^A-Z0-9]/gi,
+    ''
+  );
   const cleanElectionCode = String(targetElectionId).replace(/[^A-Z0-9]/gi, '');
   const referenceId = `DEMO-REF-${cleanElectionCode}-${voterCode}`;
+  const demoReference = generateNonSensitiveDemoReference(
+    targetElectionId,
+    targetElectionType,
+    voter.id || voter.voterId
+  );
+  const participatedAt = new Date().toISOString();
 
+  // PRIVACY REQUIREMENT: Never store candidateId, partyId, or ballot selection in voter.elections
   const updatedVoter = {
     ...voter,
     elections: {
@@ -165,12 +224,14 @@ export function recordSimulatedParticipation({
       [targetElectionId]: {
         status: 'VOTED',
         participated: true,
-        participatedAt: new Date().toISOString(),
+        participatedAt,
+        demoReference,
         referenceId,
       },
     },
   };
 
+  // Optional aggregate tally increment (not linked to voter)
   const choice = selectedCandidateIdOrNota || candidateOrNotaId;
   let updatedTallies = { ...tallies };
   if (choice && resolvedConstituencyId) {
@@ -185,6 +246,8 @@ export function recordSimulatedParticipation({
     ok: true,
     voter: updatedVoter,
     tallies: updatedTallies,
+    demoReference,
     referenceId,
+    participatedAt,
   };
 }

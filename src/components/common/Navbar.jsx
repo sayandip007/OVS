@@ -1,19 +1,50 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
-import { Menu, X, ShieldCheck, UserCheck, LogOut, Users } from 'lucide-react';
+import { Menu, X, ShieldCheck, UserCheck, LogOut, Users, Contrast } from 'lucide-react';
 import { eciLogo, g20Logo, years75Logo } from '../../assets';
 import { useAuth } from '../../context/AuthContext';
 import { useVoter } from '../../context/VoterContext';
 import { useElection } from '../../context/ElectionContext';
 import { useNotification } from '../../context/NotificationContext';
+import { storageService } from '../../services/storageService';
+
+const A11Y_PREFS_KEY = 'ovs_v3_0_a11y_prefs';
 
 export default function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [a11yPrefs, setA11yPrefs] = useState(() =>
+    storageService.getDurableItem(A11Y_PREFS_KEY, {
+      fontScale: 'md',
+      highContrast: false,
+    })
+  );
   const { isVoter, isAdmin, currentAdmin, logout, switchActiveVoter } = useAuth();
   const { currentVoter } = useVoter();
   const { voters } = useElection();
   const { notify } = useNotification();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.documentElement.setAttribute(
+        'data-font-scale',
+        a11yPrefs.fontScale || 'md'
+      );
+      document.documentElement.setAttribute(
+        'data-contrast',
+        a11yPrefs.highContrast ? 'high' : 'normal'
+      );
+    }
+    storageService.setDurableItem(A11Y_PREFS_KEY, a11yPrefs);
+  }, [a11yPrefs]);
+
+  const setFontScale = (scale) => {
+    setA11yPrefs((prev) => ({ ...prev, fontScale: scale }));
+  };
+
+  const toggleHighContrast = () => {
+    setA11yPrefs((prev) => ({ ...prev, highContrast: !prev.highContrast }));
+  };
 
   const handleLogout = () => {
     logout();
@@ -49,11 +80,71 @@ export default function Navbar() {
 
   return (
     <header className="sticky top-0 z-30 w-full bg-[#002d72] text-white border-b border-white/10 shadow-sm">
+      {/* Skip to Main Content Keyboard Link */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-4 focus:z-50 focus:px-3 focus:py-1.5 focus:rounded-lg focus:bg-[#f4c542] focus:text-slate-950 focus:font-bold focus:text-xs"
+      >
+        Skip to main content
+      </a>
+
       {/* Tricolour accent bar */}
       <div className="h-1 w-full flex">
         <div className="w-1/3 bg-[#FF9933]" />
         <div className="w-1/3 bg-white" />
         <div className="w-1/3 bg-[#138808]" />
+      </div>
+
+      {/* Accessibility & Educational Prototype Strip */}
+      <div className="bg-[#001f52] border-b border-white/10">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-1 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-200">
+          <span className="truncate">
+            Educational Election-System Prototype · Local Demonstration Data Only
+          </span>
+          <div
+            role="group"
+            aria-label="Accessibility Display Controls"
+            className="flex items-center gap-1.5 shrink-0"
+          >
+            <span className="text-slate-300 hidden sm:inline mr-1">Text Size:</span>
+            {[
+              { id: 'sm', label: 'A-', title: 'Decrease Font Size' },
+              { id: 'md', label: 'A', title: 'Default Font Size' },
+              { id: 'lg', label: 'A+', title: 'Increase Font Size' },
+            ].map((btn) => (
+              <button
+                key={btn.id}
+                type="button"
+                onClick={() => setFontScale(btn.id)}
+                aria-label={btn.title}
+                aria-pressed={a11yPrefs.fontScale === btn.id}
+                title={btn.title}
+                className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors cursor-pointer ${
+                  a11yPrefs.fontScale === btn.id
+                    ? 'bg-[#f4c542] text-slate-950'
+                    : 'bg-white/10 text-white hover:bg-white/20'
+                }`}
+              >
+                {btn.label}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={toggleHighContrast}
+              aria-label="Toggle High Contrast Mode"
+              aria-pressed={a11yPrefs.highContrast}
+              title="Toggle High Contrast Mode"
+              className={`ml-1 inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold transition-colors cursor-pointer ${
+                a11yPrefs.highContrast
+                  ? 'bg-[#f4c542] text-slate-950'
+                  : 'bg-white/10 text-white hover:bg-white/20'
+              }`}
+            >
+              <Contrast className="w-3 h-3" />
+              <span>Contrast</span>
+            </button>
+          </div>
+        </div>
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-6">

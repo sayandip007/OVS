@@ -4,8 +4,8 @@ import { useElection } from '../../context/ElectionContext';
 import PageHeader from '../../components/common/PageHeader';
 import SearchBar from '../../components/common/SearchBar';
 import EmptyState from '../../components/common/EmptyState';
-import Modal from '../../components/common/Modal';
 import CandidateCard from '../../components/voter/CandidateCard';
+import CandidateProfileModal from '../../components/ballot/CandidateProfileModal';
 import { ELECTION_TYPES } from '../../utils/constants';
 
 export default function CandidateDirectory() {
@@ -13,6 +13,7 @@ export default function CandidateDirectory() {
   const initialElectionId = searchParams.get('electionId') || 'ALL';
   const initialType = searchParams.get('type') || 'ALL';
   const initialStateId = searchParams.get('stateId') || 'ALL';
+  const initialConstituencyId = searchParams.get('constituencyId') || 'ALL';
 
   const {
     elections,
@@ -27,7 +28,9 @@ export default function CandidateDirectory() {
   const [electionFilter, setElectionFilter] = useState(initialElectionId);
   const [typeFilter, setTypeFilter] = useState(initialType);
   const [stateFilter, setStateFilter] = useState(initialStateId);
-  const [constituencyFilter, setConstituencyFilter] = useState('ALL');
+  const [constituencyFilter, setConstituencyFilter] = useState(
+    initialConstituencyId
+  );
   const [partyFilter, setPartyFilter] = useState('ALL');
   const [selectedCandidate, setSelectedCandidate] = useState(null);
 
@@ -50,12 +53,22 @@ export default function CandidateDirectory() {
     });
   }, [constituencies, stateFilter, typeFilter]);
 
+  const approvedCandidates = useMemo(() => {
+    return candidates.filter(
+      (cand) => (cand.status || cand.approvalStatus || 'APPROVED') === 'APPROVED'
+    );
+  }, [candidates]);
+
   const filteredCandidates = useMemo(() => {
-    return candidates.filter((cand) => {
-      if (electionFilter !== 'ALL' && cand.electionId !== electionFilter) return false;
+    return approvedCandidates.filter((cand) => {
+      if (electionFilter !== 'ALL' && cand.electionId !== electionFilter)
+        return false;
       if (typeFilter !== 'ALL' && cand.electionType !== typeFilter) return false;
       if (stateFilter !== 'ALL' && cand.stateId !== stateFilter) return false;
-      if (constituencyFilter !== 'ALL' && cand.constituencyId !== constituencyFilter) {
+      if (
+        constituencyFilter !== 'ALL' &&
+        cand.constituencyId !== constituencyFilter
+      ) {
         return false;
       }
       if (partyFilter !== 'ALL' && cand.partyId !== partyFilter) return false;
@@ -76,7 +89,7 @@ export default function CandidateDirectory() {
       return true;
     });
   }, [
-    candidates,
+    approvedCandidates,
     electionFilter,
     typeFilter,
     stateFilter,
@@ -88,8 +101,20 @@ export default function CandidateDirectory() {
   ]);
 
   const handleInspectCandidate = (cand, party, constituency) => {
-    recordCandidateView(cand.candidateId);
-    setSelectedCandidate({ candidate: cand, party, constituency });
+    recordCandidateView(cand.id || cand.candidateId);
+    const election = elections.find(
+      (e) => (e.id || e.electionId) === cand.electionId
+    );
+    const stateObj = states.find(
+      (s) => (s.id || s.stateId) === (cand.stateId || constituency?.stateId)
+    );
+    setSelectedCandidate({
+      candidate: cand,
+      party,
+      constituency,
+      election,
+      stateName: stateObj?.name || stateObj?.stateName,
+    });
   };
 
   return (
@@ -133,7 +158,9 @@ export default function CandidateDirectory() {
         >
           <option value="ALL">All Election Types</option>
           <option value={ELECTION_TYPES.LOK_SABHA}>Lok Sabha (PC)</option>
-          <option value={ELECTION_TYPES.STATE_ASSEMBLY}>State Assembly (AC)</option>
+          <option value={ELECTION_TYPES.STATE_ASSEMBLY}>
+            State Assembly (AC)
+          </option>
         </select>
 
         <select
@@ -177,7 +204,7 @@ export default function CandidateDirectory() {
               : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
           }`}
         >
-          All Parties ({candidates.length})
+          All Parties ({approvedCandidates.length})
         </button>
         {parties.map((p) => (
           <button
@@ -228,12 +255,16 @@ export default function CandidateDirectory() {
                   candidate={cand}
                   party={party}
                   constituency={constituency}
-                  showSelectButton={false}
+                  onSelectProfile={() =>
+                    handleInspectCandidate(cand, party, constituency)
+                  }
                 />
                 <div className="flex justify-end">
                   <button
                     type="button"
-                    onClick={() => handleInspectCandidate(cand, party, constituency)}
+                    onClick={() =>
+                      handleInspectCandidate(cand, party, constituency)
+                    }
                     className="text-xs font-bold text-[#002868] hover:underline cursor-pointer"
                   >
                     Inspect Full Affidavit &amp; Manifesto &rarr;
@@ -245,84 +276,16 @@ export default function CandidateDirectory() {
         </div>
       )}
 
-      {/* Candidate Profile Modal */}
-      <Modal
+      {/* Unified Reusable Candidate Profile Modal */}
+      <CandidateProfileModal
         isOpen={Boolean(selectedCandidate)}
         onClose={() => setSelectedCandidate(null)}
-        title={
-          selectedCandidate
-            ? `Candidate Affidavit: ${selectedCandidate.candidate.name}`
-            : 'Candidate Details'
-        }
-      >
-        {selectedCandidate && (
-          <div className="space-y-4 text-sm">
-            <div className="flex items-center gap-4 pb-4 border-b border-slate-200">
-              <img
-                src={selectedCandidate.candidate.photoUrl}
-                alt={selectedCandidate.candidate.name}
-                className="w-20 h-20 rounded-xl object-cover border border-slate-200"
-              />
-              <div>
-                <span className="px-2 py-0.5 rounded bg-indigo-100 text-indigo-900 text-xs font-bold">
-                  Ballot #{selectedCandidate.candidate.ballotNumber} •{' '}
-                  {selectedCandidate.candidate.electionType === 'LOK_SABHA'
-                    ? 'Lok Sabha (MP)'
-                    : 'State Assembly (MLA)'}
-                </span>
-                <h3 className="text-xl font-bold text-slate-900 mt-1">
-                  {selectedCandidate.candidate.name}
-                </h3>
-                <p className="text-xs text-slate-600">
-                  Party:{' '}
-                  <strong>
-                    {selectedCandidate.party?.partyName || 'Independent'} (
-                    {selectedCandidate.party?.abbreviation || 'IND'})
-                  </strong>
-                </p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 text-xs">
-              <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
-                <span className="text-slate-500 block">Constituency</span>
-                <strong className="text-slate-900">
-                  {selectedCandidate.constituency?.name ||
-                    selectedCandidate.candidate.constituencyId}
-                </strong>
-              </div>
-              <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
-                <span className="text-slate-500 block">Age &amp; Gender</span>
-                <strong className="text-slate-900">
-                  {selectedCandidate.candidate.age} Years •{' '}
-                  {selectedCandidate.candidate.gender}
-                </strong>
-              </div>
-              <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
-                <span className="text-slate-500 block">Education</span>
-                <strong className="text-slate-900">
-                  {selectedCandidate.candidate.education}
-                </strong>
-              </div>
-              <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
-                <span className="text-slate-500 block">Nomination Status</span>
-                <strong className="text-emerald-700">
-                  {selectedCandidate.candidate.approvalStatus}
-                </strong>
-              </div>
-            </div>
-
-            <div className="bg-blue-50/60 border border-blue-200 rounded-lg p-3.5">
-              <span className="text-xs font-bold uppercase tracking-wider text-[#002868] block mb-1">
-                Key Manifesto &amp; Summary
-              </span>
-              <p className="text-xs text-slate-700 leading-relaxed">
-                {selectedCandidate.candidate.manifestoSummary}
-              </p>
-            </div>
-          </div>
-        )}
-      </Modal>
+        candidate={selectedCandidate?.candidate}
+        party={selectedCandidate?.party}
+        constituency={selectedCandidate?.constituency}
+        election={selectedCandidate?.election}
+        stateName={selectedCandidate?.stateName}
+      />
     </div>
   );
 }

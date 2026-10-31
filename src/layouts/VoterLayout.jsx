@@ -276,7 +276,11 @@ export default function VoterLayout() {
         </aside>
 
         {/* Main Voter Page Content */}
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 min-w-0">
+        <main
+          id="main-content"
+          tabIndex={-1}
+          className="flex-1 p-4 sm:p-6 lg:p-8 min-w-0 focus:outline-none"
+        >
           <Outlet />
         </main>
       </div>

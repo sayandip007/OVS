@@ -39,7 +39,8 @@ export default function VoterDashboard() {
   }).format(new Date());
 
   const handleOpenElectionDetails = (election) => {
-    navigate(`/voter/elections?electionId=${election.electionId}`);
+    const elId = election.id || election.electionId;
+    navigate(`/voter/elections/${elId}/info`);
   };
 
   const handleSimulateParticipation = (election) => {

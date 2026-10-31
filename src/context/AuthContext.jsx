@@ -3,6 +3,10 @@ import { STORAGE_KEYS, DEMO_OTP_CODES, OTP_CONFIG } from '../utils/constants';
 import { storageService } from '../services/storageService';
 import { INITIAL_ADMIN_OFFICERS } from '../data/voters';
 import { useElection } from './ElectionContext';
+import {
+  canAdminAccessRoute,
+  canAdminPerformAction,
+} from '../services/adminPermissionService';
 
 const AuthContext = createContext(null);
 
@@ -273,14 +277,14 @@ export function AuthProvider({ children }) {
         (String(o.officerId || o.officerCode || '').toUpperCase() === trimmedId ||
           String(o.altOfficerId || '').toUpperCase() === trimmedId ||
           String(o.id || '').toUpperCase() === trimmedId) &&
-        o.mobile === trimmedMobile
+        (!trimmedMobile || o.mobile === trimmedMobile)
     );
 
     if (!found) {
       return {
         ok: false,
         error:
-          'Invalid ECI Officer credentials. Use Officer ID 1234 (or ECI001) and Mobile 9876543210.',
+          'Invalid ECI Officer credentials. Select one of the 5 demo officer roles or use Officer ID 1234 (ECI001) and Mobile 9876543210.',
       };
     }
 
@@ -289,16 +293,30 @@ export function AuthProvider({ children }) {
 
   const completeAdminLogin = useCallback(
     (adminId = 'ECI-ADMIN-001') => {
+      const target =
+        INITIAL_ADMIN_OFFICERS.find((a) => a.id === adminId) ||
+        INITIAL_ADMIN_OFFICERS[0];
       const now = Date.now();
       updateSession({
         role: 'ADMIN',
         voterId: null,
-        adminId,
+        adminId: target.id,
+        adminRole: target.adminRole,
         authenticatedAt: new Date(now).toISOString(),
         expiresAt: now + OTP_CONFIG.SESSION_DURATION_MS,
       });
     },
     [updateSession]
+  );
+
+  const switchActiveAdmin = useCallback(
+    (adminId) => {
+      const found = INITIAL_ADMIN_OFFICERS.find((a) => a.id === adminId);
+      if (!found) return { ok: false };
+      completeAdminLogin(found.id);
+      return { ok: true, officer: found };
+    },
+    [completeAdminLogin]
   );
 
   const requestAdminOtp = useCallback(
@@ -347,6 +365,7 @@ export function AuthProvider({ children }) {
       role: null,
       voterId: null,
       adminId: null,
+      adminRole: null,
       expiresAt: null,
     });
   }, [updateSession]);
@@ -360,6 +379,17 @@ export function AuthProvider({ children }) {
   const isVoter = session.role === 'VOTER';
   const isAdmin = session.role === 'ADMIN';
 
+  const canAccessAdminRoute = useCallback(
+    (routePath) => canAdminAccessRoute(currentAdmin, routePath),
+    [currentAdmin]
+  );
+
+  const canPerformAdminAction = useCallback(
+    (actionType, domain, targetScope) =>
+      canAdminPerformAction(currentAdmin, actionType, domain, targetScope),
+    [currentAdmin]
+  );
+
   return (
     <AuthContext.Provider
       value={{
@@ -372,6 +402,7 @@ export function AuthProvider({ children }) {
         isAdminAuthenticated: isAdmin,
         activeVoterId: session.voterId,
         currentAdmin,
+        adminOfficers: INITIAL_ADMIN_OFFICERS,
         verifyVoterCredentials,
         completeVoterLogin,
         requestVoterOtp,
@@ -379,9 +410,14 @@ export function AuthProvider({ children }) {
         switchActiveVoter,
         verifyAdminCredentials,
         completeAdminLogin,
+        switchActiveAdmin,
         requestAdminOtp,
         verifyAdminOtp,
+        canAccessAdminRoute,
+        canPerformAdminAction,
         logout,
+        logoutAdmin: logout,
+        logoutVoter: logout,
       }}
     >
       {children}

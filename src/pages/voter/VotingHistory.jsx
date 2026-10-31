@@ -32,6 +32,7 @@ export default function VotingHistory() {
         participationStatus: status,
         participatedAt: voterEntry?.participatedAt || null,
         referenceId:
+          voterEntry?.demoReference ||
           voterEntry?.referenceId ||
           (voterEntry?.participated
             ? `DEMO-REF-${election.electionId}-${currentVoter.voterId}`

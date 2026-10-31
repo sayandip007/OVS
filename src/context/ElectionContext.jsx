@@ -3,7 +3,10 @@ import {
   STORAGE_KEYS,
   METADATA_SOURCES,
   NOTIFICATION_TYPES,
+  ELECTION_TYPES,
+  RESULT_STATUSES,
 } from '../utils/constants';
+import { countingService } from '../services/countingService';
 import { defaultAvatar, eciLogo } from '../assets';
 import { storageService } from '../services/storageService';
 import {
@@ -23,6 +26,16 @@ import {
   validateVoterInput,
   validateProfileUpdateInput,
 } from '../utils/validation';
+import {
+  validateElectionStatusTransition,
+  validateCandidateStatusTransition,
+  checkConstituencyModificationImpact,
+  canDeleteParty,
+  validateElectionSchedule,
+  detectScheduleConflicts,
+  createSanitizedAuditLogEntry,
+} from '../services/adminPermissionService';
+import { auditElectionDataIntegrity } from '../services/dataIntegrityService';
 
 const ElectionContext = createContext(null);
 
@@ -146,9 +159,16 @@ function enrichElection(e) {
     e.nominationStartDate || e.schedule?.gazetteNotification || '2029-03-01';
   const nominationEnd =
     e.nominationEndDate || e.schedule?.nominationClose || '2029-03-20';
+  const scrutinyDate =
+    e.scrutinyDate || e.schedule?.scrutinyDate || nominationEnd;
+  const withdrawalDeadline =
+    e.withdrawalDeadline || e.schedule?.withdrawalDeadline || scrutinyDate;
   const pollStart =
-    e.pollingDate || e.pollingStartDate || e.schedule?.pollingDate || '2029-04-15';
-  const resultDate = e.resultDate || e.schedule?.countingDate || '2029-05-23';
+    e.pollingStartDate || e.pollingDate || e.schedule?.pollingDate || '2029-04-15';
+  const pollEnd = e.pollingEndDate || pollStart;
+  const countingDate =
+    e.countingDate || e.resultDate || e.schedule?.countingDate || '2029-05-20';
+  const resultDate = e.resultDate || countingDate || '2029-05-23';
 
   return {
     ...e,
@@ -162,27 +182,47 @@ function enrichElection(e) {
     constituencyType:
       e.constituencyType || (type === 'LOK_SABHA' ? 'PARLIAMENTARY' : 'ASSEMBLY'),
     announcementDate: e.announcementDate || nominationStart,
+    nominationStartDate: nominationStart,
+    nominationEndDate: nominationEnd,
+    scrutinyDate,
+    withdrawalDeadline,
     pollingDate: pollStart,
     pollingStartDate: pollStart,
-    pollingEndDate: e.pollingEndDate || pollStart,
+    pollingEndDate: pollEnd,
+    countingDate,
     resultDate,
+    lifecycleHistory: Array.isArray(e.lifecycleHistory) ? e.lifecycleHistory : [],
     schedule: {
       gazetteNotification: nominationStart,
       nominationClose: nominationEnd,
+      scrutinyDate,
+      withdrawalDeadline,
       pollingDate: pollStart,
-      countingDate: resultDate,
+      pollingEndDate: pollEnd,
+      countingDate,
+      resultDate,
       ...(e.schedule || {}),
     },
   };
 }
 
-function enrichCandidate(c, index, constituencies) {
+function enrichCandidate(c, index, constituencies, tallies = {}) {
   const id = c.id || c.candidateId;
   const photo = c.photograph || c.photoUrl || defaultAvatar;
   const status = c.status || c.approvalStatus || 'APPROVED';
   const constObj = constituencies.find(
     (ct) => (ct.id || ct.constituencyId) === c.constituencyId
   );
+  const flatKey = `${c.electionId}::${c.constituencyId}::${id}`;
+  const tallyCount =
+    c.demoVotes !== undefined
+      ? Number(c.demoVotes)
+      : tallies?.[flatKey] !== undefined
+      ? Number(tallies[flatKey])
+      : tallies?.[c.electionId]?.[c.constituencyId]?.[id] !== undefined
+      ? Number(tallies[c.electionId][c.constituencyId][id])
+      : 0;
+
   return {
     ...c,
     id,
@@ -198,6 +238,9 @@ function enrichCandidate(c, index, constituencies) {
     ballotNumber: c.ballotNumber || index + 1,
     manifesto: c.manifesto || c.manifestoSummary || '',
     manifestoSummary: c.manifestoSummary || c.manifesto || '',
+    publicDeclaration: c.publicDeclaration || '',
+    demoVotes: tallyCount,
+    createdAt: c.createdAt || '2026-02-10T10:00:00.000Z',
   };
 }
 
@@ -492,19 +535,6 @@ export function ElectionProvider({ children }) {
     [store.elections]
   );
 
-  const enrichedCandidates = useMemo(
-    () =>
-      (store.candidates || []).map((c, idx) =>
-        enrichCandidate(c, idx, enrichedConstituencies)
-      ),
-    [store.candidates, enrichedConstituencies]
-  );
-
-  const enrichedVoters = useMemo(
-    () => (store.voters || []).map(enrichVoter),
-    [store.voters]
-  );
-
   const normalizedTallies = useMemo(() => {
     const raw = store.tallies || {};
     const result = { ...raw };
@@ -523,6 +553,93 @@ export function ElectionProvider({ children }) {
     return result;
   }, [store.tallies]);
 
+  const enrichedCandidates = useMemo(
+    () =>
+      (store.candidates || []).map((c, idx) =>
+        enrichCandidate(c, idx, enrichedConstituencies, normalizedTallies)
+      ),
+    [store.candidates, enrichedConstituencies, normalizedTallies]
+  );
+
+  const enrichedVoters = useMemo(
+    () => (store.voters || []).map(enrichVoter),
+    [store.voters]
+  );
+
+  const participationRecords = useMemo(() => {
+    const records = [];
+    for (const voter of enrichedVoters) {
+      const voterId = voter.id || voter.voterId;
+      const electionsMap = voter.elections || {};
+      for (const [electionId, entry] of Object.entries(electionsMap)) {
+        if (!entry || typeof entry !== 'object') continue;
+        const matchedElection = enrichedElections.find(
+          (e) => (e.id || e.electionId) === electionId
+        );
+        const electionType =
+          matchedElection?.electionType ||
+          (String(electionId).startsWith('LS-')
+            ? ELECTION_TYPES.LOK_SABHA
+            : ELECTION_TYPES.STATE_ASSEMBLY);
+        const constituencyId =
+          electionType === ELECTION_TYPES.LOK_SABHA
+            ? voter.parliamentaryConstituencyId
+            : voter.assemblyConstituencyId;
+        const status =
+          entry.status || (entry.hasVoted ? 'VOTED' : 'PENDING');
+
+        records.push({
+          id: `${voterId}-${electionId}`,
+          voterId,
+          voterRef: voter.voterRef || voter.epicRef,
+          electionId,
+          electionType,
+          stateId: voter.stateId,
+          districtId: voter.districtId,
+          parliamentaryConstituencyId: voter.parliamentaryConstituencyId,
+          assemblyConstituencyId: voter.assemblyConstituencyId,
+          constituencyId,
+          status,
+          participatedAt: entry.participatedAt || entry.timestamp || null,
+          referenceId: entry.referenceId || entry.receiptId || null,
+        });
+      }
+    }
+    return records;
+  }, [enrichedVoters, enrichedElections]);
+
+  // ================= AUDIT LOGS (APPEND-ONLY) =================
+  const auditLogs = useMemo(
+    () =>
+      (store.auditLogs || []).map((l) => ({
+        ...l,
+        actionType: l.actionType || l.action || 'ADMIN_ACTION',
+        action: l.action || l.actionType || 'ADMIN_ACTION',
+        targetEntity: l.targetEntity || l.entityType || 'SYSTEM',
+        entityType: l.entityType || l.targetEntity || 'SYSTEM',
+        targetId: l.targetId || l.entityId || 'GLOBAL',
+        entityId: l.entityId || l.targetId || 'GLOBAL',
+        summary: l.summary || l.description || '',
+        description: l.description || l.summary || '',
+        adminName: l.adminName || l.adminId || 'ECI Officer',
+        adminRole: l.adminRole || 'SUPER_ADMIN',
+      })),
+    [store.auditLogs]
+  );
+
+  const appendAuditLog = useCallback(
+    (payload) => {
+      const entry = createSanitizedAuditLogEntry({
+        ...payload,
+        existingLogs: store.auditLogs || [],
+      });
+      const next = [entry, ...(store.auditLogs || [])];
+      syncKey(STORAGE_KEYS.AUDIT_LOGS, 'auditLogs', next);
+      return entry;
+    },
+    [store.auditLogs, syncKey]
+  );
+
   // ================= VOTER NOTIFICATIONS =================
   const voterNotifications = useMemo(
     () => store.voterNotifications || [],
@@ -539,6 +656,8 @@ export function ElectionProvider({ children }) {
         timestamp: new Date().toISOString(),
         read: false,
         targetStateId: payload.targetStateId || null,
+        targetElectionId: payload.targetElectionId || null,
+        targetConstituencyId: payload.targetConstituencyId || null,
       };
       const next = [nextItem, ...(store.voterNotifications || [])];
       syncKey(
@@ -592,8 +711,10 @@ export function ElectionProvider({ children }) {
   );
 
   // ================= ELECTIONS =================
+  const [demoLifecycleMode, setDemoLifecycleMode] = useState(false);
+
   const createElection = useCallback(
-    (input) => {
+    (input, actor = {}) => {
       const normalizedInput = {
         ...input,
         name: input.name || input.title,
@@ -612,18 +733,29 @@ export function ElectionProvider({ children }) {
           errors: Array.isArray(result.errors)
             ? result.errors
             : Object.values(result.errors || {}),
+          fieldErrors: result.errors,
         };
       }
       const enriched = enrichElection(result.election);
       const next = [enriched, ...store.elections];
       syncKey(STORAGE_KEYS.ELECTIONS, 'elections', next);
+
+      appendAuditLog({
+        action: 'ELECTION_CREATED',
+        entityType: 'ELECTION',
+        entityId: enriched.electionId,
+        adminId: actor.adminId || 'ECI-ADMIN-001',
+        adminRole: actor.adminRole || 'SUPER_ADMIN',
+        description: `Created ${enriched.electionType} election "${enriched.title}" (${enriched.electionId}).`,
+      });
+
       return { ok: true, election: enriched };
     },
-    [store.elections, store.constituencies, syncKey]
+    [store.elections, store.constituencies, syncKey, appendAuditLog]
   );
 
   const updateElection = useCallback(
-    (electionId, updates) => {
+    (electionId, updates, actor = {}) => {
       const normalizedUpdates = {
         ...updates,
         name: updates.name || updates.title,
@@ -643,6 +775,7 @@ export function ElectionProvider({ children }) {
           errors: Array.isArray(result.errors)
             ? result.errors
             : Object.values(result.errors || {}),
+          fieldErrors: result.errors,
         };
       }
       const enriched = enrichElection(result.election);
@@ -650,20 +783,238 @@ export function ElectionProvider({ children }) {
         (e.id || e.electionId) === electionId ? enriched : e
       );
       syncKey(STORAGE_KEYS.ELECTIONS, 'elections', next);
+
+      appendAuditLog({
+        action: 'ELECTION_UPDATED',
+        entityType: 'ELECTION',
+        entityId: electionId,
+        adminId: actor.adminId || 'ECI-ADMIN-001',
+        adminRole: actor.adminRole || 'SUPER_ADMIN',
+        description: `Updated configuration for election "${enriched.title}" (${electionId}).`,
+      });
+
       return { ok: true, election: enriched };
     },
-    [store.elections, store.constituencies, syncKey]
+    [store.elections, store.constituencies, syncKey, appendAuditLog]
+  );
+
+  const transitionElectionStatus = useCallback(
+    (electionId, nextStatus, options = {}) => {
+      const target = store.elections.find(
+        (e) => (e.id || e.electionId) === electionId
+      );
+      if (!target) {
+        return { ok: false, error: 'Election not found.' };
+      }
+
+      const check = validateElectionStatusTransition({
+        currentStatus: target.status,
+        nextStatus,
+        confirmCancel: Boolean(
+          options.confirmCancel || options.confirmCancellation
+        ),
+        demoLifecycleOverride:
+          options.demoLifecycleOverride !== undefined
+            ? options.demoLifecycleOverride
+            : options.demoLifecycleMode !== undefined
+            ? options.demoLifecycleMode
+            : demoLifecycleMode,
+      });
+
+      if (!check.ok) {
+        return check;
+      }
+
+      const historyEntry = {
+        status: check.status,
+        previousStatus: target.status,
+        changedAt: new Date().toISOString(),
+        note:
+          options.note ||
+          `Transitioned from ${target.status} to ${check.status}`,
+      };
+
+      const nextElections = store.elections.map((e) =>
+        (e.id || e.electionId) === electionId
+          ? enrichElection({
+              ...e,
+              status: check.status,
+              lifecycleHistory: [
+                historyEntry,
+                ...(Array.isArray(e.lifecycleHistory)
+                  ? e.lifecycleHistory
+                  : []),
+              ],
+            })
+          : e
+      );
+      syncKey(STORAGE_KEYS.ELECTIONS, 'elections', nextElections);
+
+      const adminActor = options.currentAdmin || options;
+      appendAuditLog({
+        action: 'ELECTION_STATUS_CHANGED',
+        entityType: 'ELECTION',
+        entityId: electionId,
+        adminId: adminActor.adminId || adminActor.id || 'ECI-ADMIN-001',
+        adminName: adminActor.fullName || adminActor.name,
+        adminRole: adminActor.adminRole || adminActor.role || 'SUPER_ADMIN',
+        description: `Changed election ${electionId} status from ${target.status} to ${check.status}.`,
+      });
+
+      return { ok: true, status: check.status };
+    },
+    [store.elections, demoLifecycleMode, syncKey, appendAuditLog]
   );
 
   const setElectionStatus = useCallback(
-    (electionId, status) => {
+    (electionId, status, options = {}) => {
+      return transitionElectionStatus(electionId, status, {
+        ...options,
+        confirmCancel: true,
+        demoLifecycleOverride:
+          options.enforceStrictTransitions === true
+            ? Boolean(options.demoLifecycleOverride)
+            : true,
+      });
+    },
+    [transitionElectionStatus]
+  );
+
+  const duplicateElectionAsDraft = useCallback(
+    (electionId, actor = {}) => {
+      const source = store.elections.find(
+        (e) => (e.id || e.electionId) === electionId
+      );
+      if (!source) {
+        return { ok: false, error: 'Source election not found.' };
+      }
+
+      const baseId = `${source.id || source.electionId}-DRAFT`;
+      let nextId = baseId;
+      let seq = 2;
+      while (store.elections.some((e) => (e.id || e.electionId) === nextId)) {
+        nextId = `${baseId}-${seq}`;
+        seq += 1;
+      }
+
+      const draftCopy = enrichElection({
+        ...source,
+        id: nextId,
+        electionId: nextId,
+        name: `${source.name || source.title} (Draft Copy)`,
+        title: `${source.name || source.title} (Draft Copy)`,
+        status: 'DRAFT',
+        lifecycleHistory: [
+          {
+            status: 'DRAFT',
+            changedAt: new Date().toISOString(),
+            note: `Duplicated as draft from ${electionId}`,
+          },
+        ],
+      });
+
+      const next = [draftCopy, ...store.elections];
+      syncKey(STORAGE_KEYS.ELECTIONS, 'elections', next);
+
+      appendAuditLog({
+        action: 'ELECTION_CREATED',
+        entityType: 'ELECTION',
+        entityId: nextId,
+        adminId: actor.adminId || 'ECI-ADMIN-001',
+        adminRole: actor.adminRole || 'SUPER_ADMIN',
+        description: `Duplicated election ${electionId} as new draft ${nextId}.`,
+      });
+
+      return { ok: true, election: draftCopy };
+    },
+    [store.elections, syncKey, appendAuditLog]
+  );
+
+  const updateElectionSchedule = useCallback(
+    (electionId, scheduleUpdates, options = {}) => {
+      const target = store.elections.find(
+        (e) => (e.id || e.electionId) === electionId
+      );
+      if (!target) {
+        return { ok: false, error: 'Election not found.' };
+      }
+
+      const isActiveElection =
+        target.status === 'POLLING_ACTIVE' || target.status === 'ACTIVE';
+      if (
+        isActiveElection &&
+        !options.confirmedActiveChange &&
+        !options.confirmActiveScheduleChange
+      ) {
+        return {
+          ok: false,
+          requiresConfirmation: true,
+          error:
+            'Modifying the schedule of an active election requires explicit administrative confirmation.',
+        };
+      }
+
+      const mergedSchedule = {
+        nominationStartDate:
+          scheduleUpdates.nominationStartDate ?? target.nominationStartDate,
+        nominationEndDate:
+          scheduleUpdates.nominationEndDate ?? target.nominationEndDate,
+        scrutinyDate: scheduleUpdates.scrutinyDate ?? target.scrutinyDate,
+        withdrawalDeadline:
+          scheduleUpdates.withdrawalDeadline ?? target.withdrawalDeadline,
+        pollingStartDate:
+          scheduleUpdates.pollingStartDate ??
+          scheduleUpdates.pollingDate ??
+          target.pollingStartDate,
+        pollingEndDate:
+          scheduleUpdates.pollingEndDate ??
+          scheduleUpdates.pollingStartDate ??
+          target.pollingEndDate,
+        countingDate: scheduleUpdates.countingDate ?? target.countingDate,
+        resultDate: scheduleUpdates.resultDate ?? target.resultDate,
+      };
+
+      const check = validateElectionSchedule(mergedSchedule);
+      if (!check.isValid) {
+        return {
+          ok: false,
+          errors: Object.values(check.errors),
+          fieldErrors: check.errors,
+        };
+      }
+
+      const updatedElection = enrichElection({
+        ...target,
+        ...mergedSchedule,
+        pollingDate: mergedSchedule.pollingStartDate,
+      });
+
+      const conflicts = detectScheduleConflicts(
+        updatedElection,
+        store.elections
+      );
+
       const next = store.elections.map((e) =>
-        (e.id || e.electionId) === electionId ? { ...e, status } : e
+        (e.id || e.electionId) === electionId ? updatedElection : e
       );
       syncKey(STORAGE_KEYS.ELECTIONS, 'elections', next);
-      return { ok: true };
+
+      appendAuditLog({
+        action: 'SCHEDULE_MODIFIED',
+        entityType: 'SCHEDULE',
+        entityId: electionId,
+        adminId: options.adminId || 'ECI-ADMIN-001',
+        adminRole: options.adminRole || 'SUPER_ADMIN',
+        description: `Modified election schedule for ${electionId} (Polling: ${mergedSchedule.pollingStartDate} to ${mergedSchedule.pollingEndDate}).`,
+      });
+
+      return {
+        ok: true,
+        election: updatedElection,
+        conflicts,
+      };
     },
-    [store.elections, syncKey]
+    [store.elections, syncKey, appendAuditLog]
   );
 
   const deleteElection = useCallback(
@@ -690,7 +1041,7 @@ export function ElectionProvider({ children }) {
   );
 
   const upsertState = useCallback(
-    (stateObj) => {
+    (stateObj, actor = {}) => {
       const targetId = stateObj.stateId || stateObj.id;
       const next = store.states.map((s) =>
         (s.id || s.stateId) === targetId
@@ -703,13 +1054,23 @@ export function ElectionProvider({ children }) {
           : s
       );
       syncKey(STORAGE_KEYS.STATES, 'states', next);
+
+      appendAuditLog({
+        action: 'STATE_UPDATED',
+        entityType: 'STATE',
+        entityId: targetId,
+        adminId: actor.adminId || 'ECI-ADMIN-001',
+        adminRole: actor.adminRole || 'SUPER_ADMIN',
+        description: `Updated State/UT record for ${targetId}.`,
+      });
+
       return stateObj;
     },
-    [store.states, syncKey]
+    [store.states, syncKey, appendAuditLog]
   );
 
   const createDistrict = useCallback(
-    (input) => {
+    (input, actor = {}) => {
       const dName = input.name || input.districtName;
       if (!dName || !dName.trim() || !input.stateId) {
         return {
@@ -733,17 +1094,28 @@ export function ElectionProvider({ children }) {
         stateId: input.stateId,
         districtCode: input.districtCode || id,
         headquarters: input.headquarters || dName.trim(),
+        status: input.status || 'ACTIVE',
         metadataSource: METADATA_SOURCES.DEMO_SAMPLE,
       });
       const next = [...store.districts, record];
       syncKey(STORAGE_KEYS.DISTRICTS, 'districts', next);
+
+      appendAuditLog({
+        action: 'DISTRICT_CREATED',
+        entityType: 'DISTRICT',
+        entityId: id,
+        adminId: actor.adminId || 'ECI-ADMIN-001',
+        adminRole: actor.adminRole || 'SUPER_ADMIN',
+        description: `Created demo district "${record.name}" (${id}) in ${input.stateId}.`,
+      });
+
       return { ok: true, district: record };
     },
-    [store.districts, syncKey]
+    [store.districts, syncKey, appendAuditLog]
   );
 
   const upsertDistrict = useCallback(
-    (input) => {
+    (input, actor = {}) => {
       const targetId = input.districtId || input.id;
       const exists = store.districts.some(
         (d) => (d.id || d.districtId) === targetId
@@ -758,12 +1130,22 @@ export function ElectionProvider({ children }) {
           (d.id || d.districtId) === targetId ? updated : d
         );
         syncKey(STORAGE_KEYS.DISTRICTS, 'districts', next);
+
+        appendAuditLog({
+          action: 'DISTRICT_UPDATED',
+          entityType: 'DISTRICT',
+          entityId: targetId,
+          adminId: actor.adminId || 'ECI-ADMIN-001',
+          adminRole: actor.adminRole || 'SUPER_ADMIN',
+          description: `Updated district "${updated.name}" (${targetId}).`,
+        });
+
         return updated;
       }
-      const res = createDistrict(input);
+      const res = createDistrict(input, actor);
       return res.district || input;
     },
-    [store.districts, syncKey, createDistrict]
+    [store.districts, syncKey, createDistrict, appendAuditLog]
   );
 
   const updateDistrict = useCallback(
@@ -779,18 +1161,45 @@ export function ElectionProvider({ children }) {
 
   const deleteDistrict = useCallback(
     (districtId) => {
+      const referencedVoters = store.voters.filter(
+        (v) => v.districtId === districtId
+      );
+      const referencedConstituencies = store.constituencies.filter(
+        (c) =>
+          c.districtId === districtId ||
+          (Array.isArray(c.districtIds) && c.districtIds.includes(districtId))
+      );
+      if (referencedVoters.length > 0 || referencedConstituencies.length > 0) {
+        return {
+          ok: false,
+          error: `Cannot delete district ${districtId}: Referenced by ${referencedConstituencies.length} constituency(ies) and ${referencedVoters.length} voter(s). Deactivate instead.`,
+        };
+      }
       const next = store.districts.filter(
         (d) => (d.id || d.districtId) !== districtId
       );
       syncKey(STORAGE_KEYS.DISTRICTS, 'districts', next);
       return { ok: true };
     },
-    [store.districts, syncKey]
+    [store.districts, store.voters, store.constituencies, syncKey]
   );
 
   // ================= CONSTITUENCIES =================
+  const checkConstituencyImpact = useCallback(
+    (constituencyId, updates = {}) =>
+      checkConstituencyModificationImpact({
+        constituencyId,
+        updates,
+        constituencies: store.constituencies,
+        voters: store.voters,
+        elections: store.elections,
+        candidates: store.candidates,
+      }),
+    [store.constituencies, store.voters, store.elections, store.candidates]
+  );
+
   const createConstituency = useCallback(
-    (input) => {
+    (input, actor = {}) => {
       const normalizedInput = {
         ...input,
         type: input.type || input.constituencyType,
@@ -807,22 +1216,44 @@ export function ElectionProvider({ children }) {
           errors: Array.isArray(result.errors)
             ? result.errors
             : Object.values(result.errors || {}),
+          fieldErrors: result.errors,
         };
       }
       const enriched = enrichConstituency({
         ...result.constituency,
         code: input.code || result.constituency.id,
         reservationType: input.reservationType || 'GENERAL',
+        status: input.status || 'ACTIVE',
       });
       const next = [...store.constituencies, enriched];
       syncKey(STORAGE_KEYS.CONSTITUENCIES, 'constituencies', next);
+
+      appendAuditLog({
+        action: 'CONSTITUENCY_CREATED',
+        entityType: 'CONSTITUENCY',
+        entityId: enriched.constituencyId,
+        adminId: actor.adminId || 'ECI-ADMIN-001',
+        adminRole: actor.adminRole || 'SUPER_ADMIN',
+        description: `Created ${enriched.constituencyType} constituency "${enriched.name}" (${enriched.constituencyId}).`,
+      });
+
       return { ok: true, constituency: enriched };
     },
-    [store.states, store.districts, store.constituencies, syncKey]
+    [store.states, store.districts, store.constituencies, syncKey, appendAuditLog]
   );
 
   const updateConstituency = useCallback(
-    (constituencyId, updates) => {
+    (constituencyId, updates, options = {}) => {
+      const impact = checkConstituencyImpact(constituencyId, updates);
+      if (impact.hasImpact && options.requireImpactConfirmation && !options.confirmedWarning) {
+        return {
+          ok: false,
+          requiresConfirmation: true,
+          impact,
+          errors: impact.warnings,
+        };
+      }
+
       const normalizedUpdates = {
         ...updates,
         type: updates.type || updates.constituencyType,
@@ -840,16 +1271,38 @@ export function ElectionProvider({ children }) {
           errors: Array.isArray(result.errors)
             ? result.errors
             : Object.values(result.errors || {}),
+          fieldErrors: result.errors,
         };
       }
-      const enriched = enrichConstituency(result.constituency);
+      const enriched = enrichConstituency({
+        ...result.constituency,
+        status: updates.status || result.constituency.status || 'ACTIVE',
+      });
+      // Preserve voter constituency mappings untouched (never silently mutate voter mappings)
       const next = store.constituencies.map((c) =>
         (c.id || c.constituencyId) === constituencyId ? enriched : c
       );
       syncKey(STORAGE_KEYS.CONSTITUENCIES, 'constituencies', next);
-      return { ok: true, constituency: enriched };
+
+      appendAuditLog({
+        action: 'CONSTITUENCY_UPDATED',
+        entityType: 'CONSTITUENCY',
+        entityId: constituencyId,
+        adminId: options.adminId || 'ECI-ADMIN-001',
+        adminRole: options.adminRole || 'SUPER_ADMIN',
+        description: `Updated constituency "${enriched.name}" (${constituencyId}).`,
+      });
+
+      return { ok: true, constituency: enriched, impact };
     },
-    [store.states, store.districts, store.constituencies, syncKey]
+    [
+      store.states,
+      store.districts,
+      store.constituencies,
+      checkConstituencyImpact,
+      syncKey,
+      appendAuditLog,
+    ]
   );
 
   const deleteConstituency = useCallback(
@@ -865,7 +1318,7 @@ export function ElectionProvider({ children }) {
 
   // ================= POLITICAL PARTIES =================
   const createParty = useCallback(
-    (input) => {
+    (input, actor = {}) => {
       const pName = input.name || input.partyName;
       if (!pName || !pName.trim() || !input.abbreviation || !input.abbreviation.trim()) {
         return {
@@ -885,7 +1338,7 @@ export function ElectionProvider({ children }) {
         name: pName.trim(),
         abbreviation: abbr,
         symbol: input.symbol || input.symbolUrl || eciLogo,
-        symbolName: input.symbolName || `${abbr} Symbol`,
+        symbolName: input.symbolName || `${abbr} Symbol (Demo Placeholder)`,
         type: input.type || input.partyType || 'STATE',
         description: input.description ? input.description.trim() : '',
         status: input.status || 'ACTIVE',
@@ -893,13 +1346,23 @@ export function ElectionProvider({ children }) {
       });
       const next = [...store.parties, record];
       syncKey(STORAGE_KEYS.PARTIES, 'parties', next);
+
+      appendAuditLog({
+        action: 'PARTY_CREATED',
+        entityType: 'PARTY',
+        entityId: id,
+        adminId: actor.adminId || 'ECI-ADMIN-001',
+        adminRole: actor.adminRole || 'SUPER_ADMIN',
+        description: `Registered political party "${record.name}" (${abbr}).`,
+      });
+
       return { ok: true, party: record };
     },
-    [store.parties, syncKey]
+    [store.parties, syncKey, appendAuditLog]
   );
 
   const upsertParty = useCallback(
-    (input) => {
+    (input, actor = {}) => {
       const targetId = input.partyId || input.id;
       const exists = store.parties.some((p) => (p.id || p.partyId) === targetId);
       if (exists) {
@@ -914,28 +1377,77 @@ export function ElectionProvider({ children }) {
           (p.id || p.partyId) === targetId ? updated : p
         );
         syncKey(STORAGE_KEYS.PARTIES, 'parties', next);
+
+        appendAuditLog({
+          action: 'PARTY_UPDATED',
+          entityType: 'PARTY',
+          entityId: targetId,
+          adminId: actor.adminId || 'ECI-ADMIN-001',
+          adminRole: actor.adminRole || 'SUPER_ADMIN',
+          description: `Updated political party "${updated.name}" (${targetId}).`,
+        });
+
         return updated;
       }
-      const res = createParty(input);
+      const res = createParty(input, actor);
       return res.party || enrichParty(input);
     },
-    [store.parties, syncKey, createParty]
+    [store.parties, syncKey, createParty, appendAuditLog]
   );
 
   const updateParty = useCallback(
-    (partyId, updates) => {
+    (partyId, updates, actor = {}) => {
       const next = store.parties.map((p) =>
         (p.id || p.partyId) === partyId ? enrichParty({ ...p, ...updates }) : p
       );
       syncKey(STORAGE_KEYS.PARTIES, 'parties', next);
+
+      appendAuditLog({
+        action: 'PARTY_UPDATED',
+        entityType: 'PARTY',
+        entityId: partyId,
+        adminId: actor.adminId || 'ECI-ADMIN-001',
+        adminRole: actor.adminRole || 'SUPER_ADMIN',
+        description: `Updated party ${partyId} status/metadata.`,
+      });
+
       return { ok: true };
     },
-    [store.parties, syncKey]
+    [store.parties, syncKey, appendAuditLog]
+  );
+
+  const deleteParty = useCallback(
+    (partyId, actor = {}) => {
+      const check = canDeleteParty(partyId, store.candidates);
+      if (!check.canDelete) {
+        return {
+          ok: false,
+          error: check.error,
+          referencedCount: check.referencedCount,
+        };
+      }
+      const next = store.parties.filter(
+        (p) => (p.id || p.partyId) !== partyId
+      );
+      syncKey(STORAGE_KEYS.PARTIES, 'parties', next);
+
+      appendAuditLog({
+        action: 'PARTY_DELETED',
+        entityType: 'PARTY',
+        entityId: partyId,
+        adminId: actor.adminId || 'ECI-ADMIN-001',
+        adminRole: actor.adminRole || 'SUPER_ADMIN',
+        description: `Deleted unreferenced demo party ${partyId}.`,
+      });
+
+      return { ok: true };
+    },
+    [store.parties, store.candidates, syncKey, appendAuditLog]
   );
 
   // ================= CANDIDATES =================
   const createCandidate = useCallback(
-    (input) => {
+    (input, actor = {}) => {
       const normalizedInput = {
         ...input,
         photograph: input.photograph || input.photoUrl || defaultAvatar,
@@ -955,15 +1467,30 @@ export function ElectionProvider({ children }) {
           errors: Array.isArray(result.errors)
             ? result.errors
             : Object.values(result.errors || {}),
+          fieldErrors: result.errors,
         };
       }
       const enriched = enrichCandidate(
-        { ...normalizedInput, ...result.candidate },
+        {
+          ...normalizedInput,
+          ...result.candidate,
+          createdAt: new Date().toISOString(),
+        },
         store.candidates.length,
         enrichedConstituencies
       );
       const next = [...store.candidates, enriched];
       syncKey(STORAGE_KEYS.CANDIDATES, 'candidates', next);
+
+      appendAuditLog({
+        action: 'CANDIDATE_REGISTERED',
+        entityType: 'CANDIDATE',
+        entityId: enriched.candidateId,
+        adminId: actor.adminId || 'ECI-ADMIN-001',
+        adminRole: actor.adminRole || 'SUPER_ADMIN',
+        description: `Registered candidate "${enriched.name}" for ${enriched.constituencyId} in ${enriched.electionId} (${enriched.status}).`,
+      });
+
       return { ok: true, candidate: enriched };
     },
     [
@@ -973,11 +1500,12 @@ export function ElectionProvider({ children }) {
       store.candidates,
       enrichedConstituencies,
       syncKey,
+      appendAuditLog,
     ]
   );
 
   const updateCandidate = useCallback(
-    (candidateId, updates) => {
+    (candidateId, updates, actor = {}) => {
       const normalizedUpdates = {
         ...updates,
         photograph: updates.photograph || updates.photoUrl,
@@ -998,6 +1526,7 @@ export function ElectionProvider({ children }) {
           errors: Array.isArray(result.errors)
             ? result.errors
             : Object.values(result.errors || {}),
+          fieldErrors: result.errors,
         };
       }
       const enriched = enrichCandidate(
@@ -1009,6 +1538,16 @@ export function ElectionProvider({ children }) {
         (c.id || c.candidateId) === candidateId ? enriched : c
       );
       syncKey(STORAGE_KEYS.CANDIDATES, 'candidates', next);
+
+      appendAuditLog({
+        action: 'CANDIDATE_UPDATED',
+        entityType: 'CANDIDATE',
+        entityId: candidateId,
+        adminId: actor.adminId || 'ECI-ADMIN-001',
+        adminRole: actor.adminRole || 'SUPER_ADMIN',
+        description: `Updated candidate profile for "${enriched.name}" (${candidateId}).`,
+      });
+
       return { ok: true, candidate: enriched };
     },
     [
@@ -1018,6 +1557,73 @@ export function ElectionProvider({ children }) {
       store.candidates,
       enrichedConstituencies,
       syncKey,
+      appendAuditLog,
+    ]
+  );
+
+  const transitionCandidateStatus = useCallback(
+    (candidateId, nextStatus, actor = {}) => {
+      const target = store.candidates.find(
+        (c) => (c.id || c.candidateId) === candidateId
+      );
+      if (!target) {
+        return { ok: false, error: 'Candidate not found.' };
+      }
+
+      const currentStatus = target.status || target.approvalStatus || 'SUBMITTED';
+      const check = validateCandidateStatusTransition(currentStatus, nextStatus, {
+        demoLifecycleMode:
+          actor?.demoLifecycleMode !== undefined
+            ? actor.demoLifecycleMode
+            : demoLifecycleMode,
+      });
+      if (!check.ok) {
+        return check;
+      }
+
+      const updated = enrichCandidate(
+        {
+          ...target,
+          status: nextStatus,
+          approvalStatus: nextStatus,
+        },
+        0,
+        enrichedConstituencies,
+        normalizedTallies
+      );
+
+      const next = store.candidates.map((c) =>
+        (c.id || c.candidateId) === candidateId ? updated : c
+      );
+      syncKey(STORAGE_KEYS.CANDIDATES, 'candidates', next);
+
+      const auditAction =
+        nextStatus === 'APPROVED'
+          ? 'CANDIDATE_APPROVED'
+          : nextStatus === 'REJECTED'
+          ? 'CANDIDATE_REJECTED'
+          : 'CANDIDATE_STATUS_CHANGED';
+
+      const adminUser = actor?.currentAdmin || actor || {};
+      appendAuditLog({
+        action: auditAction,
+        entityType: 'CANDIDATE',
+        entityId: candidateId,
+        adminId: adminUser.adminId || adminUser.id || 'ECI-ADMIN-001',
+        adminName: adminUser.fullName || adminUser.name,
+        adminRole: adminUser.adminRole || adminUser.role || 'SUPER_ADMIN',
+        description: `Candidate "${updated.name}" (${candidateId}) status changed from ${currentStatus} to ${nextStatus}.`,
+      });
+
+      return { ok: true, candidate: updated };
+    },
+    [
+      store.candidates,
+      enrichedConstituencies,
+      normalizedTallies,
+      demoLifecycleMode,
+      syncKey,
+      appendAuditLog,
     ]
   );
 
@@ -1030,6 +1636,657 @@ export function ElectionProvider({ children }) {
       return { ok: true };
     },
     [store.candidates, syncKey]
+  );
+
+  // ================= ANNOUNCEMENTS =================
+  const allAnnouncements = useMemo(
+    () =>
+      (store.announcements || []).map((a) => ({
+        ...a,
+        id: a.id || `ANN-${Date.now()}`,
+        status: a.status || 'PUBLISHED',
+        category: a.category || 'GENERAL_INFO',
+        targetAudience: a.targetAudience || 'ALL_VOTERS',
+        publicationDate: a.publicationDate || a.date || '2026-10-30',
+        date: a.publicationDate || a.date || '2026-10-30',
+        message: a.message || a.summary || '',
+        summary: a.summary || a.message || '',
+      })),
+    [store.announcements]
+  );
+
+  const publishedAnnouncements = useMemo(
+    () => allAnnouncements.filter((a) => a.status === 'PUBLISHED'),
+    [allAnnouncements]
+  );
+
+  const createAnnouncement = useCallback(
+    (input, actor = {}) => {
+      if (!input.title || !input.title.trim()) {
+        return { ok: false, error: 'Announcement title is required.' };
+      }
+      const msg = (input.message || input.summary || '').trim();
+      if (!msg) {
+        return { ok: false, error: 'Announcement content/message is required.' };
+      }
+
+      const id =
+        input.id ||
+        `ANN-${String((store.announcements || []).length + 101).padStart(3, '0')}`;
+      const pubDate =
+        input.publicationDate ||
+        input.date ||
+        new Date().toISOString().slice(0, 10);
+      const status = input.status || 'DRAFT';
+
+      const resolvedStateId = input.targetStateId || input.stateId || null;
+      const resolvedElectionId = input.targetElectionId || input.electionId || null;
+      const resolvedConstId =
+        input.targetConstituencyId || input.constituencyId || null;
+
+      const record = {
+        id,
+        title: input.title.trim(),
+        message: msg,
+        summary: msg,
+        category: input.category || 'GENERAL_INFO',
+        status,
+        publicationDate: pubDate,
+        date: pubDate,
+        expiryDate: input.expiryDate || '2029-12-31',
+        targetAudience: input.targetAudience || 'ALL_VOTERS',
+        targetStateId: resolvedStateId,
+        stateId: resolvedStateId,
+        targetElectionId: resolvedElectionId,
+        electionId: resolvedElectionId,
+        targetConstituencyId: resolvedConstId,
+        constituencyId: resolvedConstId,
+        createdAt: new Date().toISOString(),
+      };
+
+      const next = [record, ...(store.announcements || [])];
+      syncKey(STORAGE_KEYS.ANNOUNCEMENTS, 'announcements', next);
+
+      if (status === 'PUBLISHED') {
+        addVoterNotification({
+          type: NOTIFICATION_TYPES.GENERAL_ANNOUNCEMENT,
+          title: record.title,
+          message: record.message,
+          targetStateId: record.targetStateId,
+          targetElectionId: record.targetElectionId,
+          targetConstituencyId: record.targetConstituencyId,
+        });
+      }
+
+      appendAuditLog({
+        action:
+          status === 'PUBLISHED'
+            ? 'ANNOUNCEMENT_PUBLISHED'
+            : 'ANNOUNCEMENT_CREATED',
+        entityType: 'ANNOUNCEMENT',
+        entityId: id,
+        adminId: actor.adminId || 'ECI-ADMIN-001',
+        adminRole: actor.adminRole || 'SUPER_ADMIN',
+        description: `${
+          status === 'PUBLISHED' ? 'Published' : 'Saved draft'
+        } announcement "${record.title}" (${id}).`,
+      });
+
+      return { ok: true, announcement: record };
+    },
+    [store.announcements, syncKey, addVoterNotification, appendAuditLog]
+  );
+
+  const updateAnnouncement = useCallback(
+    (announcementId, updates, actor = {}) => {
+      const target = (store.announcements || []).find(
+        (a) => a.id === announcementId
+      );
+      if (!target) {
+        return { ok: false, error: 'Announcement not found.' };
+      }
+
+      const msg =
+        updates.message !== undefined
+          ? updates.message
+          : updates.summary !== undefined
+          ? updates.summary
+          : target.message || target.summary;
+
+      const updated = {
+        ...target,
+        ...updates,
+        message: msg,
+        summary: msg,
+        date: updates.publicationDate || updates.date || target.date,
+      };
+
+      const next = (store.announcements || []).map((a) =>
+        a.id === announcementId ? updated : a
+      );
+      syncKey(STORAGE_KEYS.ANNOUNCEMENTS, 'announcements', next);
+
+      if (target.status !== 'PUBLISHED' && updated.status === 'PUBLISHED') {
+        addVoterNotification({
+          type: NOTIFICATION_TYPES.GENERAL_ANNOUNCEMENT,
+          title: updated.title,
+          message: updated.message,
+          targetStateId: updated.targetStateId,
+          targetElectionId: updated.targetElectionId,
+          targetConstituencyId: updated.targetConstituencyId,
+        });
+      }
+
+      appendAuditLog({
+        action:
+          updated.status === 'PUBLISHED'
+            ? 'ANNOUNCEMENT_PUBLISHED'
+            : 'ANNOUNCEMENT_UPDATED',
+        entityType: 'ANNOUNCEMENT',
+        entityId: announcementId,
+        adminId: actor.adminId || 'ECI-ADMIN-001',
+        adminRole: actor.adminRole || 'SUPER_ADMIN',
+        description: `Updated announcement "${updated.title}" (${announcementId}) [${updated.status}].`,
+      });
+
+      return { ok: true, announcement: updated };
+    },
+    [store.announcements, syncKey, addVoterNotification, appendAuditLog]
+  );
+
+  // ================= RESULTS & COUNTING MANAGEMENT (PHASE 6) =================
+  const results = useMemo(() => store.results || [], [store.results]);
+
+  const resultPublications = useMemo(
+    () => store.resultPublications || {},
+    [store.resultPublications]
+  );
+
+  const createCountingSessionForConstituency = useCallback(
+    (payload = {}, actor = {}) => {
+      const check = countingService.createCountingSession({
+        ...payload,
+        elections: store.elections,
+        constituencies: store.constituencies,
+        candidates: store.candidates,
+        parties: store.parties,
+        existingResults: store.results || [],
+      });
+      if (!check.ok) return check;
+
+      const nextResults = [check.result, ...(store.results || [])];
+      syncKey(STORAGE_KEYS.RESULTS, 'results', nextResults);
+
+      appendAuditLog({
+        action: 'COUNTING_SESSION_CREATED',
+        entityType: 'RESULT',
+        entityId: check.result.id,
+        adminId: actor?.adminId || actor?.id || 'ECI-ADMIN-001',
+        adminName: actor?.fullName || actor?.name,
+        adminRole: actor?.adminRole || actor?.role || 'SUPER_ADMIN',
+        description: `Created simulated counting session ${check.result.id} (${check.result.electionId} — ${check.result.constituencyId}).`,
+      });
+
+      return { ok: true, result: check.result };
+    },
+    [
+      store.elections,
+      store.constituencies,
+      store.candidates,
+      store.parties,
+      store.results,
+      syncKey,
+      appendAuditLog,
+    ]
+  );
+
+  const startConstituencyCounting = useCallback(
+    (resultId, actor = {}) => {
+      const target = (store.results || []).find(
+        (r) => (r.id || r.resultId) === resultId
+      );
+      if (!target) return { ok: false, error: 'Result session not found.' };
+
+      const res = countingService.startCountingSession(target);
+      if (!res.ok) return res;
+
+      const nextResults = (store.results || []).map((r) =>
+        (r.id || r.resultId) === resultId ? res.result : r
+      );
+      syncKey(STORAGE_KEYS.RESULTS, 'results', nextResults);
+
+      appendAuditLog({
+        action: 'COUNTING_STARTED',
+        entityType: 'RESULT',
+        entityId: resultId,
+        adminId: actor?.adminId || actor?.id || 'ECI-ADMIN-001',
+        adminName: actor?.fullName || actor?.name,
+        adminRole: actor?.adminRole || actor?.role || 'SUPER_ADMIN',
+        description: `Started simulated counting for ${target.constituencyId} in ${target.electionId}.`,
+      });
+
+      return res;
+    },
+    [store.results, syncKey, appendAuditLog]
+  );
+
+  const processConstituencyCountingRound = useCallback(
+    (resultId, customRoundData = null, actor = {}) => {
+      const target = (store.results || []).find(
+        (r) => (r.id || r.resultId) === resultId
+      );
+      if (!target) return { ok: false, error: 'Result session not found.' };
+
+      const res = countingService.processNextCountingRound(
+        target,
+        customRoundData
+      );
+      if (!res.ok) return res;
+
+      const nextResults = (store.results || []).map((r) =>
+        (r.id || r.resultId) === resultId ? res.result : r
+      );
+      syncKey(STORAGE_KEYS.RESULTS, 'results', nextResults);
+
+      appendAuditLog({
+        action: 'COUNTING_ROUND_PROCESSED',
+        entityType: 'RESULT',
+        entityId: resultId,
+        adminId: actor?.adminId || actor?.id || 'ECI-ADMIN-001',
+        adminName: actor?.fullName || actor?.name,
+        adminRole: actor?.adminRole || actor?.role || 'SUPER_ADMIN',
+        description: `Processed Round ${res.round.roundNumber} for ${target.constituencyId} (${target.electionId}). Cumulative counted: ${res.result.totalCountedVotes} votes.`,
+      });
+
+      return res;
+    },
+    [store.results, syncKey, appendAuditLog]
+  );
+
+  const pauseConstituencyCounting = useCallback(
+    (resultId, actor = {}) => {
+      const target = (store.results || []).find(
+        (r) => (r.id || r.resultId) === resultId
+      );
+      if (!target) return { ok: false, error: 'Result session not found.' };
+
+      const res = countingService.pauseCountingSession(target);
+      if (!res.ok) return res;
+
+      const nextResults = (store.results || []).map((r) =>
+        (r.id || r.resultId) === resultId ? res.result : r
+      );
+      syncKey(STORAGE_KEYS.RESULTS, 'results', nextResults);
+
+      appendAuditLog({
+        action: 'COUNTING_PAUSED',
+        entityType: 'RESULT',
+        entityId: resultId,
+        adminId: actor?.adminId || actor?.id || 'ECI-ADMIN-001',
+        adminName: actor?.fullName || actor?.name,
+        adminRole: actor?.adminRole || actor?.role || 'SUPER_ADMIN',
+        description: `Paused counting session for ${target.constituencyId} (${target.electionId}) at Round ${target.currentRound}.`,
+      });
+
+      return res;
+    },
+    [store.results, syncKey, appendAuditLog]
+  );
+
+  const resumeConstituencyCounting = useCallback(
+    (resultId, actor = {}) => {
+      const target = (store.results || []).find(
+        (r) => (r.id || r.resultId) === resultId
+      );
+      if (!target) return { ok: false, error: 'Result session not found.' };
+
+      const res = countingService.resumeCountingSession(target);
+      if (!res.ok) return res;
+
+      const nextResults = (store.results || []).map((r) =>
+        (r.id || r.resultId) === resultId ? res.result : r
+      );
+      syncKey(STORAGE_KEYS.RESULTS, 'results', nextResults);
+
+      appendAuditLog({
+        action: 'COUNTING_RESUMED',
+        entityType: 'RESULT',
+        entityId: resultId,
+        adminId: actor?.adminId || actor?.id || 'ECI-ADMIN-001',
+        adminName: actor?.fullName || actor?.name,
+        adminRole: actor?.adminRole || actor?.role || 'SUPER_ADMIN',
+        description: `Resumed counting session for ${target.constituencyId} (${target.electionId}).`,
+      });
+
+      return res;
+    },
+    [store.results, syncKey, appendAuditLog]
+  );
+
+  const completeConstituencyCounting = useCallback(
+    (resultId, options = {}, actor = {}) => {
+      const target = (store.results || []).find(
+        (r) => (r.id || r.resultId) === resultId
+      );
+      if (!target) return { ok: false, error: 'Result session not found.' };
+
+      const res = countingService.completeCountingSession(target, {
+        autoProcessRemainingRounds: true,
+        readyForReview: true,
+        ...options,
+      });
+      if (!res.ok) return res;
+
+      const nextResults = (store.results || []).map((r) =>
+        (r.id || r.resultId) === resultId ? res.result : r
+      );
+      syncKey(STORAGE_KEYS.RESULTS, 'results', nextResults);
+
+      appendAuditLog({
+        action: 'COUNTING_COMPLETED',
+        entityType: 'RESULT',
+        entityId: resultId,
+        adminId: actor?.adminId || actor?.id || 'ECI-ADMIN-001',
+        adminName: actor?.fullName || actor?.name,
+        adminRole: actor?.adminRole || actor?.role || 'SUPER_ADMIN',
+        description: `Completed counting for ${target.constituencyId} (${target.electionId}). Status: ${res.result.status}.`,
+      });
+
+      return res;
+    },
+    [store.results, syncKey, appendAuditLog]
+  );
+
+  const resetConstituencyCounting = useCallback(
+    (resultId, options = {}, actor = {}) => {
+      const target = (store.results || []).find(
+        (r) => (r.id || r.resultId) === resultId
+      );
+      if (!target) return { ok: false, error: 'Result session not found.' };
+
+      const res = countingService.resetCountingSession(target, options);
+      if (!res.ok) return res;
+
+      const nextResults = (store.results || []).map((r) =>
+        (r.id || r.resultId) === resultId ? res.result : r
+      );
+      syncKey(STORAGE_KEYS.RESULTS, 'results', nextResults);
+
+      appendAuditLog({
+        action: 'COUNTING_SESSION_RESET',
+        entityType: 'RESULT',
+        entityId: resultId,
+        adminId: actor?.adminId || actor?.id || 'ECI-ADMIN-001',
+        adminName: actor?.fullName || actor?.name,
+        adminRole: actor?.adminRole || actor?.role || 'SUPER_ADMIN',
+        description: `Reset demo counting session for ${target.constituencyId} (${target.electionId}) back to DRAFT.`,
+      });
+
+      return res;
+    },
+    [store.results, syncKey, appendAuditLog]
+  );
+
+  const transitionConstituencyResultStatus = useCallback(
+    (resultId, targetStatus, options = {}, actor = {}) => {
+      const target = (store.results || []).find(
+        (r) => (r.id || r.resultId) === resultId
+      );
+      if (!target) return { ok: false, error: 'Result session not found.' };
+
+      const adminId = actor?.adminId || actor?.id || 'ECI-ADMIN-001';
+      const res = countingService.transitionResultPublicationStatus(
+        target,
+        targetStatus,
+        {
+          adminId,
+          notes: options?.notes || '',
+        }
+      );
+      if (!res.ok) return res;
+
+      const nextResults = (store.results || []).map((r) =>
+        (r.id || r.resultId) === resultId ? res.result : r
+      );
+      syncKey(STORAGE_KEYS.RESULTS, 'results', nextResults);
+
+      if (targetStatus === RESULT_STATUSES.PUBLISHED) {
+        addVoterNotification({
+          type: NOTIFICATION_TYPES.RESULT_PUBLISHED,
+          title: `Result Declared: ${target.constituencyId} (${target.electionId})`,
+          message: `Simulated constituency result for ${target.constituencyId} in ${target.electionId} has been published.`,
+          targetElectionId: target.electionId,
+          targetConstituencyId: target.constituencyId,
+          targetStateId: target.stateId,
+        });
+      }
+
+      appendAuditLog({
+        action:
+          targetStatus === RESULT_STATUSES.PUBLISHED
+            ? 'CONSTITUENCY_RESULT_PUBLISHED'
+            : targetStatus === RESULT_STATUSES.UNPUBLISHED
+            ? 'CONSTITUENCY_RESULT_UNPUBLISHED'
+            : 'CONSTITUENCY_RESULT_STATUS_CHANGED',
+        entityType: 'RESULT',
+        entityId: resultId,
+        adminId,
+        adminName: actor?.fullName || actor?.name,
+        adminRole: actor?.adminRole || actor?.role || 'SUPER_ADMIN',
+        description: `Updated result status for ${target.constituencyId} (${target.electionId}) to ${targetStatus}.`,
+      });
+
+      return res;
+    },
+    [store.results, syncKey, addVoterNotification, appendAuditLog]
+  );
+
+  const correctConstituencyResult = useCallback(
+    (resultId, payload = {}, actor = {}) => {
+      const target = (store.results || []).find(
+        (r) => (r.id || r.resultId) === resultId
+      );
+      if (!target) return { ok: false, error: 'Result session not found.' };
+
+      const res = countingService.applyAdminResultCorrection(target, {
+        ...payload,
+        adminId: actor?.adminId || actor?.id || 'ECI-ADMIN-001',
+        adminName: actor?.fullName || actor?.name || 'ECI Officer',
+      });
+      if (!res.ok) return res;
+
+      const nextResults = (store.results || []).map((r) =>
+        (r.id || r.resultId) === resultId ? res.result : r
+      );
+      syncKey(STORAGE_KEYS.RESULTS, 'results', nextResults);
+
+      appendAuditLog({
+        action: 'RESULT_CORRECTED',
+        entityType: 'RESULT',
+        entityId: resultId,
+        adminId: actor?.adminId || actor?.id || 'ECI-ADMIN-001',
+        adminName: actor?.fullName || actor?.name,
+        adminRole: actor?.adminRole || actor?.role || 'SUPER_ADMIN',
+        description: `Applied administrative correction to result ${resultId} (${target.constituencyId}). Reason: ${payload.reason}`,
+      });
+
+      return res;
+    },
+    [store.results, syncKey, appendAuditLog]
+  );
+
+  const saveDraftResultTally = useCallback(
+    (payload = {}, secondArgActor = {}) => {
+      const {
+        electionId,
+        constituencyId: inputConstId,
+        candidateId,
+        simulatedVotes,
+        candidateTallies = {},
+        notes = '',
+        actor: payloadActor,
+      } = payload;
+
+      const actor = payloadActor || secondArgActor || {};
+      const matchedCandidate = candidateId
+        ? (store.candidates || []).find(
+            (c) => (c.id || c.candidateId) === candidateId
+          )
+        : null;
+      const constituencyId =
+        inputConstId || matchedCandidate?.constituencyId || '';
+
+      if (!electionId || (!constituencyId && !candidateId)) {
+        return { ok: false, error: 'Election and Constituency/Candidate are required.' };
+      }
+
+      const resolvedTalliesMap =
+        candidateId !== undefined
+          ? { ...candidateTallies, [candidateId]: simulatedVotes }
+          : candidateTallies;
+
+      const nextTallies = structuredClone(store.tallies || {});
+      if (constituencyId) {
+        if (!nextTallies[electionId] || typeof nextTallies[electionId] !== 'object') {
+          nextTallies[electionId] = {};
+        }
+        if (!nextTallies[electionId][constituencyId]) {
+          nextTallies[electionId][constituencyId] = {};
+        }
+
+        for (const [candId, count] of Object.entries(resolvedTalliesMap)) {
+          const cleanCount = Math.max(0, Number(count) || 0);
+          nextTallies[electionId][constituencyId][candId] = cleanCount;
+          nextTallies[`${electionId}::${constituencyId}::${candId}`] = cleanCount;
+        }
+      }
+
+      const nextCandidates = (store.candidates || []).map((c) => {
+        const cid = c.id || c.candidateId;
+        if (resolvedTalliesMap[cid] !== undefined) {
+          return {
+            ...c,
+            demoVotes: Math.max(0, Number(resolvedTalliesMap[cid]) || 0),
+          };
+        }
+        return c;
+      });
+
+      const nextPubs = {
+        ...(store.resultPublications || {}),
+        [electionId]: {
+          ...(store.resultPublications?.[electionId] || {}),
+          electionId,
+          status: store.resultPublications?.[electionId]?.status || 'DRAFT',
+          updatedAt: new Date().toISOString(),
+          notes:
+            notes ||
+            store.resultPublications?.[electionId]?.notes ||
+            'Simulated draft result dataset.',
+        },
+      };
+
+      storageService.setDurableItem(STORAGE_KEYS.TALLIES, nextTallies);
+      storageService.setDurableItem(STORAGE_KEYS.CANDIDATES, nextCandidates);
+      storageService.setDurableItem(
+        STORAGE_KEYS.RESULT_PUBLICATIONS,
+        nextPubs
+      );
+
+      setStore((prev) => ({
+        ...prev,
+        tallies: nextTallies,
+        candidates: nextCandidates,
+        resultPublications: nextPubs,
+      }));
+
+      appendAuditLog({
+        action: 'RESULT_DRAFT_SAVED',
+        entityType: 'RESULT',
+        entityId: candidateId
+          ? `${electionId}:${candidateId}`
+          : `${electionId}:${constituencyId}`,
+        adminId: actor.adminId || actor.id || 'ECI-ADMIN-001',
+        adminName: actor.fullName || actor.name,
+        adminRole: actor.adminRole || actor.role || 'SUPER_ADMIN',
+        description: `Saved simulated draft result tallies for ${
+          candidateId || constituencyId
+        } in ${electionId}.`,
+      });
+
+      return { ok: true };
+    },
+    [store.tallies, store.candidates, store.resultPublications, appendAuditLog]
+  );
+
+  const publishElectionResults = useCallback(
+    (electionId, publishStatusOrBool = 'PUBLISHED', notesOrActor = '', actorArg = {}) => {
+      if (!electionId) {
+        return { ok: false, error: 'Election ID is required.' };
+      }
+
+      const publishStatus =
+        typeof publishStatusOrBool === 'boolean'
+          ? publishStatusOrBool
+            ? 'PUBLISHED'
+            : 'DRAFT'
+          : publishStatusOrBool || 'PUBLISHED';
+
+      const notes = typeof notesOrActor === 'string' ? notesOrActor : '';
+      const actor =
+        typeof notesOrActor === 'object' && notesOrActor !== null
+          ? notesOrActor
+          : actorArg || {};
+
+      const nowIso = new Date().toISOString();
+      const nextPubs = {
+        ...(store.resultPublications || {}),
+        [electionId]: {
+          electionId,
+          status: publishStatus,
+          publishedAt: publishStatus === 'PUBLISHED' ? nowIso : null,
+          publishedBy: actor.adminId || actor.id || 'ECI-ADMIN-001',
+          notes:
+            notes ||
+            (publishStatus === 'PUBLISHED'
+              ? 'Published simulated demonstration result dataset.'
+              : 'Unpublished to draft mode.'),
+        },
+      };
+
+      syncKey(
+        STORAGE_KEYS.RESULT_PUBLICATIONS,
+        'resultPublications',
+        nextPubs
+      );
+
+      if (publishStatus === 'PUBLISHED') {
+        addVoterNotification({
+          type: NOTIFICATION_TYPES.RESULT_PUBLISHED,
+          title: `Simulated Results Published: ${electionId}`,
+          message: `Demonstration constituency result datasets for ${electionId} have been published in the Results Portal.`,
+          targetElectionId: electionId,
+        });
+      }
+
+      appendAuditLog({
+        action:
+          publishStatus === 'PUBLISHED'
+            ? 'RESULT_PUBLISHED'
+            : 'RESULT_UNPUBLISHED',
+        entityType: 'RESULT',
+        entityId: electionId,
+        adminId: actor.adminId || actor.id || 'ECI-ADMIN-001',
+        adminName: actor.fullName || actor.name,
+        adminRole: actor.adminRole || actor.role || 'SUPER_ADMIN',
+        description: `${
+          publishStatus === 'PUBLISHED' ? 'Published' : 'Unpublished'
+        } simulated result dataset for ${electionId}.`,
+      });
+
+      return { ok: true, publication: nextPubs[electionId] };
+    },
+    [store.resultPublications, syncKey, addVoterNotification, appendAuditLog]
   );
 
   // ================= VOTERS & PARTICIPATION =================
@@ -1174,12 +2431,13 @@ export function ElectionProvider({ children }) {
         ok: true,
         voter: enrichVoter(result.voter),
         referenceId: result.referenceId,
+        demoReference: result.demoReference,
       };
     },
     [store.voters, store.elections, store.tallies, syncKey, addVoterNotification]
   );
 
-  // ================= FEEDBACK & RESET =================
+  // ================= FEEDBACK, EXPORT/IMPORT & RESET =================
   const addFeedback = useCallback(
     (input) => {
       const nowIso = new Date().toISOString();
@@ -1206,6 +2464,80 @@ export function ElectionProvider({ children }) {
     setStore(fresh);
     return fresh;
   }, []);
+
+  const exportDemoDatasets = useCallback(() => {
+    return {
+      exportedAt: new Date().toISOString(),
+      version: 'ovs_v3_0_phase7',
+      elections: store.elections,
+      constituencies: store.constituencies,
+      parties: store.parties,
+      candidates: store.candidates,
+      results: store.results,
+      announcements: store.announcements,
+      resultPublications: store.resultPublications,
+      auditLogs: store.auditLogs,
+    };
+  }, [store]);
+
+  const importDemoDatasets = useCallback(
+    (payload, actor = {}) => {
+      if (!payload || typeof payload !== 'object') {
+        return { ok: false, error: 'Invalid JSON dataset payload.' };
+      }
+      if (Array.isArray(payload.elections)) {
+        syncKey(STORAGE_KEYS.ELECTIONS, 'elections', payload.elections);
+      }
+      if (Array.isArray(payload.parties)) {
+        syncKey(STORAGE_KEYS.PARTIES, 'parties', payload.parties);
+      }
+      if (Array.isArray(payload.candidates)) {
+        syncKey(STORAGE_KEYS.CANDIDATES, 'candidates', payload.candidates);
+      }
+      if (Array.isArray(payload.results)) {
+        syncKey(STORAGE_KEYS.RESULTS, 'results', payload.results);
+      }
+      if (Array.isArray(payload.announcements)) {
+        syncKey(STORAGE_KEYS.ANNOUNCEMENTS, 'announcements', payload.announcements);
+      }
+      appendAuditLog({
+        action: 'DATASET_IMPORTED',
+        entityType: 'SYSTEM',
+        entityId: 'DEMO_STORE',
+        adminId: actor.adminId || 'ECI-ADMIN-001',
+        adminRole: actor.adminRole || 'SUPER_ADMIN',
+        description: 'Imported demonstration dataset JSON into local store.',
+      });
+      return { ok: true };
+    },
+    [syncKey, appendAuditLog]
+  );
+
+  const dataIntegrityReport = useMemo(
+    () =>
+      auditElectionDataIntegrity({
+        states: store.states,
+        districts: store.districts,
+        constituencies: store.constituencies,
+        parties: store.parties,
+        elections: store.elections,
+        candidates: store.candidates,
+        voters: store.voters,
+        results: store.results,
+        announcements: store.announcements,
+      }),
+    [
+      store.states,
+      store.districts,
+      store.constituencies,
+      store.parties,
+      store.elections,
+      store.candidates,
+      store.voters,
+      store.results,
+      store.announcements,
+    ]
+  );
 
   const normalizedFeedbacks = useMemo(
     () =>
@@ -1238,14 +2570,26 @@ export function ElectionProvider({ children }) {
         elections: enrichedElections,
         candidates: enrichedCandidates,
         voters: enrichedVoters,
+        participationRecords,
         tallies: normalizedTallies,
+        results,
+        announcements: publishedAnnouncements,
+        allAnnouncements,
+        publishedAnnouncements,
         voterNotifications,
+        auditLogs,
+        resultPublications,
+        demoLifecycleMode,
+        setDemoLifecycleMode,
         recentCandidates: recentCandidateObjects,
         feedback: normalizedFeedbacks,
         feedbacks: normalizedFeedbacks,
         createElection,
         updateElection,
         setElectionStatus,
+        transitionElectionStatus,
+        duplicateElectionAsDraft,
+        updateElectionSchedule,
         deleteElection,
         updateStateRecord,
         upsertState,
@@ -1255,13 +2599,30 @@ export function ElectionProvider({ children }) {
         deleteDistrict,
         createConstituency,
         updateConstituency,
+        checkConstituencyImpact,
         deleteConstituency,
         createParty,
         upsertParty,
         updateParty,
+        deleteParty,
         createCandidate,
         updateCandidate,
+        transitionCandidateStatus,
         deleteCandidate,
+        createAnnouncement,
+        updateAnnouncement,
+        saveDraftResultTally,
+        publishElectionResults,
+        createCountingSessionForConstituency,
+        startConstituencyCounting,
+        processConstituencyCountingRound,
+        pauseConstituencyCounting,
+        resumeConstituencyCounting,
+        completeConstituencyCounting,
+        resetConstituencyCounting,
+        transitionConstituencyResultStatus,
+        correctConstituencyResult,
+        appendAuditLog,
         registerVoter,
         updateVoterProfile,
         castSimulatedVote,
@@ -1275,6 +2636,9 @@ export function ElectionProvider({ children }) {
         submitFeedback: addFeedback,
         resetDemoData,
         resetDemoEnvironment: resetDemoData,
+        exportDemoDatasets,
+        importDemoDatasets,
+        dataIntegrityReport,
       }}
     >
       {children}

@@ -12,6 +12,9 @@ import About from '../pages/public/About';
 import ElectionInformation from '../pages/public/ElectionInformation';
 import CandidateDirectory from '../pages/public/CandidateDirectory';
 import Results from '../pages/public/Results';
+import LokSabhaResults from '../pages/public/LokSabhaResults';
+import AssemblyResults from '../pages/public/AssemblyResults';
+import ConstituencyResultDetail from '../pages/public/ConstituencyResultDetail';
 import Feedback from '../pages/public/Feedback';
 import NotFound from '../pages/public/NotFound';
 
@@ -21,6 +24,9 @@ import VoterRegister from '../pages/voter/Register';
 import VoterDashboard from '../pages/voter/Dashboard';
 import VoterProfile from '../pages/voter/Profile';
 import ElectionHub from '../pages/voter/ElectionHub';
+import ElectionDetailsPage from '../pages/voter/ElectionDetailsPage';
+import BallotPage from '../pages/voter/BallotPage';
+import BallotReceiptPage from '../pages/voter/BallotReceiptPage';
 import ConstituencyDetails from '../pages/voter/ConstituencyDetails';
 import Notifications from '../pages/voter/Notifications';
 import VotingHistory from '../pages/voter/VotingHistory';
@@ -35,11 +41,18 @@ import DistrictManagement from '../pages/admin/DistrictManagement';
 import ConstituencyManagement from '../pages/admin/ConstituencyManagement';
 import PartyManagement from '../pages/admin/PartyManagement';
 import CandidateManagement from '../pages/admin/CandidateManagement';
+import VoterManagement from '../pages/admin/VoterManagement';
+import ScheduleManagement from '../pages/admin/ScheduleManagement';
+import ElectionMonitoring from '../pages/admin/ElectionMonitoring';
+import AnnouncementManagement from '../pages/admin/AnnouncementManagement';
+import ResultsManagement from '../pages/admin/ResultsManagement';
+import AuditLogs from '../pages/admin/AuditLogs';
+import AdminSettings from '../pages/admin/AdminSettings';
 
 /**
-  * Frontend Route Guard for Protected Voter Routes
-  * Prevents unauthenticated users or ECI Admins from accessing Voter Hub routes.
-  */
+ * Frontend Route Guard for Protected Voter Routes
+ * Prevents unauthenticated users or ECI Admins from accessing Voter Hub routes.
+ */
 function RequireVoter({ children }) {
   const { isVoterAuthenticated, isAdminAuthenticated } = useAuth();
   const location = useLocation();
@@ -55,11 +68,13 @@ function RequireVoter({ children }) {
 }
 
 /**
-  * Frontend Route Guard for Protected ECI Officer / Admin Routes
-  * Prevents unauthenticated users or Voters from accessing Admin Console routes.
-  */
+ * Frontend Route Guard for Protected ECI Officer / Admin Routes
+ * Prevents unauthenticated users or Voters from accessing Admin Console routes
+ * and enforces role-based route permissions.
+ */
 function RequireAdmin({ children }) {
-  const { isAdminAuthenticated, isVoterAuthenticated } = useAuth();
+  const { isAdminAuthenticated, isVoterAuthenticated, canAccessAdminRoute } =
+    useAuth();
   const location = useLocation();
 
   if (!isAdminAuthenticated) {
@@ -67,6 +82,10 @@ function RequireAdmin({ children }) {
       return <Navigate to="/voter/dashboard" replace />;
     }
     return <Navigate to="/eci/login" state={{ from: location }} replace />;
+  }
+
+  if (!canAccessAdminRoute(location.pathname)) {
+    return <Navigate to="/eci/dashboard" replace />;
   }
 
   return children;
@@ -82,6 +101,12 @@ export default function AppRoutes() {
         <Route path="/elections" element={<ElectionInformation />} />
         <Route path="/candidates" element={<CandidateDirectory />} />
         <Route path="/results" element={<Results />} />
+        <Route path="/results/lok-sabha" element={<LokSabhaResults />} />
+        <Route path="/results/assembly" element={<AssemblyResults />} />
+        <Route
+          path="/results/:electionId/:constituencyId"
+          element={<ConstituencyResultDetail />}
+        />
         <Route path="/feedback" element={<Feedback />} />
 
         {/* Voter & Admin Public Entry (Login / Register) */}
@@ -115,6 +140,10 @@ export default function AppRoutes() {
         <Route path="profile" element={<VoterProfile />} />
         <Route path="constituencies" element={<ConstituencyDetails />} />
         <Route path="elections" element={<ElectionHub />} />
+        <Route path="elections/:electionId" element={<ElectionDetailsPage />} />
+        <Route path="elections/:electionId/info" element={<ElectionDetailsPage />} />
+        <Route path="elections/:electionId/ballot" element={<BallotPage />} />
+        <Route path="elections/:electionId/receipt" element={<BallotReceiptPage />} />
         <Route path="election-info" element={<ElectionInformation />} />
         <Route path="candidates" element={<CandidateDirectory />} />
         <Route path="notifications" element={<Notifications />} />
@@ -134,11 +163,20 @@ export default function AppRoutes() {
         <Route index element={<Navigate to="/eci/dashboard" replace />} />
         <Route path="dashboard" element={<AdminDashboard />} />
         <Route path="elections" element={<ElectionManagement />} />
+        <Route path="elections/create" element={<ElectionManagement />} />
+        <Route path="elections/:id" element={<ElectionManagement />} />
         <Route path="states" element={<StateManagement />} />
         <Route path="districts" element={<DistrictManagement />} />
         <Route path="constituencies" element={<ConstituencyManagement />} />
         <Route path="parties" element={<PartyManagement />} />
         <Route path="candidates" element={<CandidateManagement />} />
+        <Route path="voters" element={<VoterManagement />} />
+        <Route path="schedules" element={<ScheduleManagement />} />
+        <Route path="monitoring" element={<ElectionMonitoring />} />
+        <Route path="announcements" element={<AnnouncementManagement />} />
+        <Route path="results" element={<ResultsManagement />} />
+        <Route path="audit-logs" element={<AuditLogs />} />
+        <Route path="settings" element={<AdminSettings />} />
       </Route>
     </Routes>
   );

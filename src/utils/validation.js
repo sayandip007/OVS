@@ -13,11 +13,27 @@ export function calculateAgeFromDob(dobString) {
   return age;
 }
 
-export function validateElectionInput(election, constituencies = []) {
+export function validateElectionInput(
+  election,
+  constituencies = [],
+  existingElections = []
+) {
   const errors = {};
 
   if (!election.name || !election.name.trim()) {
     errors.name = 'Election name is required.';
+  }
+
+  if (election.id && Array.isArray(existingElections) && existingElections.length > 0) {
+    const cleanId = String(election.id).trim().toUpperCase();
+    const isDuplicate = existingElections.some(
+      (e) =>
+        !election.isUpdate &&
+        String(e.id || e.electionId || '').toUpperCase() === cleanId
+    );
+    if (isDuplicate) {
+      errors.id = `An election with ID "${cleanId}" already exists.`;
+    }
   }
 
   if (
@@ -58,10 +74,31 @@ export function validateElectionInput(election, constituencies = []) {
     }
   }
 
+  if (election.nominationEndDate && election.pollingStartDate) {
+    if (new Date(election.pollingStartDate) < new Date(election.nominationEndDate)) {
+      errors.pollingStartDate =
+        'Polling start date cannot be earlier than nomination end date.';
+    }
+  }
+
   if (election.pollingStartDate && election.pollingEndDate) {
     if (new Date(election.pollingEndDate) < new Date(election.pollingStartDate)) {
       errors.pollingEndDate =
         'Polling end date cannot be earlier than polling start date.';
+    }
+  }
+
+  if (election.pollingEndDate && election.countingDate) {
+    if (new Date(election.countingDate) < new Date(election.pollingEndDate)) {
+      errors.countingDate =
+        'Counting date cannot be earlier than polling end date.';
+    }
+  }
+
+  if (election.countingDate && election.resultDate) {
+    if (new Date(election.resultDate) < new Date(election.countingDate)) {
+      errors.resultDate =
+        'Result declaration date cannot be earlier than counting date.';
     }
   }
 
@@ -466,3 +503,83 @@ export function validateProfileUpdateInput(updates) {
     fieldErrors: errors,
   };
 }
+
+/**
+ * Phase 7 Section 9: Frontend Security Protections
+ * Sanitizes plain text input by stripping angle brackets / script tags and enforcing max length.
+ */
+export function sanitizeTextInput(input, maxLength = 1000) {
+  if (input === null || input === undefined) return '';
+  return String(input)
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/[<>]/g, '')
+    .trim()
+    .slice(0, maxLength);
+}
+
+/**
+ * Validates that an image URL uses a safe scheme (http, https, data:image/*, blob:, or relative path)
+ * and rejects javascript:, vbscript:, or data:text/html payloads.
+ */
+export function isSafeImageUrl(url) {
+  if (!url || typeof url !== 'string') return false;
+  const trimmed = url.trim();
+  if (!trimmed) return false;
+  const lower = trimmed.toLowerCase();
+  if (
+    lower.startsWith('javascript:') ||
+    lower.startsWith('vbscript:') ||
+    lower.startsWith('data:text/')
+  ) {
+    return false;
+  }
+  if (
+    trimmed.startsWith('/') ||
+    trimmed.startsWith('./') ||
+    trimmed.startsWith('../') ||
+    lower.startsWith('https://') ||
+    lower.startsWith('http://') ||
+    lower.startsWith('blob:') ||
+    /^data:image\/(png|jpeg|jpg|webp|gif|svg\+xml);base64,/i.test(trimmed)
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Validates uploaded image files for type and size limits (default max 2 MB).
+ */
+export function validateImageFile(
+  file,
+  { maxSizeBytes = 2 * 1024 * 1024 } = {}
+) {
+  if (!file || typeof file !== 'object') {
+    return { isValid: false, error: 'No image file provided.' };
+  }
+  const allowedTypes = [
+    'image/jpeg',
+    'image/jpg',
+    'image/png',
+    'image/webp',
+    'image/svg+xml',
+  ];
+  if (!allowedTypes.includes(file.type)) {
+    return {
+      isValid: false,
+      error:
+        'Unsupported file type. Only JPEG, PNG, WebP, and SVG images are permitted.',
+    };
+  }
+  const size = Number(file.size ?? 0);
+  if (size <= 0 || size > maxSizeBytes) {
+    return {
+      isValid: false,
+      error: `Image file size must not exceed ${Math.round(
+        maxSizeBytes / (1024 * 1024)
+      )} MB.`,
+    };
+  }
+  return { isValid: true, error: null };
+}
+

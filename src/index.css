@@ -1,1 +1,39 @@
 @import "tailwindcss";
+
+/* Phase 7 Section 10: Accessibility — Font Scaling, High Contrast, Focus Rings & Reduced Motion */
+html[data-font-scale="sm"] {
+  font-size: 14px;
+}
+
+html[data-font-scale="md"] {
+  font-size: 16px;
+}
+
+html[data-font-scale="lg"] {
+  font-size: 18px;
+}
+
+html[data-contrast="high"] {
+  filter: contrast(1.16);
+}
+
+html[data-contrast="high"] body {
+  background-color: #ffffff;
+  color: #020617;
+}
+
+:focus-visible {
+  outline: 2px solid #002868;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

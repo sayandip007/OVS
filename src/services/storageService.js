@@ -5,7 +5,12 @@ import { INITIAL_CONSTITUENCIES } from '../data/constituencies';
 import { INITIAL_PARTIES } from '../data/parties';
 import { INITIAL_ELECTIONS, INITIAL_ANNOUNCEMENTS } from '../data/elections';
 import { INITIAL_CANDIDATES, INITIAL_TALLIES } from '../data/candidates';
-import { INITIAL_VOTERS, INITIAL_VOTER_NOTIFICATIONS } from '../data/voters';
+import {
+  INITIAL_VOTERS,
+  INITIAL_VOTER_NOTIFICATIONS,
+  INITIAL_AUDIT_LOGS,
+} from '../data/voters';
+import { INITIAL_RESULTS } from '../data/results';
 
 const memoryLocalStore = new Map();
 const memorySessionStore = new Map();
@@ -97,9 +102,48 @@ export function getDefaultSeedSnapshot() {
     candidates: structuredClone(INITIAL_CANDIDATES),
     voters: structuredClone(INITIAL_VOTERS),
     tallies: structuredClone(INITIAL_TALLIES),
+    results: structuredClone(INITIAL_RESULTS),
     announcements: structuredClone(INITIAL_ANNOUNCEMENTS),
     voterNotifications: structuredClone(INITIAL_VOTER_NOTIFICATIONS),
-    recentCandidates: ['CAND-LS29-WB-KRN-1', 'CAND-WB29-KRNU-1'],
+    auditLogs: structuredClone(INITIAL_AUDIT_LOGS),
+    resultPublications: {
+      'LS-2024': {
+        electionId: 'LS-2024',
+        status: 'PUBLISHED',
+        publishedAt: '2024-06-04T18:00:00.000Z',
+        publishedBy: 'ECI-ADMIN-001',
+        notes: 'Historical 2024 Lok Sabha reference result dataset.',
+      },
+      'LS-2029': {
+        electionId: 'LS-2029',
+        status: 'PUBLISHED',
+        publishedAt: '2029-05-23T16:00:00.000Z',
+        publishedBy: 'ECI-ADMIN-001',
+        notes: 'Simulated demonstration results for Lok Sabha 2029.',
+      },
+      'WB-ASSEMBLY-2029': {
+        electionId: 'WB-ASSEMBLY-2029',
+        status: 'PUBLISHED',
+        publishedAt: '2029-05-23T16:30:00.000Z',
+        publishedBy: 'ECI-ADMIN-001',
+        notes: 'Simultaneous West Bengal Legislative Assembly 2029 demo results.',
+      },
+      'DL-ASSEMBLY-2029': {
+        electionId: 'DL-ASSEMBLY-2029',
+        status: 'PUBLISHED',
+        publishedAt: '2029-05-23T17:00:00.000Z',
+        publishedBy: 'ECI-ADMIN-001',
+        notes: 'Simultaneous Delhi Legislative Assembly 2029 demo results.',
+      },
+      'MH-ASSEMBLY-2029': {
+        electionId: 'MH-ASSEMBLY-2029',
+        status: 'DRAFT',
+        publishedAt: null,
+        publishedBy: 'ECI-ADMIN-001',
+        notes: 'Upcoming Maharashtra Assembly 2029 draft results.',
+      },
+    },
+    recentCandidates: ['CAND-LS29-WB-KRN-1', 'CAND-WBA29-KRNU-1'],
     feedback: [
       {
         id: 'FB-SEED-1',
@@ -128,8 +172,11 @@ export function initializeStorageIfNeeded() {
     setDurableItem(STORAGE_KEYS.CANDIDATES, seed.candidates);
     setDurableItem(STORAGE_KEYS.VOTERS, seed.voters);
     setDurableItem(STORAGE_KEYS.TALLIES, seed.tallies);
+    setDurableItem(STORAGE_KEYS.RESULTS, seed.results);
     setDurableItem(STORAGE_KEYS.ANNOUNCEMENTS, seed.announcements);
     setDurableItem(STORAGE_KEYS.VOTER_NOTIFICATIONS, seed.voterNotifications);
+    setDurableItem(STORAGE_KEYS.AUDIT_LOGS, seed.auditLogs);
+    setDurableItem(STORAGE_KEYS.RESULT_PUBLICATIONS, seed.resultPublications);
     setDurableItem(STORAGE_KEYS.RECENT_CANDIDATES, seed.recentCandidates);
     setDurableItem(STORAGE_KEYS.FEEDBACK, seed.feedback);
     return seed;
@@ -144,10 +191,16 @@ export function initializeStorageIfNeeded() {
     candidates: getDurableItem(STORAGE_KEYS.CANDIDATES, seed.candidates),
     voters: getDurableItem(STORAGE_KEYS.VOTERS, seed.voters),
     tallies: getDurableItem(STORAGE_KEYS.TALLIES, seed.tallies),
+    results: getDurableItem(STORAGE_KEYS.RESULTS, seed.results),
     announcements: getDurableItem(STORAGE_KEYS.ANNOUNCEMENTS, seed.announcements),
     voterNotifications: getDurableItem(
       STORAGE_KEYS.VOTER_NOTIFICATIONS,
       seed.voterNotifications
+    ),
+    auditLogs: getDurableItem(STORAGE_KEYS.AUDIT_LOGS, seed.auditLogs),
+    resultPublications: getDurableItem(
+      STORAGE_KEYS.RESULT_PUBLICATIONS,
+      seed.resultPublications
     ),
     recentCandidates: getDurableItem(
       STORAGE_KEYS.RECENT_CANDIDATES,
@@ -168,8 +221,11 @@ export function resetAllDemoData() {
   setDurableItem(STORAGE_KEYS.CANDIDATES, seed.candidates);
   setDurableItem(STORAGE_KEYS.VOTERS, seed.voters);
   setDurableItem(STORAGE_KEYS.TALLIES, seed.tallies);
+  setDurableItem(STORAGE_KEYS.RESULTS, seed.results);
   setDurableItem(STORAGE_KEYS.ANNOUNCEMENTS, seed.announcements);
   setDurableItem(STORAGE_KEYS.VOTER_NOTIFICATIONS, seed.voterNotifications);
+  setDurableItem(STORAGE_KEYS.AUDIT_LOGS, seed.auditLogs);
+  setDurableItem(STORAGE_KEYS.RESULT_PUBLICATIONS, seed.resultPublications);
   setDurableItem(STORAGE_KEYS.RECENT_CANDIDATES, seed.recentCandidates);
   setDurableItem(STORAGE_KEYS.FEEDBACK, seed.feedback);
   return seed;
@@ -186,4 +242,14 @@ export const storageService = {
   getDefaultSeedSnapshot,
   initializeStorageIfNeeded,
   resetAllDemoData,
+  getAuditLogs: () =>
+    getDurableItem(STORAGE_KEYS.AUDIT_LOGS, INITIAL_AUDIT_LOGS),
+  saveAuditLogs: (logs) => setDurableItem(STORAGE_KEYS.AUDIT_LOGS, logs),
+  getAnnouncements: () =>
+    getDurableItem(STORAGE_KEYS.ANNOUNCEMENTS, INITIAL_ANNOUNCEMENTS),
+  saveAnnouncements: (announcements) =>
+    setDurableItem(STORAGE_KEYS.ANNOUNCEMENTS, announcements),
+  getResults: () => getDurableItem(STORAGE_KEYS.RESULTS, INITIAL_RESULTS),
+  saveResults: (results) => setDurableItem(STORAGE_KEYS.RESULTS, results),
 };
+

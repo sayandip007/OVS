@@ -1,9 +1,15 @@
 import React, { useState, useMemo } from 'react';
 import { useElection } from '../../context/ElectionContext';
+import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
 import SearchBar from '../../components/common/SearchBar';
-import { ELECTION_TYPES, CONSTITUENCY_TYPES } from '../../utils/constants';
+import {
+  ELECTION_TYPES,
+  CONSTITUENCY_TYPES,
+  CANDIDATE_STATUS_LABELS,
+} from '../../utils/constants';
 import { CANDIDATE_PHOTO_OPTIONS } from '../../assets';
+import { CheckCircle2, XCircle, PauseCircle, Archive, Edit3 } from 'lucide-react';
 
 export default function CandidateManagement() {
   const {
@@ -15,11 +21,17 @@ export default function CandidateManagement() {
     candidates,
     createCandidate,
     updateCandidate,
+    transitionCandidateStatus,
+    demoLifecycleMode,
   } = useElection();
+  const { currentAdmin, canPerformAdminAction } = useAuth();
   const { notifySuccess, notifyError } = useNotification();
 
   const [search, setSearch] = useState('');
   const [electionFilter, setElectionFilter] = useState('ALL');
+  const [stateFilter, setStateFilter] = useState('ALL');
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [partyFilter, setPartyFilter] = useState('ALL');
   const [editingCandidateId, setEditingCandidateId] = useState(null);
 
   const [form, setForm] = useState({
@@ -28,17 +40,18 @@ export default function CandidateManagement() {
     gender: 'Male',
     electionId: 'LS-2029',
     electionType: ELECTION_TYPES.LOK_SABHA,
-    stateId: 'WB',
+    stateId: currentAdmin?.assignedStateId || 'WB',
     districtId: 'WB-DIST-NADIA',
     constituencyId: 'WB-PC-KRISHNANAGAR',
     partyId: 'PARTY-BJP',
     photoUrl: CANDIDATE_PHOTO_OPTIONS[0].src,
     education: 'Post Graduate',
     manifestoSummary: '',
-    approvalStatus: 'APPROVED',
+    biography: '',
+    publicDeclaration: 'No pending criminal cases • Assets & Liabilities declared',
+    status: 'APPROVED',
   });
 
-  // Dynamic Constituency Options based on selected Election & State
   const availableConstituencies = useMemo(() => {
     if (form.electionType === ELECTION_TYPES.LOK_SABHA) {
       return constituencies.filter(
@@ -119,8 +132,23 @@ export default function CandidateManagement() {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    const perm = canPerformAdminAction('MANAGE_CANDIDATE', {
+      stateId: form.stateId,
+      electionId: form.electionId,
+      electionType: form.electionType,
+    });
+    if (!perm.allowed) {
+      notifyError(perm.reason);
+      return;
+    }
+
+    const payload = {
+      ...form,
+      approvalStatus: form.status,
+    };
+
     if (editingCandidateId) {
-      const res = updateCandidate(editingCandidateId, form);
+      const res = updateCandidate(editingCandidateId, payload, currentAdmin);
       if (!res.ok) {
         notifyError(res.errors?.[0] || 'Failed to update candidate.');
         return;
@@ -128,46 +156,64 @@ export default function CandidateManagement() {
       notifySuccess(`Updated candidate nomination: ${res.candidate.name}`);
       setEditingCandidateId(null);
     } else {
-      const res = createCandidate(form);
+      const res = createCandidate(payload, currentAdmin);
       if (!res.ok) {
         notifyError(res.errors?.[0] || 'Failed to nominate candidate.');
         return;
       }
       notifySuccess(
-        `Nominated ${res.candidate.name} for ${res.candidate.constituencyId} in ${res.candidate.electionId}`
+        `Nominated ${res.candidate.name} (${res.candidate.status}) for ${res.candidate.constituencyId} in ${res.candidate.electionId}`
       );
     }
 
-    setForm((prev) => ({ ...prev, name: '', manifestoSummary: '' }));
+    setForm((prev) => ({ ...prev, name: '', manifestoSummary: '', biography: '' }));
+  };
+
+  const handleQuickStatusChange = (cand, targetStatus) => {
+    const res = transitionCandidateStatus(cand.candidateId, targetStatus, {
+      currentAdmin,
+      demoLifecycleMode,
+    });
+    if (!res.ok) {
+      notifyError(res.error);
+      return;
+    }
+    notifySuccess(
+      `Candidate ${cand.name} status updated to ${targetStatus}. Ballot & Directory automatically synced.`
+    );
   };
 
   const filteredCandidates = useMemo(() => {
     return candidates.filter((c) => {
+      const candStatus = c.status || c.approvalStatus || 'APPROVED';
       if (electionFilter !== 'ALL' && c.electionId !== electionFilter) return false;
+      if (stateFilter !== 'ALL' && c.stateId !== stateFilter) return false;
+      if (statusFilter !== 'ALL' && candStatus !== statusFilter) return false;
+      if (partyFilter !== 'ALL' && c.partyId !== partyFilter) return false;
       if (search.trim()) {
         const q = search.toLowerCase();
         return (
           c.name.toLowerCase().includes(q) ||
-          c.constituencyId.toLowerCase().includes(q)
+          c.constituencyId.toLowerCase().includes(q) ||
+          (c.candidateId || '').toLowerCase().includes(q)
         );
       }
       return true;
     });
-  }, [candidates, electionFilter, search]);
+  }, [candidates, electionFilter, stateFilter, statusFilter, partyFilter, search]);
 
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
         <div>
           <span className="text-xs font-bold uppercase tracking-wider text-[#002868]">
-            Form-2A / Form-2B Candidate Nomination
+            Form-2A / Form-2B Candidate Nomination &amp; Scrutiny
           </span>
           <h1 className="text-2xl font-extrabold text-slate-900 mt-0.5">
-            Candidate Nomination &amp; Scrutiny Management
+            Candidate Nomination &amp; Approval Lifecycle ({candidates.length})
           </h1>
           <p className="text-xs text-slate-600 mt-1">
-            Assign candidates strictly to a specific Election (Lok Sabha or State
-            Assembly), State, Constituency, and Political Party.
+            Assign candidates to a specific Election (Lok Sabha or State Assembly), State, Constituency, and Party. Only <strong>APPROVED</strong> candidates appear on the public Candidate Directory and Phase 4 Voter Ballot.
           </p>
         </div>
 
@@ -253,7 +299,7 @@ export default function CandidateManagement() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3.5">
             <div className="lg:col-span-2">
               <label className="block text-xs font-bold text-slate-700 mb-1">
                 Candidate Full Name *
@@ -284,7 +330,24 @@ export default function CandidateManagement() {
 
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
-                Preset Photo or Upload
+                Scrutiny Status *
+              </label>
+              <select
+                value={form.status}
+                onChange={(e) => setForm({ ...form, status: e.target.value })}
+                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white font-semibold"
+              >
+                {Object.entries(CANDIDATE_STATUS_LABELS).map(([k, label]) => (
+                  <option key={k} value={k}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Preset Photo
               </label>
               <select
                 value={form.photoUrl}
@@ -313,7 +376,7 @@ export default function CandidateManagement() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5 items-end">
-            <div className="md:col-span-9">
+            <div className="md:col-span-5">
               <label className="block text-xs font-bold text-slate-700 mb-1">
                 Candidate Manifesto &amp; Affidavit Summary
               </label>
@@ -324,6 +387,21 @@ export default function CandidateManagement() {
                   setForm({ ...form, manifestoSummary: e.target.value })
                 }
                 placeholder="Key constituency priorities and public service record..."
+                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg"
+              />
+            </div>
+
+            <div className="md:col-span-4">
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Public Declaration / Form-26 Summary
+              </label>
+              <input
+                type="text"
+                value={form.publicDeclaration}
+                onChange={(e) =>
+                  setForm({ ...form, publicDeclaration: e.target.value })
+                }
+                placeholder="e.g. Clean affidavit • Assets declared"
                 className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg"
               />
             </div>
@@ -355,7 +433,7 @@ export default function CandidateManagement() {
           <h2 className="text-base font-bold text-slate-900">
             Nominated Candidates ({filteredCandidates.length})
           </h2>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2.5">
             <SearchBar
               value={search}
               onChange={setSearch}
@@ -373,6 +451,42 @@ export default function CandidateManagement() {
                 </option>
               ))}
             </select>
+            <select
+              value={stateFilter}
+              onChange={(e) => setStateFilter(e.target.value)}
+              className="px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white"
+            >
+              <option value="ALL">All States</option>
+              {states.map((st) => (
+                <option key={st.stateId} value={st.stateId}>
+                  {st.stateName} ({st.stateId})
+                </option>
+              ))}
+            </select>
+            <select
+              value={partyFilter}
+              onChange={(e) => setPartyFilter(e.target.value)}
+              className="px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white"
+            >
+              <option value="ALL">All Parties</option>
+              {parties.map((p) => (
+                <option key={p.partyId} value={p.partyId}>
+                  {p.abbreviation}
+                </option>
+              ))}
+            </select>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white"
+            >
+              <option value="ALL">All Statuses</option>
+              {Object.entries(CANDIDATE_STATUS_LABELS).map(([k, label]) => (
+                <option key={k} value={k}>
+                  {label}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
@@ -384,8 +498,8 @@ export default function CandidateManagement() {
                 <th className="py-3 px-3">Party</th>
                 <th className="py-3 px-3">Election</th>
                 <th className="py-3 px-3">Constituency</th>
-                <th className="py-3 px-3">Status</th>
-                <th className="py-3 px-3 text-right">Action</th>
+                <th className="py-3 px-3">Scrutiny Status</th>
+                <th className="py-3 px-3 text-right">Quick Scrutiny &amp; Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -394,6 +508,9 @@ export default function CandidateManagement() {
                 const constObj = constituencies.find(
                   (c) => c.constituencyId === cand.constituencyId
                 );
+                const candStatus =
+                  cand.status || cand.approvalStatus || 'APPROVED';
+
                 return (
                   <tr key={cand.candidateId} className="hover:bg-slate-50">
                     <td className="py-2.5 px-3 flex items-center gap-2.5">
@@ -440,35 +557,88 @@ export default function CandidateManagement() {
                       </span>
                     </td>
                     <td className="py-2.5 px-3">
-                      <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[10px]">
-                        {cand.approvalStatus}
+                      <span
+                        className={`px-2 py-0.5 rounded font-bold text-[10px] ${
+                          candStatus === 'APPROVED'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : candStatus === 'REJECTED' || candStatus === 'SUSPENDED'
+                            ? 'bg-red-100 text-red-800'
+                            : 'bg-amber-100 text-amber-800'
+                        }`}
+                      >
+                        {CANDIDATE_STATUS_LABELS[candStatus] || candStatus}
                       </span>
                     </td>
                     <td className="py-2.5 px-3 text-right">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingCandidateId(cand.candidateId);
-                          setForm({
-                            name: cand.name,
-                            age: cand.age,
-                            gender: cand.gender,
-                            electionId: cand.electionId,
-                            electionType: cand.electionType,
-                            stateId: cand.stateId,
-                            districtId: cand.districtId,
-                            constituencyId: cand.constituencyId,
-                            partyId: cand.partyId,
-                            photoUrl: cand.photoUrl,
-                            education: cand.education || 'Graduate',
-                            manifestoSummary: cand.manifestoSummary || '',
-                            approvalStatus: cand.approvalStatus || 'APPROVED',
-                          });
-                        }}
-                        className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold cursor-pointer"
-                      >
-                        Edit
-                      </button>
+                      <div className="inline-flex items-center gap-1">
+                        {candStatus !== 'APPROVED' && (
+                          <button
+                            type="button"
+                            onClick={() => handleQuickStatusChange(cand, 'APPROVED')}
+                            title="Approve Nomination (Show on Ballot)"
+                            className="p-1.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-700 cursor-pointer"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {candStatus !== 'REJECTED' && (
+                          <button
+                            type="button"
+                            onClick={() => handleQuickStatusChange(cand, 'REJECTED')}
+                            title="Reject Nomination"
+                            className="p-1.5 rounded bg-red-50 hover:bg-red-100 text-red-700 cursor-pointer"
+                          >
+                            <XCircle className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {candStatus !== 'SUSPENDED' && (
+                          <button
+                            type="button"
+                            onClick={() => handleQuickStatusChange(cand, 'SUSPENDED')}
+                            title="Suspend Candidate"
+                            className="p-1.5 rounded bg-amber-50 hover:bg-amber-100 text-amber-800 cursor-pointer"
+                          >
+                            <PauseCircle className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {candStatus !== 'ARCHIVED' && (
+                          <button
+                            type="button"
+                            onClick={() => handleQuickStatusChange(cand, 'ARCHIVED')}
+                            title="Archive Candidate"
+                            className="p-1.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer"
+                          >
+                            <Archive className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingCandidateId(cand.candidateId);
+                            setForm({
+                              name: cand.name,
+                              age: cand.age,
+                              gender: cand.gender,
+                              electionId: cand.electionId,
+                              electionType: cand.electionType,
+                              stateId: cand.stateId,
+                              districtId: cand.districtId,
+                              constituencyId: cand.constituencyId,
+                              partyId: cand.partyId,
+                              photoUrl: cand.photoUrl,
+                              education: cand.education || 'Graduate',
+                              manifestoSummary: cand.manifestoSummary || '',
+                              biography: cand.biography || '',
+                              publicDeclaration: cand.publicDeclaration || '',
+                              status: candStatus,
+                            });
+                          }}
+                          title="Edit Candidate Details"
+                          className="p-1.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-800 cursor-pointer"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );

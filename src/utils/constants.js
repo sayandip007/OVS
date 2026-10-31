@@ -15,7 +15,26 @@ export const STORAGE_KEYS = {
   ANNOUNCEMENTS: `${STORAGE_VERSION}_announcements`,
   VOTER_NOTIFICATIONS: `${STORAGE_VERSION}_voter_notifications`,
   RECENT_CANDIDATES: `${STORAGE_VERSION}_recent_candidates`,
+  AUDIT_LOGS: `${STORAGE_VERSION}_audit_logs`,
+  RESULT_PUBLICATIONS: `${STORAGE_VERSION}_result_publications`,
+  RESULTS: `${STORAGE_VERSION}_results`,
   SESSION_AUTH: `${STORAGE_VERSION}_session_auth`,
+};
+
+export const ADMIN_ROLES = {
+  SUPER_ADMIN: 'SUPER_ADMIN',
+  NATIONAL_ADMIN: 'NATIONAL_ADMIN',
+  STATE_ADMIN: 'STATE_ADMIN',
+  ELECTION_OFFICER: 'ELECTION_OFFICER',
+  READ_ONLY_AUDITOR: 'READ_ONLY_AUDITOR',
+};
+
+export const ADMIN_ROLE_LABELS = {
+  SUPER_ADMIN: 'Super Administrator (Chief Election Commissioner Demo)',
+  NATIONAL_ADMIN: 'National Election Administrator',
+  STATE_ADMIN: 'State Chief Electoral Officer (State Admin)',
+  ELECTION_OFFICER: 'Returning / Election Officer',
+  READ_ONLY_AUDITOR: 'Read-Only Election Observer & Auditor',
 };
 
 export const ELECTION_TYPES = {
@@ -55,6 +74,7 @@ export const ELECTION_STATUSES = Object.assign(
     'COUNTING',
     'RESULTS_DECLARED',
     'CANCELLED',
+    'ARCHIVED',
   ],
   {
     DRAFT: 'DRAFT',
@@ -69,6 +89,7 @@ export const ELECTION_STATUSES = Object.assign(
     COUNTING: 'COUNTING',
     RESULTS_DECLARED: 'RESULTS_DECLARED',
     CANCELLED: 'CANCELLED',
+    ARCHIVED: 'ARCHIVED',
   }
 );
 
@@ -85,6 +106,7 @@ export const ELECTION_STATUS_LABELS = {
   COUNTING: 'Counting in Progress',
   RESULTS_DECLARED: 'Results Declared',
   CANCELLED: 'Cancelled',
+  ARCHIVED: 'Archived (Historical)',
 };
 
 export const PARTICIPATION_STATUSES = {
@@ -160,6 +182,40 @@ export const NOTIFICATION_TYPE_LABELS = {
   GENERAL_ANNOUNCEMENT: 'General Announcement',
 };
 
+export const ANNOUNCEMENT_CATEGORIES = {
+  GENERAL_INFO: 'GENERAL_INFO',
+  ELECTION_SCHEDULE: 'ELECTION_SCHEDULE',
+  CANDIDATE_INFO: 'CANDIDATE_INFO',
+  POLLING_INSTRUCTIONS: 'POLLING_INSTRUCTIONS',
+  RESULTS: 'RESULTS',
+  IMPORTANT_NOTICE: 'IMPORTANT_NOTICE',
+};
+
+export const ANNOUNCEMENT_CATEGORY_LABELS = {
+  GENERAL_INFO: 'General Information',
+  ELECTION_SCHEDULE: 'Election Schedule',
+  CANDIDATE_INFO: 'Candidate Information',
+  POLLING_INSTRUCTIONS: 'Polling Instructions',
+  RESULTS: 'Results',
+  IMPORTANT_NOTICE: 'Important Notice',
+  POLLING_SCHEDULE: 'Polling Schedule',
+  ELECTORAL_ROLL: 'Electoral Roll Notice',
+  SYSTEM_NOTICE: 'System & Demo Notice',
+};
+
+export const ANNOUNCEMENT_AUDIENCES = {
+  ALL_VOTERS: 'ALL_VOTERS',
+  SPECIFIC_STATE: 'SPECIFIC_STATE',
+  SPECIFIC_ELECTION: 'SPECIFIC_ELECTION',
+  SPECIFIC_CONSTITUENCY: 'SPECIFIC_CONSTITUENCY',
+};
+
+export const ANNOUNCEMENT_STATUSES = {
+  DRAFT: 'DRAFT',
+  PUBLISHED: 'PUBLISHED',
+  ARCHIVED: 'ARCHIVED',
+};
+
 export const METADATA_SOURCES = {
   VERIFIED_OFFICIAL: 'VERIFIED_OFFICIAL',
   DEMO_SAMPLE: 'DEMO_SAMPLE',
@@ -179,9 +235,30 @@ export const OTP_CONFIG = {
   SESSION_DURATION_MS: 8 * 60 * 60 * 1000, // 8 hours demo session
 };
 
-export const CANDIDATE_STATUSES = ['APPROVED', 'PENDING', 'REJECTED', 'WITHDRAWN'];
+export const CANDIDATE_STATUSES = [
+  'DRAFT',
+  'SUBMITTED',
+  'UNDER_REVIEW',
+  'APPROVED',
+  'REJECTED',
+  'WITHDRAWN',
+  'SUSPENDED',
+  'ARCHIVED',
+];
 
-export const PARTY_STATUSES = ['ACTIVE', 'INACTIVE'];
+export const CANDIDATE_STATUS_LABELS = {
+  DRAFT: 'Draft',
+  SUBMITTED: 'Submitted',
+  UNDER_REVIEW: 'Under Review',
+  APPROVED: 'Approved (Contesting)',
+  REJECTED: 'Rejected',
+  WITHDRAWN: 'Withdrawn',
+  SUSPENDED: 'Suspended',
+  ARCHIVED: 'Archived',
+  PENDING: 'Under Review',
+};
+
+export const PARTY_STATUSES = ['ACTIVE', 'INACTIVE', 'ARCHIVED'];
 
 export const NOTA_OPTION = {
   id: 'NOTA',
@@ -193,3 +270,30 @@ export const NOTA_OPTION = {
   description: 'Reject all contesting candidates on this ballot (None of the Above)',
   isNota: true,
 };
+
+export const RESULT_STATUSES = {
+  DRAFT: 'DRAFT',
+  COUNTING_IN_PROGRESS: 'COUNTING_IN_PROGRESS',
+  COUNTING_PAUSED: 'COUNTING_PAUSED',
+  COUNTING_COMPLETED: 'COUNTING_COMPLETED',
+  RESULT_READY_FOR_REVIEW: 'RESULT_READY_FOR_REVIEW',
+  PUBLISHED: 'PUBLISHED',
+  TIED: 'TIED',
+  UNDER_REVIEW: 'UNDER_REVIEW',
+  CORRECTED: 'CORRECTED',
+  UNPUBLISHED: 'UNPUBLISHED',
+};
+
+export const RESULT_STATUS_LABELS = {
+  DRAFT: 'Draft (Counting Not Started)',
+  COUNTING_IN_PROGRESS: 'Counting in Progress',
+  COUNTING_PAUSED: 'Counting Paused',
+  COUNTING_COMPLETED: 'Counting Completed',
+  RESULT_READY_FOR_REVIEW: 'Ready for Review',
+  PUBLISHED: 'Results Declared (Published)',
+  TIED: 'Tied — Requires Resolution',
+  UNDER_REVIEW: 'Under Administrative Review',
+  CORRECTED: 'Published (Corrected)',
+  UNPUBLISHED: 'Unpublished (Withdrawn)',
+};
+
