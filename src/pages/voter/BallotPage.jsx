@@ -40,7 +40,6 @@ export default function BallotPage() {
   const {
     currentVoter,
     voterState,
-    controlledDemoPollingMode,
     setControlledDemoPollingMode,
     getConstituencyForVoterElection,
     checkBallotEligibilityForVoter,

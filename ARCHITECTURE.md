@@ -17,7 +17,7 @@ The application wraps `AppRoutes` in four React Context providers (defined in `s
 ### 1.2 Domain Services (`src/services/`)
 All business logic is extracted into pure, unit-tested ES module services:
 - **`storageService.js`**: Durable `localStorage` persistence with schema version check (`STORAGE_VERSION = 'ovs_v3_0'`), safe JSON parsing, automatic self-healing recovery from corrupted storage (`getDurableItem`), and `resetAllDemoData()`.
-- **`electionService.js`**: Creates/updates election records (`createElectionRecord`, `updateElectionRecord`), generates non-sensitive participation references (`generateNonSensitiveDemoReference`), and records voter participation (`recordSimulatedParticipation`) using the centralized demo clock (`getDemoReferenceIso`) with strict ballot-to-counting separation.
+- **`electionService.js`**: Creates/updates election records (`createElectionRecord`, `updateElectionRecord`), generates non-sensitive participation references (`generateNonSensitiveDemoReference`), and records voter participation (`recordSimulatedParticipation`) using the centralized demo clock (`getDemoReferenceIso`, `isValidIsoDateString`, `isValidIsoTimestamp` from `src/utils/constants.js`) with zero hardcoded date comparisons and strict ballot-to-counting separation.
 - **`constituencyService.js`**: Validates and manages `PARLIAMENTARY` and `ASSEMBLY` constituencies (`createConstituencyRecord`, `updateConstituencyRecord`).
 - **`candidateService.js`**: Enforces election-to-constituency type matching (`LOK_SABHA` -> `PARLIAMENTARY`, `STATE_ASSEMBLY` -> `ASSEMBLY`) and state matching during candidate creation/editing.
 - **`ballotValidationService.js`**: Implements the 8-point pre-ballot eligibility & status validator (`validateBallotAccess`), candidate search/filter/sort (`filterAndSortBallotCandidates`), and volatile in-memory selection resolution (`resolveTemporaryBallotSelection`).
@@ -30,7 +30,7 @@ All business logic is extracted into pure, unit-tested ES module services:
 - **`districts.js`**: 72 representative districts across all 36 jurisdictions.
 - **`constituencies.js`**: 72 Parliamentary Constituencies (`PARLIAMENTARY`) + 144 Assembly Constituencies (`ASSEMBLY`) with `parentParliamentaryConstituencyId` mappings.
 - **`parties.js`**: National, State, and Independent political party records (`PARTY-BJP`, `PARTY-INC`, `PARTY-AITC`, `PARTY-AAP`, `PARTY-DMK`, `PARTY-SP`, `PARTY-IND`, etc.).
-- **`elections.js`**: 5 seeded elections (`LS-2029`, `WB-ASSEMBLY-2029`, `DL-ASSEMBLY-2029`, `MH-ASSEMBLY-2029`, `LS-2024`) and 3 portal announcements (`INITIAL_ANNOUNCEMENTS`).
+- **`elections.js`**: 5 seeded elections (`LS-2029`, `WB-ASSEMBLY-2029`, `DL-ASSEMBLY-2029`, `MH-ASSEMBLY-2029`, `LS-2024`) with `simulationClockDate: null` (inheriting dynamically from `DEMO_CLOCK_CONFIG` unless overridden per election) and 3 portal announcements (`INITIAL_ANNOUNCEMENTS`).
 - **`candidates.js`**: Contesting candidate profiles mapped to specific `(electionId, constituencyId)` pairs, plus baseline `INITIAL_TALLIES`.
 - **`voters.js`**: 6 multi-state demo voters (`VOTER-001` through `VOTER-006`), 5 ECI admin officers (`INITIAL_ADMIN_OFFICERS`), 8 voter notifications (`INITIAL_VOTER_NOTIFICATIONS`), and initial audit logs (`INITIAL_AUDIT_LOGS`).
 - **`results.js`**: Seeded constituency counting and result records (`INITIAL_RESULTS`) covering published, counting-in-progress, and ready-for-review states.
@@ -46,13 +46,15 @@ Defined in `src/utils/constants.js`:
 - `simulationMode`: `'SIMULATED_ELECTION_TIMELINE'`
 - `sandboxConcurrencyMode`: `'CONCURRENT_SIMULATION_SANDBOX'`
 - Helper APIs: `getDemoReferenceDate()`, `getDemoReferenceIso()`, `isValidIsoDateString()`, `isValidIsoTimestamp()`, `setDemoClockConfig()`, and `resetDemoClockConfig()`.
-- **Participation vs. System Timestamp Separation**:
-  - `participatedAt`: Derived from the centralized demo clock (`getDemoReferenceIso(electionClockOverride || DEMO_CLOCK_CONFIG.referenceTimestamp)`), ensuring participation timestamps always fall within the active `2029` simulated election window rather than the host machine's wall-clock year.
-  - `recordedAt`: Represents the actual runtime wall-clock timestamp (`new Date().toISOString()`). By default, `recordedAt` is returned only in the transient service response (`recordSimulatedParticipation`) and omitted from persisted `voter.elections[electionId]` records unless `includeSystemTimestamp: true` is explicitly passed.
+- **Timestamp Resolution & Override Hierarchy in `recordSimulatedParticipation` (`src/services/electionService.js`)**:
+  - Evaluates `[simulatedTimestamp, election?.simulationTimestamp, election?.simulationClockDate]` in priority order using `isValidIsoDateString` and `isValidIsoTimestamp` from `src/utils/constants.js`.
+  - Any valid explicit override is converted to a canonical ISO-8601 timestamp via `getDemoReferenceIso(validClockOverride)`.
+  - If no override is configured or if all provided overrides are malformed/invalid, `getDemoReferenceIso(null)` safely falls back to `DEMO_CLOCK_CONFIG.referenceTimestamp` without any hardcoded date comparisons.
+  - `recordedAt` (`new Date().toISOString()`) is kept strictly separate from `participatedAt` and is omitted from persisted voter records (`voter.elections[electionId]`) unless `includeSystemTimestamp: true` is passed.
 
 ### 2.2 Supported Election Lifecycle States & Seeded Scenarios
 | Election ID | Type | State | Status | Polling Window | Purpose in Simulation |
-| :--- | :--- | :--- | :--- :--- | :--- | :--- |
+| :--- | :--- | :--- | :--- | :--- | :--- |
 | `LS-2024` | `LOK_SABHA` | All India | `RESULTS_DECLARED` | `2024-04-19` to `2024-06-01` | Past completed election with historical declared results |
 | `LS-2029` | `LOK_SABHA` | All India | `POLLING_ACTIVE` | `2029-04-10` to `2029-05-15` | Active nationwide Lok Sabha polling + concurrent counting demo |
 | `WB-ASSEMBLY-2029` | `STATE_ASSEMBLY` | `WB` | `POLLING_ACTIVE` | `2029-04-12` to `2029-05-10` | Active simultaneous State Assembly election for West Bengal |
@@ -79,7 +81,7 @@ Defined in `src/utils/constants.js`:
 │     voter.elections[electionId] = {                      │
 │       status: 'VOTED',                                   │
 │       participated: true,                                │
-│       participatedAt: getDemoReferenceIso(),             │
+│       participatedAt: getDemoReferenceIso(override),     │
 │       demoReference: 'DEMO-LS-000001',                   │
 │       referenceId: 'DEMO-REF-LS2029-VOTER001'            │
 │     }                                                    │

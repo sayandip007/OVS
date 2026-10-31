@@ -204,8 +204,8 @@ export function canAdminPerformAction(
     return { allowed: false, reason: msg, error: msg };
   }
 
-  let domain = 'ELECTION';
-  let targetScope = {};
+  let domain;
+  let targetScope;
 
   if (typeof domainOrScope === 'string') {
     domain = domainOrScope;
@@ -318,14 +318,14 @@ export function validateElectionStatusTransition(
 ) {
   let currentStatus;
   let nextStatus;
-  let confirmCancel = false;
-  let demoLifecycleOverride = false;
-  let election = null;
-  let pollingStartDate = null;
-  let referenceDate = null;
-  let countingCompleted = undefined;
-  let hasPublishedResults = false;
-  let results = [];
+  let confirmCancel;
+  let demoLifecycleOverride;
+  let election;
+  let pollingStartDate;
+  let referenceDate;
+  let countingCompleted;
+  let hasPublishedResults;
+  let results;
 
   if (typeof arg1 === 'object' && arg1 !== null) {
     currentStatus = arg1.currentStatus;

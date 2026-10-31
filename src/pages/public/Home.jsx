@@ -62,16 +62,6 @@ export default function Home() {
     [constituencies, selectedState]
   );
 
-  const stateElections = useMemo(
-    () =>
-      elections.filter(
-        (e) =>
-          e.electionType === ELECTION_TYPES.LOK_SABHA ||
-          e.stateId === selectedState?.stateId
-      ),
-    [elections, selectedState]
-  );
-
   const activeElections = useMemo(
     () => elections.filter((e) => e.status === 'POLLING_ACTIVE' || e.status === 'READY'),
     [elections]

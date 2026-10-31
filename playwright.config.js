@@ -1,9 +1,15 @@
 import fs from 'node:fs';
 import { defineConfig, devices } from '@playwright/test';
 
-const preinstalledHeadlessShell =
+const fallbackHeadlessShell =
   '/ms-playwright/chrome-headless-shell-linux64/chrome-headless-shell';
-const hasPreinstalledBrowser = fs.existsSync(preinstalledHeadlessShell);
+const hasInstalledPlaywrightChromium =
+  fs.existsSync('/ms-playwright') &&
+  fs
+    .readdirSync('/ms-playwright')
+    .some((entry) => entry.startsWith('chromium-') || entry.startsWith('chromium_headless_shell-'));
+const useFallbackHeadlessShell =
+  !hasInstalledPlaywrightChromium && fs.existsSync(fallbackHeadlessShell);
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -17,10 +23,10 @@ export default defineConfig({
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     viewport: { width: 1280, height: 800 },
-    ...(hasPreinstalledBrowser
+    ...(useFallbackHeadlessShell
       ? {
           launchOptions: {
-            executablePath: preinstalledHeadlessShell,
+            executablePath: fallbackHeadlessShell,
           },
         }
       : {}),

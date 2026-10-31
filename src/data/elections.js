@@ -41,7 +41,7 @@ export const INITIAL_ELECTIONS = [
     pollingEndDate: '2029-05-15',
     countingDate: '2029-05-20',
     resultDate: '2029-05-23',
-    simulationClockDate: DEMO_CLOCK_CONFIG.referenceDate,
+    simulationClockDate: null,
     demoSandboxMode: DEMO_CLOCK_CONFIG.sandboxConcurrencyMode,
     constituencyIds: allParliamentaryIds,
     description:
@@ -70,7 +70,7 @@ export const INITIAL_ELECTIONS = [
     pollingEndDate: '2029-05-10',
     countingDate: '2029-05-20',
     resultDate: '2029-05-23',
-    simulationClockDate: DEMO_CLOCK_CONFIG.referenceDate,
+    simulationClockDate: null,
     demoSandboxMode: DEMO_CLOCK_CONFIG.sandboxConcurrencyMode,
     constituencyIds: wbAssemblyIds,
     description:
@@ -99,7 +99,7 @@ export const INITIAL_ELECTIONS = [
     pollingEndDate: '2029-05-05',
     countingDate: '2029-05-20',
     resultDate: '2029-05-23',
-    simulationClockDate: DEMO_CLOCK_CONFIG.referenceDate,
+    simulationClockDate: null,
     demoSandboxMode: DEMO_CLOCK_CONFIG.sandboxConcurrencyMode,
     constituencyIds: dlAssemblyIds,
     description:
@@ -127,7 +127,7 @@ export const INITIAL_ELECTIONS = [
     pollingEndDate: '2029-09-25',
     countingDate: '2029-09-30',
     resultDate: '2029-10-02',
-    simulationClockDate: DEMO_CLOCK_CONFIG.referenceDate,
+    simulationClockDate: null,
     demoSandboxMode: DEMO_CLOCK_CONFIG.sandboxConcurrencyMode,
     constituencyIds: mhAssemblyIds,
     description:
@@ -155,7 +155,7 @@ export const INITIAL_ELECTIONS = [
     pollingEndDate: '2024-06-01',
     countingDate: '2024-06-04',
     resultDate: '2024-06-04',
-    simulationClockDate: DEMO_CLOCK_CONFIG.referenceDate,
+    simulationClockDate: null,
     demoSandboxMode: 'HISTORICAL_COMPLETED',
     constituencyIds: allParliamentaryIds,
     description:

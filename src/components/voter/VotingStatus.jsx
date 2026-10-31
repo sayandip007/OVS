@@ -5,8 +5,7 @@ import { ELECTION_TYPES } from '../../utils/constants';
 export default function VotingStatus({ summary }) {
   if (!summary) return null;
 
-  const { completedCount, totalCount, label, percentage, targetElections, byElectionId } =
-    summary;
+  const { label, percentage, targetElections, byElectionId } = summary;
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-5">

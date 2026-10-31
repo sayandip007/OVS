@@ -330,7 +330,17 @@ export function isValidIsoTimestamp(value) {
   if (typeof value !== 'string' || !value.trim()) {
     return false;
   }
-  const parsed = new Date(value.trim());
+  const trimmed = value.trim();
+  const isoPattern =
+    /^\d{4}-\d{2}-\d{2}(?:[T\s]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/;
+  if (!isoPattern.test(trimmed)) {
+    return false;
+  }
+  const datePart = trimmed.slice(0, 10);
+  if (!isValidIsoDateString(datePart)) {
+    return false;
+  }
+  const parsed = new Date(trimmed);
   return !Number.isNaN(parsed.getTime());
 }
 

@@ -87,7 +87,6 @@ import {
   resumeCountingSession,
   processNextCountingRound,
   completeCountingSession,
-  resetCountingSession,
   transitionResultPublicationStatus,
   applyAdminResultCorrection,
   isResultPubliclyVisible,
@@ -3000,9 +2999,194 @@ test('PHASE 7.6.3 — Playwright Browser E2E Suite Structure, Vite Config Modern
   // 4. Verify package.json scripts distinguish typecheck, lint, test:unit, and test:e2e
   const pkgJson = JSON.parse(fs.readFileSync(path.resolve('package.json'), 'utf8'));
   assert.equal(pkgJson.scripts.typecheck, 'tsc --noEmit');
+  assert.equal(pkgJson.scripts.lint, 'eslint .');
   assert.equal(pkgJson.scripts['test:e2e'], 'playwright test');
   assert.ok(pkgJson.devDependencies['@playwright/test']);
 });
+
+// ============================================================================
+// PHASE 7.7 — PACKAGING, DEPENDENCY MANAGEMENT & RELEASE VERIFICATION
+// ============================================================================
+
+test('PHASE 7.7.1 — Election-Specific Simulation Timestamp Resolution & Zero Hardcoded Date Comparisons in electionService.js', () => {
+  resetDemoClockConfig();
+  const baseVoter = structuredClone(
+    INITIAL_VOTERS.find((v) => (v.id || v.voterId) === 'VOTER-001')
+  );
+  const lsElection = structuredClone(
+    INITIAL_ELECTIONS.find((e) => e.id === 'LS-2029')
+  );
+
+  // 0. Verify src/services/electionService.js contains zero hardcoded '2029-04-20' date comparisons
+  const electionServiceSrc = fs.readFileSync(
+    path.resolve('src/services/electionService.js'),
+    'utf8'
+  );
+  assert.equal(
+    electionServiceSrc.includes('2029-04-20'),
+    false,
+    'src/services/electionService.js must not contain hardcoded 2029-04-20 comparisons'
+  );
+  assert.equal(isValidIsoDateString('2029-04-20'), true);
+  assert.equal(isValidIsoDateString('2029-02-30'), false);
+  assert.equal(isValidIsoTimestamp('2029-04-20T10:30:00.000Z'), true);
+  assert.equal(isValidIsoTimestamp('invalid-timestamp-string'), false);
+
+  // 1. Default demo clock when election has no override
+  const defaultRes = recordSimulatedParticipation({
+    voter: baseVoter,
+    electionId: 'LS-2029',
+    election: { ...lsElection, simulationTimestamp: null, simulationClockDate: null },
+  });
+  assert.equal(defaultRes.ok, true);
+  assert.equal(defaultRes.participatedAt, '2029-04-20T10:30:00.000Z');
+
+  // 2. Valid election-specific simulationTimestamp (even when date is 2029-04-20 or another date)
+  try {
+    setDemoClockConfig({
+      referenceDate: '2029-05-12',
+      referenceTimestamp: '2029-05-12T14:15:00.000Z',
+    });
+
+    // Even when global clock is 2029-05-12, an explicit election simulationClockDate of 2029-04-20 is respected!
+    const explicit2029AprilRes = recordSimulatedParticipation({
+      voter: baseVoter,
+      electionId: 'LS-2029',
+      election: {
+        ...lsElection,
+        simulationClockDate: '2029-04-20',
+      },
+    });
+    assert.equal(explicit2029AprilRes.ok, true);
+    assert.equal(
+      explicit2029AprilRes.participatedAt,
+      '2029-04-20T10:30:00.000Z'
+    );
+
+    // Full ISO election.simulationTimestamp is also respected
+    const explicitIsoRes = recordSimulatedParticipation({
+      voter: baseVoter,
+      electionId: 'LS-2029',
+      election: {
+        ...lsElection,
+        simulationTimestamp: '2029-04-20T16:45:30.000Z',
+      },
+    });
+    assert.equal(explicitIsoRes.ok, true);
+    assert.equal(explicitIsoRes.participatedAt, '2029-04-20T16:45:30.000Z');
+  } finally {
+    resetDemoClockConfig();
+  }
+
+  // 3. Election-specific timestamp with a different date
+  const differentDateRes = recordSimulatedParticipation({
+    voter: baseVoter,
+    electionId: 'LS-2029',
+    election: {
+      ...lsElection,
+      simulationTimestamp: '2029-06-15T08:20:00.000Z',
+    },
+  });
+  assert.equal(differentDateRes.ok, true);
+  assert.equal(differentDateRes.participatedAt, '2029-06-15T08:20:00.000Z');
+
+  const differentClockDateRes = recordSimulatedParticipation({
+    voter: baseVoter,
+    electionId: 'LS-2029',
+    election: {
+      ...lsElection,
+      simulationClockDate: '2029-04-28',
+    },
+  });
+  assert.equal(differentClockDateRes.ok, true);
+  assert.equal(differentClockDateRes.participatedAt, '2029-04-28T10:30:00.000Z');
+
+  // 4. Missing election-specific timestamp falls back to centralized reference timestamp
+  const missingOverrideRes = recordSimulatedParticipation({
+    voter: baseVoter,
+    electionId: 'LS-2029',
+    election: {
+      ...lsElection,
+      simulationTimestamp: undefined,
+      simulationClockDate: '',
+    },
+  });
+  assert.equal(missingOverrideRes.ok, true);
+  assert.equal(missingOverrideRes.participatedAt, '2029-04-20T10:30:00.000Z');
+
+  // 5. Invalid election-specific timestamp safely falls back to centralized reference timestamp
+  const invalidOverrideRes = recordSimulatedParticipation({
+    voter: baseVoter,
+    electionId: 'LS-2029',
+    election: {
+      ...lsElection,
+      simulationTimestamp: 'not-a-valid-iso-timestamp',
+      simulationClockDate: '2029-99-99',
+    },
+    simulatedTimestamp: 'also-invalid',
+  });
+  assert.equal(invalidOverrideRes.ok, true);
+  assert.equal(invalidOverrideRes.participatedAt, '2029-04-20T10:30:00.000Z');
+
+  // 6. Correct participatedAt generation & 7. Correct separation from recordedAt
+  assert.equal(
+    invalidOverrideRes.voter.elections['LS-2029'].participatedAt,
+    '2029-04-20T10:30:00.000Z'
+  );
+  assert.equal(isValidIsoTimestamp(invalidOverrideRes.recordedAt), true);
+  assert.notEqual(
+    invalidOverrideRes.recordedAt,
+    invalidOverrideRes.participatedAt
+  );
+  assert.equal(
+    'recordedAt' in invalidOverrideRes.voter.elections['LS-2029'],
+    false
+  );
+});
+
+test('PHASE 7.7.2 — Canonical npm Lockfile, ESLint Config, GitIgnore & GitHub Actions CI Readiness', () => {
+  // 1. Canonical npm lockfile exists and obsolete bun.lock is removed
+  assert.equal(
+    fs.existsSync(path.resolve('package-lock.json')),
+    true,
+    'package-lock.json must exist as the canonical lockfile'
+  );
+  assert.equal(
+    fs.existsSync(path.resolve('bun.lock')),
+    false,
+    'Obsolete bun.lock must not exist alongside package-lock.json'
+  );
+
+  // 2. package.json declares packageManager, engines, and distinct lint vs typecheck scripts
+  const pkg = JSON.parse(fs.readFileSync(path.resolve('package.json'), 'utf8'));
+  assert.ok(pkg.packageManager && pkg.packageManager.startsWith('npm@'));
+  assert.ok(pkg.engines && pkg.engines.node && pkg.engines.npm);
+  assert.equal(pkg.scripts.lint, 'eslint .');
+  assert.equal(pkg.scripts.typecheck, 'tsc --noEmit');
+  assert.ok(pkg.scripts.preview && pkg.scripts.preview.includes('vite preview'));
+
+  // 3. .gitignore, eslint.config.js, and .github/workflows/ci.yml exist
+  assert.equal(fs.existsSync(path.resolve('.gitignore')), true);
+  const gitignore = fs.readFileSync(path.resolve('.gitignore'), 'utf8');
+  assert.ok(gitignore.includes('node_modules/'));
+  assert.ok(gitignore.includes('dist/'));
+  assert.ok(gitignore.includes('playwright-report/'));
+
+  assert.equal(fs.existsSync(path.resolve('eslint.config.js')), true);
+  assert.equal(fs.existsSync(path.resolve('.github/workflows/ci.yml')), true);
+  const ciYaml = fs.readFileSync(
+    path.resolve('.github/workflows/ci.yml'),
+    'utf8'
+  );
+  assert.ok(ciYaml.includes('npm ci'));
+  assert.ok(ciYaml.includes('npm run lint'));
+  assert.ok(ciYaml.includes('npm run typecheck'));
+  assert.ok(ciYaml.includes('npm test'));
+  assert.ok(ciYaml.includes('npm run build'));
+  assert.ok(ciYaml.includes('playwright install'));
+  assert.ok(ciYaml.includes('npm run test:e2e'));
+});
+
 
 
 

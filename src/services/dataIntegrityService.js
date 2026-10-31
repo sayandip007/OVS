@@ -72,7 +72,7 @@ export function auditElectionDataIntegrity({
   };
 
   const stateIds = checkUniqueIds(states, 'State', 'id', 'stateId');
-  const districtIds = checkUniqueIds(districts, 'District', 'id', 'districtId');
+  checkUniqueIds(districts, 'District', 'id', 'districtId');
   const constituencyIds = checkUniqueIds(
     constituencies,
     'Constituency',
@@ -81,14 +81,14 @@ export function auditElectionDataIntegrity({
   );
   const partyIds = checkUniqueIds(parties, 'Party', 'id', 'partyId');
   const electionIds = checkUniqueIds(elections, 'Election', 'id', 'electionId');
-  const candidateIds = checkUniqueIds(
+  checkUniqueIds(
     candidates,
     'Candidate',
     'id',
     'candidateId'
   );
-  const voterIds = checkUniqueIds(voters, 'Voter', 'id', 'voterId');
-  const resultIds = checkUniqueIds(results, 'Result', 'id', 'resultId');
+  checkUniqueIds(voters, 'Voter', 'id', 'voterId');
+  checkUniqueIds(results, 'Result', 'id', 'resultId');
   checkUniqueIds(announcements, 'Announcement', 'id', 'announcementId');
 
   recordRule(1, 'Unique Entity IDs', rule1Errors.length === 0, rule1Errors);

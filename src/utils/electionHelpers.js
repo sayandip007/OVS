@@ -351,9 +351,9 @@ export function getCandidatesForElectionConstituency(
   arg3,
   onlyApproved = true
 ) {
-  let candidates = [];
-  let electionId = '';
-  let constituencyId = '';
+  let candidates;
+  let electionId;
+  let constituencyId;
 
   if (Array.isArray(arg1)) {
     candidates = arg1;

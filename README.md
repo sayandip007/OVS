@@ -5,7 +5,7 @@
 
 ---
 
-## 1. Key Capabilities (Phases 1–7.6)
+## 1. Project Overview & Key Capabilities (Phases 1–7.7)
 
 1. **Pan-India Electoral Geography (36 Jurisdictions)**
    - **28 Indian States** and **8 Union Territories** with official seat counts (**543 Lok Sabha seats**, **4,123 State Assembly seats**).
@@ -16,12 +16,11 @@
      - One **Assembly Constituency (`ASSEMBLY`)** for State Legislative Assembly Elections (`STATE_ASSEMBLY`).
    - Completing participation in a Lok Sabha election (`LS-2029`) never alters the voter's status in a simultaneous State Assembly election (`WB-ASSEMBLY-2029` or `DL-ASSEMBLY-2029`), and vice versa.
 3. **Centralized Demo Clock & Logical Election Timeline (`DEMO_CLOCK_CONFIG`)**
-   - Centralized demonstration reference clock (`referenceDate: '2029-04-20'`, `referenceTimestamp: '2029-04-20T10:30:00.000Z'` in `src/utils/constants.js`) governs timeline evaluation, participation timestamps (`participatedAt`), and integrity audits (`src/services/dataIntegrityService.js`) across:
+   - Centralized demonstration reference clock (`referenceDate: '2029-04-20'`, `referenceTimestamp: '2029-04-20T10:30:00.000Z'` in `src/utils/constants.js`) governs timeline evaluation, participation timestamps (`participatedAt`), and integrity audits (`src/services/dataIntegrityService.js`) with zero hardcoded fallback comparisons across:
      - **Past Completed Election**: `LS-2024` (`RESULTS_DECLARED`)
      - **Active Simulated Simultaneous Elections**: `LS-2029`, `WB-ASSEMBLY-2029`, `DL-ASSEMBLY-2029` (`POLLING_ACTIVE`)
      - **Upcoming Scheduled Election**: `MH-ASSEMBLY-2029` (`UPCOMING`, polling starts `2029-09-10`)
-     - **Unpublished / In-Progress Constituency Results**: `RESULT-LS-2029-TN-PC-1` (`COUNTING_IN_PROGRESS`), `RESULT-MH-ASSEMBLY-2029-BANDRA-WEST` (`RESULT_READY_FOR_REVIEW`)
-   - Enforces chronological order across registration, nominations, scrutiny, withdrawal, campaigning, polling, counting, and result declaration.
+     - **Unpublished / In-Progress Constituency Results**: `RESULT-LS-2029-TN-PC-1` (`RESULT_READY_FOR_REVIEW`), `RESULT-LS-2029-MH-MUMBAI-NORTH` (`COUNTING_IN_PROGRESS`), `RESULT-MH-ASSEMBLY-2029-BANDRA-WEST` (`DRAFT`)
 4. **Strict Separation of Demo Ballot & Counting Engine**
    - Candidate or NOTA selection on `/voter/elections/:electionId/ballot` exists **only** in volatile React component memory (`useState`) during ballot review.
    - Confirming participation calls `recordSimulatedParticipation` (`src/services/electionService.js`), which updates **only** `voter.elections[electionId]` (`status: 'VOTED'`, `participated: true`, `participatedAt` from centralized `getDemoReferenceIso`, `demoReference`, `referenceId`).
@@ -36,14 +35,34 @@
 
 ---
 
-## 2. Actual Project File Structure
+## 2. Technology Stack & Supported Runtime Versions
+
+- **Frontend Framework**: React `^19.0.1` (`react@19.3.1`, `react-dom@19.3.1`), React Router `^7.18.5`
+- **Build Tool**: Vite `^8.3.0` (`vite@8.3.5`) with `@vitejs/plugin-react`
+- **Styling**: Tailwind CSS `^4.3.3` (`@tailwindcss/vite`)
+- **Icons & Motion**: `lucide-react` `^0.546.0`, `motion` `^12.23.24`
+- **Linting & Typechecking**: ESLint `^10.14.0` (`eslint.config.js`), TypeScript `^7.0.2` (`tsconfig.json`)
+- **Testing**: Node.js built-in test runner (`node:test`) + Playwright `^1.64.1` (`@playwright/test`)
+- **Canonical Package Manager**: `npm` (`packageManager: "npm@10.9.9"`, canonical lockfile: `package-lock.json`)
+- **Supported Runtime Versions**:
+  - **Node.js**: `>=22.0.0` (verified on `v22.23.4`)
+  - **npm**: `>=10.0.0` (verified on `10.9.9`)
+
+---
+
+## 3. Actual Project File Structure
 
 ```text
+├── .github/
+│   └── workflows/
+│       └── ci.yml
+├── .gitignore
 ├── index.html
 ├── package.json
 ├── package-lock.json
 ├── vite.config.ts
 ├── tsconfig.json
+├── eslint.config.js
 ├── playwright.config.js
 ├── README.md
 ├── ARCHITECTURE.md
@@ -54,6 +73,8 @@
 ├── PHASE_7_5_FINAL_REPORT.md
 ├── PHASE_7_6_AUDIT.md
 ├── PHASE_7_6_FINAL_REPORT.md
+├── PHASE_7_7_AUDIT.md
+├── PHASE_7_7_FINAL_REPORT.md
 ├── src/
 │   ├── main.jsx
 │   ├── App.jsx
@@ -184,7 +205,47 @@
 
 ---
 
-## 3. Demo Credentials & Quick Start
+## 4. Installation, Development, Build & Verification Commands
+
+### Reproducible Installation
+```bash
+# Install exact locked dependencies from package-lock.json
+npm ci
+```
+
+### Development & Production Preview
+```bash
+# Start development server on http://localhost:3000
+npm run dev
+
+# Build production bundle into dist/
+npm run build
+
+# Preview production bundle on http://localhost:3000
+npm run preview
+```
+
+### Lint, Typecheck & Automated Tests
+```bash
+# Run ESLint across src/, tests/, and config files
+npm run lint
+
+# Run TypeScript compiler validation (tsc --noEmit)
+npm run typecheck
+
+# Run Node.js unit and service test suite (37 suites covering Phases 1–7.7)
+npm test
+
+# Install Playwright Chromium browser (if not already present)
+npx playwright install chromium
+
+# Run Playwright End-to-End (E2E) browser test suite (12 spec files)
+npm run test:e2e
+```
+
+---
+
+## 5. Demo Credentials
 
 ### Voter Portal (`/voter/login`)
 - **Sample Voters**:
@@ -207,22 +268,9 @@
 
 ---
 
-## 4. Development, Testing & Verification Commands
+## 6. Frontend Prototype Limitations
 
-```bash
-# Start development server on port 3000
-npm run dev
-
-# Run TypeScript typechecking (`tsc --noEmit`)
-npm run typecheck
-npm run lint
-
-# Run automated Node unit & integration test suite (35 suites covering Phases 1–7.6)
-npm test
-
-# Run real Chromium browser End-to-End (E2E) test suite with Playwright (12 spec files)
-npm run test:e2e
-
-# Build production bundle
-npm run build
-```
+1. **Client-Side Persistence (`localStorage`)**: All data (`ovs_v3_0_*`) is stored locally in the user's browser and is not shared across devices or backed by a server database.
+2. **Simulated Authentication & OTP**: Voter and ECI Admin logins use deterministic demo OTP codes (`123456` / `654321`). No SMS/email gateway or cryptographic token verification is performed.
+3. **Frontend-Only RBAC**: Role checks and route guards operate in the React client for UI demonstration and cannot replace backend authorization in a real system.
+4. **Educational Scope**: This prototype is not a legally valid or cryptographically verifiable online voting system and must never be used to conduct actual elections.

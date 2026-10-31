@@ -3,6 +3,8 @@ import {
   CONSTITUENCY_TYPES,
   METADATA_SOURCES,
   getDemoReferenceIso,
+  isValidIsoDateString,
+  isValidIsoTimestamp,
 } from '../utils/constants';
 import { validateElectionInput } from '../utils/validation';
 
@@ -210,16 +212,17 @@ export function recordSimulatedParticipation({
     voter.id || voter.voterId
   );
 
-  const customElectionClockDate =
-    election?.simulationClockDate &&
-    election.simulationClockDate !== '2029-04-20'
-      ? `${election.simulationClockDate}T10:30:00.000Z`
-      : null;
-  const resolvedClockInput =
-    simulatedTimestamp ||
-    election?.simulationTimestamp ||
-    customElectionClockDate;
-  const participatedAt = getDemoReferenceIso(resolvedClockInput);
+  const candidateTimestamps = [
+    simulatedTimestamp,
+    election?.simulationTimestamp,
+    election?.simulationClockDate,
+  ];
+  const validClockOverride =
+    candidateTimestamps.find(
+      (candidate) =>
+        isValidIsoDateString(candidate) || isValidIsoTimestamp(candidate)
+    ) || null;
+  const participatedAt = getDemoReferenceIso(validClockOverride);
   const recordedAt = new Date().toISOString();
 
   // PRIVACY & COUNTING SEPARATION REQUIREMENT (Phase 7.5 / 7.6):

@@ -4,7 +4,7 @@
 
 The **Online Voting System (OVS)** is an **educational frontend architecture prototype** built with React 19, Vite, and Tailwind CSS. It is designed to demonstrate Indian electoral geography (28 States and 8 Union Territories), dual-constituency voter mapping (Parliamentary + Assembly), simultaneous election workflows, role-based administration UI patterns, and round-by-round counting analytics.
 
-**CRITICAL NOTICE**: This application is **NOT** a production voting system, is **NOT** affiliated with or endorsed by the Election Commission of India (ECI), and must **NEVER** be used to conduct real-world elections.
+**CRITICAL NOTICE**: This application is **NOT** a production voting system, is **NOT** affiliated with or endorsed by the Election Commission of India (ECI), is **NOT** a legally valid online voting platform, and must **NEVER** be used to conduct real-world elections.
 
 ---
 
@@ -15,7 +15,7 @@ The **Online Voting System (OVS)** is an **educational frontend architecture pro
 - **Non-Revealing Participation Record**: When the voter clicks **Complete demo participation** in `src/components/ballot/DemoConfirmationModal.jsx`, `recordSimulatedParticipation` (`src/services/electionService.js`) records **only**:
   - `status: 'VOTED'`
   - `participated: true`
-  - `participatedAt: '2029-04-20T10:30:00.000Z'` (normalized to the centralized demo clock via `getDemoReferenceIso` in `src/utils/constants.js` so participation metadata never leaks fine-grained host wall-clock timing by default)
+  - `participatedAt: '2029-04-20T10:30:00.000Z'` (normalized to the centralized demo clock or validated election simulation timestamp via `getDemoReferenceIso` in `src/utils/constants.js` so participation metadata never leaks fine-grained host wall-clock timing by default)
   - `demoReference: 'DEMO-LS-000001'` or `'DEMO-ASM-000001'`
   - `referenceId: 'DEMO-REF-<ELECTION>-<VOTER>'`
 - **Separation of `participatedAt` and `recordedAt`**: Any actual system recording timestamp (`recordedAt`) is kept distinct from `participatedAt` and is omitted from persisted voter records (`voter.elections[electionId]`) unless `includeSystemTimestamp: true` is explicitly passed for diagnostic testing.

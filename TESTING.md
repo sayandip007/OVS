@@ -1,26 +1,33 @@
 # OVS Testing, Verification & Quality Assurance Guide
 
-This document details the automated Node.js unit/integration test suites, real Chromium browser End-to-End (E2E) Playwright test suites, TypeScript static typechecking, and production build validations for the Online Voting System (OVS) frontend prototype.
+This document details the reproducible installation, ESLint static analysis, TypeScript typechecking, Node.js unit/service test suites, real Chromium browser End-to-End (E2E) Playwright test suites, production build validations, and troubleshooting steps for the Online Voting System (OVS) frontend prototype.
 
 ---
 
-## 1. Verification Commands
+## 1. Canonical Verification Commands (`npm`)
 
-| Check | Command | Target / Scope |
+`npm` is the sole canonical package manager for this repository (`packageManager: "npm@10.9.9"`, locked via `package-lock.json`).
+
+| Check | Command | Operation Performed |
 | :--- | :--- | :--- |
-| **Node.js Unit & Integration Tests** | `npm test` (or `npm run test:unit`) | Runs `node --import ./tests/loader.mjs --test tests/electionArchitecture.test.mjs` (**35 comprehensive test suites**) |
-| **Real Browser E2E Tests (Playwright)** | `npm run test:e2e` (or `npx playwright test`) | Runs **12 real Chromium browser E2E test suites** in `tests/e2e/*.spec.js` against `http://localhost:3000` |
-| **TypeScript Static Typecheck** | `npm run typecheck` (alias: `npm run lint`) | Runs `tsc --noEmit` to verify project TypeScript configuration (`tsconfig.json` & `vite.config.ts`) |
-| **Production Bundle Build** | `npm run build` | Runs `vite build` (`vite v8.3.5`) to verify zero unresolved imports, deprecation warnings, or bundle errors |
+| **Reproducible Install** | `npm ci` | Cleanly installs exact dependency tree from `package-lock.json` |
+| **ESLint Validation** | `npm run lint` | Runs `eslint .` via `eslint.config.js` across `src/**/*.{js,jsx}`, `tests/**/*.{js,mjs}`, and config files |
+| **TypeScript Validation** | `npm run typecheck` | Runs `tsc --noEmit` via `tsconfig.json` across `src/` and `vite.config.ts` |
+| **Unit & Service Tests** | `npm test` (or `npm run test:unit`) | Runs `node --import ./tests/loader.mjs --test tests/electionArchitecture.test.mjs` (**37 test suites**) |
+| **Production Build** | `npm run build` | Runs `vite build` (`vite v8.3.5`) to produce the production bundle in `dist/` |
+| **Production Preview** | `npm run preview` | Serves the compiled production build on `http://localhost:3000` |
+| **Playwright Browser Setup** | `npx playwright install chromium` | Installs Playwright-managed Chromium binary (if not already pre-installed) |
+| **Browser E2E Tests** | `npm run test:e2e` (or `npx playwright test`) | Runs **12 real Chromium browser E2E test suites** in `tests/e2e/*.spec.js` |
 
-> **Clarification on `npm run typecheck` vs `npm run lint`**:
-> `package.json` defines `"typecheck": "tsc --noEmit"` and `"lint": "tsc --noEmit"` for backward compatibility. It executes the TypeScript compiler in check-only mode (`tsc --noEmit`) rather than ESLint.
+> **Distinct `lint` vs. `typecheck` Scripts**:
+> - `npm run lint` executes **ESLint** (`eslint .`) using `eslint.config.js` to validate JavaScript/JSX syntax, React Hooks rules (`react-hooks/rules-of-hooks`), unused variables, and useless assignments.
+> - `npm run typecheck` executes **TypeScript** (`tsc --noEmit`) using `tsconfig.json` (`allowJs: true`, `jsx: "react-jsx"`). Because the application source is predominantly JavaScript/JSX (`.js`/`.jsx`), `tsc --noEmit` validates module resolution, JSX compilation, and `vite.config.ts` types rather than full static TypeScript annotations across `.jsx` components.
 
 ---
 
 ## 2. Automated Node.js Test Suite Coverage (`tests/electionArchitecture.test.mjs`)
 
-The automated Node.js test runner (`tests/electionArchitecture.test.mjs`) executes **35 test suites** covering Phases 1 through 7.6:
+The automated Node.js test runner (`tests/electionArchitecture.test.mjs`) executes **37 test suites** covering Phases 1 through 7.7:
 
 ### Phases 1 & 2 — Core Geography & Election Architecture
 1. **Routing, Navigation, 36 States/UTs, PC/AC Separation, and Election Creation**:
@@ -58,37 +65,23 @@ The automated Node.js test runner (`tests/electionArchitecture.test.mjs`) execut
 21. **Party Analytics, Turnout & NOTA (Tests 26–31)**: Party seat counts, vote share percentages, NOTA share tracking (never winning a seat), Independent candidate handling, and turnout metrics.
 22. **Publication Workflow, Admin Corrections, CSV Export & Persistence (Tests 32–40)**: Draft/unpublished result hiding from public views, `PUBLISHED` transition, documented administrative correction with `correctionHistory`, CSV export formatting, and `localStorage` persistence.
 
-### Phase 7 & 7.5 — Data Integrity, Security Hardening, Timeline & Counting Separation
+### Phase 7, 7.5, 7.6 & 7.7 — Data Integrity, Security, Demo Clock, E2E & Packaging Verification
 23–29. **Phase 7 Audits**: 17-rule `auditElectionDataIntegrity` verification, provenance labeling (`VERIFIED_OFFICIAL` vs `DEMO_SAMPLE`), XSS/CSV/URL sanitization, accessibility semantics, and documentation presence.
-30. **Phase 7.5.1 — Centralized Demo Clock & Election Timeline Validation**:
-    - Verifies `DEMO_CLOCK_CONFIG` (`referenceDate: '2029-04-20'`).
-    - Verifies timeline consistency across past (`LS-2024`), active simulated (`LS-2029`, `WB-ASSEMBLY-2029`, `DL-ASSEMBLY-2029`), upcoming (`MH-ASSEMBLY-2029`), and unpublished result records.
-    - Verifies that an election cannot enter `POLLING_ACTIVE` before its `pollingStartDate` (`MH-ASSEMBLY-2029` blocked on `2029-04-20`).
-    - Verifies that a result cannot be `PUBLISHED` before all configured counting rounds are completed.
-    - Verifies that an election cannot transition to `RESULTS_DECLARED` while counting sessions are incomplete or tied.
-31. **Phase 7.5.2 — Strict Ballot-to-Counting Separation & Zero Candidate-Choice Persistence**:
-    - Verifies that `recordSimulatedParticipation` returns `ballotCountingSeparation: 'STRICT_DECOUPLED'` and leaves `tallies` 100% unchanged even if a candidate ID or NOTA is passed.
-    - Verifies that `voter.elections[electionId]`, `localStorage`, audit logs, notifications, and `DemoReceipt.jsx` contain zero candidate/party choice fields.
-    - Verifies that `BallotReview.jsx`, `DemoConfirmationModal.jsx`, and `DemoReceipt.jsx` explicitly state that counting results are independently simulated using demo datasets.
-32. **Phase 7.5.3 — End-to-End User Journey Simulations (Scenarios A–G) & Documentation Path Verification**:
-    - Programmatically executes Scenarios A through G (Public Portal -> Voter Registration/Login -> Simultaneous Lok Sabha & Assembly Ballots -> Admin RBAC & Counting Simulation -> Reset & Corruption Recovery).
-    - Parses `README.md`, `ARCHITECTURE.md`, `TESTING.md`, `SECURITY-LIMITATIONS.md`, and `plan.md` and verifies that every `src/...` path referenced in documentation exists on disk.
-
-### Phase 7.6 — Participation Timestamp Consistency & Centralized Demo Clock Verification
-33. **Phase 7.6.1 — Participation Timestamp Uses Centralized Demo Clock (`DEMO_CLOCK_CONFIG`)**:
-    - Verifies default `participatedAt` equals `2029-04-20T10:30:00.000Z` (`DEMO_CLOCK_CONFIG.referenceTimestamp`).
-    - Verifies runtime updates via `setDemoClockConfig` (`2029-05-12T14:15:00.000Z`) propagate to `recordSimulatedParticipation`.
-    - Verifies custom per-election `simulationClockDate` (`2029-04-25`) resolves to `2029-04-25T10:30:00.000Z`.
-34. **Phase 7.6.2 — Separation of Simulated `participatedAt` vs System `recordedAt` & Zero Candidate Choice**:
-    - Verifies `recordedAt` is omitted from voter-facing `voter.elections[electionId]` by default, included only when `includeSystemTimestamp: true` is passed, and that forbidden candidate/party keys (`candidateId`, `partyId`, `selectedCandidateId`, `ballotChoice`) are never stored.
-35. **Phase 7.6.3 — Data Integrity Service Uses Centralized Demo Clock Without Hardcoded Fallbacks**:
-    - Verifies `src/services/dataIntegrityService.js` contains zero hardcoded `'2029-04-20'` literals, flags malformed `simulationClockDate` values, and respects updated `DEMO_CLOCK_CONFIG` dates.
+30. **Phase 7.5.1 — Centralized Demo Clock & Election Timeline Validation**: Verifies `DEMO_CLOCK_CONFIG`, pre-polling guards, round-completion publication guards, and declaration guards.
+31. **Phase 7.5.2 — Strict Ballot-to-Counting Separation & Zero Candidate-Choice Persistence**: Verifies `recordSimulatedParticipation` leaves `tallies` 100% unchanged and never stores candidate/party selections.
+32. **Phase 7.5.3 — End-to-End User Journey Simulations & Documentation Path Verification**: Programmatically executes Scenarios A–G and verifies that every `src/...` path referenced in `README.md`, `ARCHITECTURE.md`, `TESTING.md`, `SECURITY-LIMITATIONS.md`, and `plan.md` exists on disk.
+33–35. **Phase 7.6.1 – 7.6.3**: Participation timestamp consistency (`participatedAt` vs `recordedAt`), zero hardcoded fallback in `src/services/dataIntegrityService.js`, and Playwright E2E suite structure.
+36. **Phase 7.7.1 — Election-Specific Simulation Timestamp Resolution & Zero Hardcoded Date Comparisons**:
+    - Verifies `src/services/electionService.js` contains zero hardcoded `'2029-04-20'` comparisons.
+    - Verifies default demo clock, valid election-specific `simulationTimestamp` and `simulationClockDate` (including `'2029-04-20'` when global clock is shifted, and different dates like `'2029-06-15T08:20:00.000Z'`), missing election-specific timestamp fallback, invalid election-specific timestamp fallback, and strict separation of `participatedAt` vs `recordedAt`.
+37. **Phase 7.7.2 — Canonical npm Lockfile, ESLint Config, GitIgnore & GitHub Actions CI Readiness**:
+    - Verifies `package-lock.json` exists, `bun.lock` is removed, `eslint.config.js` and `.github/workflows/ci.yml` exist, and `lint` (`eslint .`) is distinct from `typecheck` (`tsc --noEmit`).
 
 ---
 
 ## 3. Real Browser E2E Test Suite (`playwright.config.js` & `tests/e2e/`)
 
-Playwright (`@playwright/test`) runs **12 real headless Chromium browser test suites** against the live application on `http://localhost:3000`:
+Playwright (`@playwright/test`) runs **12 real headless Chromium browser test suites** against `http://127.0.0.1:3000`:
 
 | Spec File | Requirement Covered | Key Browser Assertions |
 | :--- | :--- | :--- |
@@ -104,3 +97,18 @@ Playwright (`@playwright/test`) runs **12 real headless Chromium browser test su
 | `tests/e2e/counting-results.spec.js` | **I. Counting & Results** | Starts/advances round-by-round counting on `/eci/results`, verifies unpublished results stay hidden on `/results`, publishes completed result, verifies public visibility |
 | `tests/e2e/data-integrity.spec.js` | **J. Data Integrity Audit** | Navigates to `/eci/settings`, verifies 17-rule Data Integrity Audit passes with 0 errors and displays centralized demo clock (`2029-04-20`) |
 | `tests/e2e/recovery-reset.spec.js` | **J. Recovery & Reset** | Mutates `localStorage`, triggers Reset Demo Data in UI, injects corrupted JSON into `ovs_v3_0_voters` and `ovs_v3_0_elections`, reloads page, verifies automatic self-healing recovery |
+
+---
+
+## 4. Playwright Setup & Troubleshooting
+
+1. **Installing Chromium on a Fresh Machine / CI**:
+   ```bash
+   npx playwright install chromium
+   # On Linux CI runners that also need system shared libraries:
+   npx playwright install --with-deps chromium
+   ```
+2. **Pre-Installed Container Headless Shell Support**:
+   - `playwright.config.js` automatically checks if `/ms-playwright/chrome-headless-shell-linux64/chrome-headless-shell` exists in container environments where external binary downloads (`cdn.playwright.dev`) are restricted or where a newer Playwright version is installed alongside an existing system headless shell. When absent (e.g., on standard local machines or GitHub Actions runners after `npx playwright install chromium`), Playwright uses its standard downloaded Chromium binary automatically.
+3. **Inspecting Failure Artifacts**:
+   - On failure, screenshots are saved in `test-results/` and HTML reports are generated in `playwright-report/`. Run `npx playwright show-report` locally to inspect traces and screenshots.

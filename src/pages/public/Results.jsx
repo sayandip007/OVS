@@ -576,8 +576,6 @@ export default function Results() {
                 isCompleted: isPub,
               });
 
-              const topCand = standings.candidates[0] || null;
-
               return (
                 <div
                   key={res.id}

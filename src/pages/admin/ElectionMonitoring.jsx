@@ -34,11 +34,6 @@ export default function ElectionMonitoring() {
     (r) => r.electionType === ELECTION_TYPES.STATE_ASSEMBLY
   );
 
-  const lsTurnoutPct =
-    voters.length > 0
-      ? Math.round((lsVotedRecords.length / voters.length) * 100)
-      : 0;
-
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
