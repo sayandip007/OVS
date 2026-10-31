@@ -1,0 +1,691 @@
+// ============================================================================
+// Online Voting System (OVS) — Production-Grade Prisma Schema Draft
+// Architecture Phase 8.1: Complete Relational Schema Design
+// ============================================================================
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+enum JurisdictionType {
+  STATE
+  UNION_TERRITORY
+}
+
+enum MetadataSource {
+  VERIFIED_OFFICIAL
+  DEMO_SAMPLE
+}
+
+enum ReservationType {
+  GENERAL
+  SC
+  ST
+}
+
+enum UserType {
+  VOTER
+  ADMIN
+}
+
+enum ElectionType {
+  LOK_SABHA
+  STATE_ASSEMBLY
+}
+
+enum ConstituencyType {
+  PARLIAMENTARY
+  ASSEMBLY
+}
+
+enum ElectionStatus {
+  DRAFT
+  UPCOMING
+  NOMINATION_OPEN
+  NOMINATION_CLOSED
+  READY
+  POLLING_ACTIVE
+  POLLING_COMPLETED
+  COUNTING
+  RESULTS_DECLARED
+  CANCELLED
+  ARCHIVED
+}
+
+enum ParticipationStatus {
+  PENDING
+  VOTED
+  UPCOMING
+  CLOSED
+  NOT_ELIGIBLE
+}
+
+enum CandidateNominationStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  WITHDRAWN
+  SUSPENDED
+  ARCHIVED
+}
+
+enum PartyType {
+  NATIONAL
+  STATE
+  INDEPENDENT
+}
+
+enum PartyStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
+enum AdminRole {
+  SUPER_ADMIN
+  NATIONAL_ADMIN
+  STATE_ADMIN
+  ELECTION_OFFICER
+  READ_ONLY_AUDITOR
+}
+
+enum ResultStatus {
+  DRAFT
+  COUNTING_IN_PROGRESS
+  COUNTING_PAUSED
+  COUNTING_COMPLETED
+  RESULT_READY_FOR_REVIEW
+  PUBLISHED
+  TIED
+  UNDER_REVIEW
+  CORRECTED
+  UNPUBLISHED
+}
+
+enum AnnouncementCategory {
+  GENERAL_INFO
+  ELECTION_SCHEDULE
+  CANDIDATE_INFO
+  POLLING_INSTRUCTIONS
+  RESULTS
+  IMPORTANT_NOTICE
+}
+
+enum AnnouncementAudience {
+  ALL_VOTERS
+  SPECIFIC_STATE
+  SPECIFIC_ELECTION
+  SPECIFIC_CONSTITUENCY
+}
+
+enum AnnouncementStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum NotificationType {
+  ELECTION_ANNOUNCEMENT
+  NOMINATION_SCHEDULE
+  POLLING_SCHEDULE
+  ELECTION_REMINDER
+  CANDIDATE_LIST
+  RESULT_PUBLISHED
+  PROFILE_UPDATE
+  GENERAL_ANNOUNCEMENT
+}
+
+// ============================================================================
+// GEOGRAPHY MODELS
+// ============================================================================
+
+model State {
+  id                   String           @id @db.VarChar(10) // e.g. "WB", "MH", "DL"
+  name                 String           @db.VarChar(100)
+  type                 JurisdictionType @default(STATE)
+  capital              String           @db.VarChar(100)
+  officialLanguages    String[]
+  totalLokSabhaSeats   Int
+  totalAssemblySeats   Int
+  metadataSource       MetadataSource   @default(VERIFIED_OFFICIAL)
+  createdAt            DateTime         @default(now()) @db.Timestamptz
+  updatedAt            DateTime         @updatedAt @db.Timestamptz
+
+  districts            District[]
+  parliamentarySeats   ParliamentaryConstituency[]
+  assemblySeats        AssemblyConstituency[]
+  elections            Election[]
+  voterProfiles        VoterProfile[]
+  adminUsers           AdminUser[]
+  announcements        Announcement[]
+
+  @@map("states")
+}
+
+model District {
+  id              String         @id @db.VarChar(50) // e.g. "DIST-WB-KOL"
+  stateId         String         @db.VarChar(10)
+  name            String         @db.VarChar(100)
+  headquarters    String         @db.VarChar(100)
+  metadataSource  MetadataSource @default(VERIFIED_OFFICIAL)
+  createdAt       DateTime       @default(now()) @db.Timestamptz
+  updatedAt       DateTime       @updatedAt @db.Timestamptz
+
+  state           State          @relation(fields: [stateId], references: [id], onDelete: Restrict)
+  assemblySeats   AssemblyConstituency[]
+  voterProfiles   VoterProfile[]
+
+  @@index([stateId])
+  @@map("districts")
+}
+
+model ParliamentaryConstituency {
+  id                 String           @id @db.VarChar(50) // e.g. "PC-WB-KOLKATA-SOUTH"
+  stateId            String           @db.VarChar(10)
+  constituencyNumber Int
+  name               String           @db.VarChar(150)
+  reservationType    ReservationType  @default(GENERAL)
+  totalVoters        Int              @default(0)
+  metadataSource     MetadataSource   @default(VERIFIED_OFFICIAL)
+  createdAt          DateTime         @default(now()) @db.Timestamptz
+  updatedAt          DateTime         @updatedAt @db.Timestamptz
+
+  state              State            @relation(fields: [stateId], references: [id], onDelete: Restrict)
+  childAssemblySeats AssemblyConstituency[]
+  voterProfiles      VoterProfile[]
+  electionMappings   ElectionConstituency[]
+  nominations        CandidateNomination[]
+  countingSessions   CountingSession[]
+
+  @@unique([stateId, constituencyNumber])
+  @@index([stateId])
+  @@map("parliamentary_constituencies")
+}
+
+model AssemblyConstituency {
+  id                                String                    @id @db.VarChar(50) // e.g. "AC-WB-BHABANIPUR"
+  stateId                           String                    @db.VarChar(10)
+  districtId                        String                    @db.VarChar(50)
+  parentParliamentaryConstituencyId String                    @db.VarChar(50)
+  constituencyNumber                Int
+  name                              String                    @db.VarChar(150)
+  reservationType                   ReservationType           @default(GENERAL)
+  totalVoters                       Int                       @default(0)
+  metadataSource                    MetadataSource            @default(VERIFIED_OFFICIAL)
+  createdAt                         DateTime                  @default(now()) @db.Timestamptz
+  updatedAt                         DateTime                  @updatedAt @db.Timestamptz
+
+  state                             State                     @relation(fields: [stateId], references: [id], onDelete: Restrict)
+  district                          District                  @relation(fields: [districtId], references: [id], onDelete: Restrict)
+  parentParliamentary               ParliamentaryConstituency @relation(fields: [parentParliamentaryConstituencyId], references: [id], onDelete: Restrict)
+  voterProfiles                     VoterProfile[]
+  electionMappings                  ElectionConstituency[]
+  nominations                       CandidateNomination[]
+  countingSessions                  CountingSession[]
+
+  @@unique([stateId, constituencyNumber])
+  @@index([stateId])
+  @@index([districtId])
+  @@index([parentParliamentaryConstituencyId])
+  @@map("assembly_constituencies")
+}
+
+// ============================================================================
+// USER, AUTHENTICATION & VOTER MODELS
+// ============================================================================
+
+model User {
+  id                  String        @id @default(uuid()) @db.Uuid
+  userType            UserType      @default(VOTER)
+  identifier          String        @unique @db.VarChar(100) // EPIC or Officer Code
+  passwordHash        String        @db.VarChar(255)
+  isActive            Boolean       @default(true)
+  failedLoginAttempts Int           @default(0)
+  lockoutUntil        DateTime?     @db.Timestamptz
+  lastLoginAt         DateTime?     @db.Timestamptz
+  createdAt           DateTime      @default(now()) @db.Timestamptz
+  updatedAt           DateTime      @updatedAt @db.Timestamptz
+
+  voterProfile        VoterProfile?
+  adminUser           AdminUser?
+  sessions            UserSession[]
+
+  @@map("users")
+}
+
+model VoterProfile {
+  id                          String                    @id @default(uuid()) @db.Uuid
+  userId                      String                    @unique @db.Uuid
+  epicNumber                  String                    @unique @db.VarChar(20)
+  fullName                    String                    @db.VarChar(150)
+  dateOfBirth                 DateTime                  @db.Date
+  gender                      String                    @db.VarChar(20)
+  mobile                      String                    @db.VarChar(15)
+  email                       String                    @db.VarChar(255)
+  address                     String                    @db.Text
+  pinCode                     String                    @db.VarChar(10)
+  stateId                     String                    @db.VarChar(10)
+  districtId                  String                    @db.VarChar(50)
+  parliamentaryConstituencyId String                    @db.VarChar(50)
+  assemblyConstituencyId      String                    @db.VarChar(50)
+  registrationDate            DateTime                  @default(now()) @db.Timestamptz
+  isVerified                  Boolean                   @default(true)
+  metadataSource              MetadataSource            @default(DEMO_SAMPLE)
+  createdAt                   DateTime                  @default(now()) @db.Timestamptz
+  updatedAt                   DateTime                  @updatedAt @db.Timestamptz
+
+  user                        User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  state                       State                     @relation(fields: [stateId], references: [id], onDelete: Restrict)
+  district                    District                  @relation(fields: [districtId], references: [id], onDelete: Restrict)
+  parliamentaryConstituency   ParliamentaryConstituency @relation(fields: [parliamentaryConstituencyId], references: [id], onDelete: Restrict)
+  assemblyConstituency        AssemblyConstituency      @relation(fields: [assemblyConstituencyId], references: [id], onDelete: Restrict)
+  participations              DemoParticipation[]
+  notifications               VoterNotification[]
+
+  @@index([stateId, parliamentaryConstituencyId, assemblyConstituencyId])
+  @@map("voter_profiles")
+}
+
+model UserSession {
+  id        String   @id @db.VarChar(128)
+  userId    String   @db.Uuid
+  userAgent String?  @db.Text
+  ipAddress String?  @db.VarChar(45)
+  expiresAt DateTime @db.Timestamptz
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@map("user_sessions")
+}
+
+model AuthChallenge {
+  id          String    @id @default(uuid()) @db.Uuid
+  identifier  String    @db.VarChar(100)
+  otpHash     String    @db.VarChar(255)
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(3)
+  expiresAt   DateTime  @db.Timestamptz
+  consumedAt  DateTime? @db.Timestamptz
+  createdAt   DateTime  @default(now()) @db.Timestamptz
+
+  @@index([identifier, consumedAt, expiresAt])
+  @@map("auth_challenges")
+}
+
+// ============================================================================
+// ELECTION MANAGEMENT MODELS
+// ============================================================================
+
+model Election {
+  id                   String                    @id @db.VarChar(50) // e.g. "LS-2029"
+  name                 String                    @db.VarChar(200)
+  type                 ElectionType
+  year                 Int
+  stateId              String?                   @db.VarChar(10) // Null for Lok Sabha
+  status               ElectionStatus            @default(UPCOMING)
+  registrationDeadline DateTime?                 @db.Date
+  nominationStartDate  DateTime?                 @db.Date
+  nominationEndDate    DateTime?                 @db.Date
+  scrutinyDate         DateTime?                 @db.Date
+  withdrawalDeadline   DateTime?                 @db.Date
+  campaignStartDate    DateTime?                 @db.Date
+  campaignEndDate      DateTime?                 @db.Date
+  pollingStartDate     DateTime                  @db.Date
+  pollingEndDate       DateTime                  @db.Date
+  countingDate         DateTime                  @db.Date
+  resultDate           DateTime                  @db.Date
+  simulationClockDate  DateTime?                 @db.Date
+  demoSandboxMode      String                    @default("CONCURRENT_SIMULATION_SANDBOX") @db.VarChar(50)
+  description          String                    @default("") @db.Text
+  metadataSource       MetadataSource            @default(DEMO_SAMPLE)
+  createdAt            DateTime                  @default(now()) @db.Timestamptz
+  updatedAt            DateTime                  @updatedAt @db.Timestamptz
+
+  state                State?                    @relation(fields: [stateId], references: [id], onDelete: Restrict)
+  constituencyMappings ElectionConstituency[]
+  lifecycleHistory     ElectionLifecycleHistory[]
+  candidateNominations CandidateNomination[]
+  demoParticipations   DemoParticipation[]
+  countingSessions     CountingSession[]
+  announcements        Announcement[]
+
+  @@index([status, type])
+  @@map("elections")
+}
+
+model ElectionConstituency {
+  id                          String                     @id @default(uuid()) @db.Uuid
+  electionId                  String                     @db.VarChar(50)
+  constituencyType            ConstituencyType
+  parliamentaryConstituencyId String?                    @db.VarChar(50)
+  assemblyConstituencyId      String?                    @db.VarChar(50)
+  createdAt                   DateTime                   @default(now()) @db.Timestamptz
+
+  election                    Election                   @relation(fields: [electionId], references: [id], onDelete: Cascade)
+  parliamentaryConstituency   ParliamentaryConstituency? @relation(fields: [parliamentaryConstituencyId], references: [id], onDelete: Cascade)
+  assemblyConstituency        AssemblyConstituency?      @relation(fields: [assemblyConstituencyId], references: [id], onDelete: Cascade)
+
+  @@unique([electionId, parliamentaryConstituencyId, assemblyConstituencyId])
+  @@index([electionId])
+  @@map("election_constituencies")
+}
+
+model ElectionLifecycleHistory {
+  id                String         @id @default(uuid()) @db.Uuid
+  electionId        String         @db.VarChar(50)
+  fromStatus        ElectionStatus
+  toStatus          ElectionStatus
+  changedByAdminId  String?        @db.Uuid
+  changedAt         DateTime       @default(now()) @db.Timestamptz
+  note              String         @default("") @db.Text
+  metadata          Json           @default("{}")
+
+  election          Election       @relation(fields: [electionId], references: [id], onDelete: Cascade)
+  changedByAdmin    AdminUser?     @relation(fields: [changedByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([electionId, changedAt])
+  @@map("election_lifecycle_history")
+}
+
+// ============================================================================
+// PARTIES & CANDIDATE MODELS
+// ============================================================================
+
+model PoliticalParty {
+  id              String            @id @db.VarChar(50) // e.g. "PARTY-BJP"
+  name            String            @db.VarChar(150)
+  abbreviation    String            @db.VarChar(20)
+  partyType       PartyType         @default(NATIONAL)
+  symbolName      String            @db.VarChar(100)
+  symbolUrl       String            @db.VarChar(500)
+  establishedYear Int?
+  headquarters    String?           @db.VarChar(150)
+  status          PartyStatus       @default(ACTIVE)
+  metadataSource  MetadataSource    @default(DEMO_SAMPLE)
+  createdAt       DateTime          @default(now()) @db.Timestamptz
+  updatedAt       DateTime          @updatedAt @db.Timestamptz
+
+  candidates      Candidate[]
+  candidateTallies CandidateTally[]
+
+  @@map("political_parties")
+}
+
+model Candidate {
+  id                  String                @id @db.VarChar(50) // e.g. "CAND-LS29-KRN-1"
+  partyId             String                @db.VarChar(50)
+  fullName            String                @db.VarChar(150)
+  age                 Int
+  gender              String                @db.VarChar(20)
+  education           String                @db.VarChar(150)
+  profession          String                @db.VarChar(150)
+  criminalCases       Int                   @default(0)
+  assetsDeclared      BigInt                @default(0)
+  liabilitiesDeclared BigInt                @default(0)
+  photoUrl            String?               @db.VarChar(500)
+  bio                 String                @default("") @db.Text
+  metadataSource      MetadataSource        @default(DEMO_SAMPLE)
+  createdAt           DateTime              @default(now()) @db.Timestamptz
+  updatedAt           DateTime              @updatedAt @db.Timestamptz
+
+  party               PoliticalParty        @relation(fields: [partyId], references: [id], onDelete: Restrict)
+  nominations         CandidateNomination[]
+  tallies             CandidateTally[]
+  winningSessions     CountingSession[]     @relation("WinnerCandidate")
+  runnerUpSessions    CountingSession[]     @relation("RunnerUpCandidate")
+  leadingRounds       CountingRound[]       @relation("LeadingCandidate")
+
+  @@index([partyId])
+  @@map("candidates")
+}
+
+model CandidateNomination {
+  id                          String                    @id @default(uuid()) @db.Uuid
+  candidateId                 String                    @db.VarChar(50)
+  electionId                  String                    @db.VarChar(50)
+  constituencyType            ConstituencyType
+  parliamentaryConstituencyId String?                   @db.VarChar(50)
+  assemblyConstituencyId      String?                   @db.VarChar(50)
+  nominationDate              DateTime                  @default(now()) @db.Timestamptz
+  status                      CandidateNominationStatus @default(APPROVED)
+  scrutinyNote                String                    @default("") @db.Text
+  scrutinyDate                DateTime?                 @db.Timestamptz
+  scrutinizedByAdminId        String?                   @db.Uuid
+  createdAt                   DateTime                  @default(now()) @db.Timestamptz
+  updatedAt                   DateTime                  @updatedAt @db.Timestamptz
+
+  candidate                   Candidate                 @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  election                    Election                  @relation(fields: [electionId], references: [id], onDelete: Cascade)
+  parliamentaryConstituency   ParliamentaryConstituency? @relation(fields: [parliamentaryConstituencyId], references: [id], onDelete: Cascade)
+  assemblyConstituency        AssemblyConstituency?     @relation(fields: [assemblyConstituencyId], references: [id], onDelete: Cascade)
+  scrutinizedByAdmin          AdminUser?                @relation(fields: [scrutinizedByAdminId], references: [id], onDelete: SetNull)
+
+  @@unique([candidateId, electionId])
+  @@index([electionId, status])
+  @@map("candidate_nominations")
+}
+
+// ============================================================================
+// ADMINISTRATIVE RBAC & AUDIT
+// ============================================================================
+
+model AdminUser {
+  id                    String                     @id @default(uuid()) @db.Uuid
+  userId                String                     @unique @db.Uuid
+  officerCode           String                     @unique @db.VarChar(50) // e.g. "ECI-SUPER-001"
+  fullName              String                     @db.VarChar(150)
+  designation           String                     @db.VarChar(150)
+  role                  AdminRole                  @default(READ_ONLY_AUDITOR)
+  assignedStateId       String?                    @db.VarChar(10)
+  assignedElectionIds   String[]                   @default([])
+  isActive              Boolean                    @default(true)
+  createdAt             DateTime                   @default(now()) @db.Timestamptz
+  updatedAt             DateTime                   @updatedAt @db.Timestamptz
+
+  user                  User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignedState         State?                     @relation(fields: [assignedStateId], references: [id], onDelete: Restrict)
+  actionLogs            AdminActionLog[]
+  lifecycleChanges      ElectionLifecycleHistory[]
+  scrutinizedNominations CandidateNomination[]
+  publishedSessions     CountingSession[]          @relation("SessionPublisher")
+  processedRounds       CountingRound[]            @relation("RoundProcessor")
+  correctedSessions     ResultCorrectionHistory[]  @relation("SessionCorrector")
+  createdAnnouncements  Announcement[]             @relation("AnnouncementCreator")
+
+  @@map("admin_users")
+}
+
+model AdminActionLog {
+  id             String    @id @default(uuid()) @db.Uuid
+  adminUserId    String?   @db.Uuid
+  actionType     String    @db.VarChar(50)
+  domain         String    @db.VarChar(50)
+  targetEntityId String    @db.VarChar(100)
+  details        Json      @default("{}")
+  ipAddress      String?   @db.VarChar(45)
+  timestamp      DateTime  @default(now()) @db.Timestamptz
+
+  adminUser      AdminUser? @relation(fields: [adminUserId], references: [id], onDelete: SetNull)
+
+  @@index([domain, targetEntityId, timestamp])
+  @@map("admin_action_logs")
+}
+
+// ============================================================================
+// DEMO PARTICIPATION (STRICT ZERO-CHOICE BALLOT PRIVACY)
+// ============================================================================
+
+model DemoParticipation {
+  id            String              @id @default(uuid()) @db.Uuid
+  voterId       String              @db.Uuid
+  electionId    String              @db.VarChar(50)
+  status        ParticipationStatus @default(VOTED)
+  demoReference String              @db.VarChar(30) // e.g. "DEMO-LS-000001"
+  referenceId   String              @db.VarChar(60) // e.g. "DEMO-REF-LS2029-VOTER001"
+  participatedAt DateTime           @db.Timestamptz // Centralized demo clock timestamp
+  recordedAt    DateTime            @default(now()) @db.Timestamptz // Host wall-clock timestamp
+  metadata      Json                @default("{}")
+
+  voter         VoterProfile        @relation(fields: [voterId], references: [id], onDelete: Cascade)
+  election      Election            @relation(fields: [electionId], references: [id], onDelete: Cascade)
+
+  // STRICT INVARIANT: Exactly one participation record per voter per election.
+  // STRICT INVARIANT: ZERO candidate or party columns exist in this table!
+  @@unique([voterId, electionId])
+  @@index([voterId, electionId])
+  @@map("demo_participations")
+}
+
+// ============================================================================
+// COUNTING SIMULATION & RESULTS (INDEPENDENT DETERMINISTIC DATASET)
+// ============================================================================
+
+model CountingSession {
+  id                          String                     @id @db.VarChar(100) // e.g. "RESULT-LS-2029-WB-PC-KOLKATA-SOUTH"
+  electionId                  String                     @db.VarChar(50)
+  constituencyType            ConstituencyType
+  parliamentaryConstituencyId String?                    @db.VarChar(50)
+  assemblyConstituencyId      String?                    @db.VarChar(50)
+  totalConfiguredRounds       Int                        @default(5)
+  currentRound                Int                        @default(0)
+  status                      ResultStatus               @default(DRAFT)
+  totalVoters                 Int
+  totalCountedVotes           Int                        @default(0)
+  notaVotes                   Int                        @default(0)
+  rejectedVotes               Int                        @default(0)
+  winnerCandidateId           String?                    @db.VarChar(50)
+  runnerUpCandidateId         String?                    @db.VarChar(50)
+  victoryMargin               Int                        @default(0)
+  isPublished                 Boolean                    @default(false)
+  publishedAt                 DateTime?                  @db.Timestamptz
+  publishedByAdminId          String?                    @db.Uuid
+  createdAt                   DateTime                   @default(now()) @db.Timestamptz
+  updatedAt                   DateTime                   @updatedAt @db.Timestamptz
+
+  election                    Election                   @relation(fields: [electionId], references: [id], onDelete: Cascade)
+  parliamentaryConstituency   ParliamentaryConstituency? @relation(fields: [parliamentaryConstituencyId], references: [id], onDelete: Cascade)
+  assemblyConstituency        AssemblyConstituency?      @relation(fields: [assemblyConstituencyId], references: [id], onDelete: Cascade)
+  winnerCandidate             Candidate?                 @relation("WinnerCandidate", fields: [winnerCandidateId], references: [id], onDelete: SetNull)
+  runnerUpCandidate           Candidate?                 @relation("RunnerUpCandidate", fields: [runnerUpCandidateId], references: [id], onDelete: SetNull)
+  publishedByAdmin            AdminUser?                 @relation("SessionPublisher", fields: [publishedByAdminId], references: [id], onDelete: SetNull)
+  rounds                      CountingRound[]
+  tallies                     CandidateTally[]
+  corrections                 ResultCorrectionHistory[]
+
+  @@unique([electionId, parliamentaryConstituencyId, assemblyConstituencyId])
+  @@index([isPublished, electionId])
+  @@map("counting_sessions")
+}
+
+model CountingRound {
+  id                 String          @id @default(uuid()) @db.Uuid
+  sessionId          String          @db.VarChar(100)
+  roundNumber        Int
+  roundVotes         Int             @default(0)
+  cumulativeVotes    Int             @default(0)
+  leadingCandidateId String?         @db.VarChar(50)
+  leadMargin         Int             @default(0)
+  processedAt        DateTime        @default(now()) @db.Timestamptz
+  processedByAdminId String?         @db.Uuid
+
+  session            CountingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  leadingCandidate   Candidate?      @relation("LeadingCandidate", fields: [leadingCandidateId], references: [id], onDelete: SetNull)
+  processedByAdmin   AdminUser?      @relation("RoundProcessor", fields: [processedByAdminId], references: [id], onDelete: SetNull)
+
+  @@unique([sessionId, roundNumber])
+  @@index([sessionId, roundNumber])
+  @@map("counting_rounds")
+}
+
+model CandidateTally {
+  id                  String          @id @default(uuid()) @db.Uuid
+  sessionId           String          @db.VarChar(100)
+  candidateId         String          @db.VarChar(50)
+  partyId             String          @db.VarChar(50)
+  votes               Int             @default(0)
+  voteSharePercentage Decimal         @default(0.00) @db.Decimal(5, 2)
+  createdAt           DateTime        @default(now()) @db.Timestamptz
+  updatedAt           DateTime        @updatedAt @db.Timestamptz
+
+  session             CountingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  candidate           Candidate       @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  party               PoliticalParty  @relation(fields: [partyId], references: [id], onDelete: Restrict)
+
+  @@unique([sessionId, candidateId])
+  @@index([sessionId])
+  @@map("candidate_tallies")
+}
+
+model ResultCorrectionHistory {
+  id                 String          @id @default(uuid()) @db.Uuid
+  sessionId          String          @db.VarChar(100)
+  previousState      Json
+  correctedState     Json
+  reason             String          @db.Text
+  correctedByAdminId String          @db.Uuid
+  correctedAt        DateTime        @default(now()) @db.Timestamptz
+
+  session            CountingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  correctedByAdmin   AdminUser       @relation("SessionCorrector", fields: [correctedByAdminId], references: [id], onDelete: Restrict)
+
+  @@index([sessionId, correctedAt])
+  @@map("result_correction_history")
+}
+
+// ============================================================================
+// ANNOUNCEMENTS & NOTIFICATIONS
+// ============================================================================
+
+model Announcement {
+  id                   String               @id @db.VarChar(50) // e.g. "ANN-001"
+  title                String               @db.VarChar(200)
+  summary              String               @db.Text
+  message              String               @db.Text
+  category             AnnouncementCategory @default(GENERAL_INFO)
+  targetAudience       AnnouncementAudience @default(ALL_VOTERS)
+  targetStateId        String?              @db.VarChar(10)
+  targetElectionId     String?              @db.VarChar(50)
+  targetConstituencyId String?              @db.VarChar(50)
+  publicationDate      DateTime             @db.Date
+  expiryDate           DateTime             @db.Date
+  status               AnnouncementStatus   @default(PUBLISHED)
+  createdByAdminId     String?              @db.Uuid
+  createdAt            DateTime             @default(now()) @db.Timestamptz
+  updatedAt            DateTime             @updatedAt @db.Timestamptz
+
+  targetState          State?               @relation(fields: [targetStateId], references: [id], onDelete: SetNull)
+  targetElection       Election?            @relation(fields: [targetElectionId], references: [id], onDelete: SetNull)
+  createdByAdmin       AdminUser?           @relation("AnnouncementCreator", fields: [createdByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([status, targetAudience, publicationDate])
+  @@map("announcements")
+}
+
+model VoterNotification {
+  id        String           @id @db.VarChar(50) // e.g. "NOTIF-001"
+  voterId   String           @db.Uuid
+  type      NotificationType @default(GENERAL_ANNOUNCEMENT)
+  title     String           @db.VarChar(200)
+  message   String           @db.Text
+  timestamp DateTime         @default(now()) @db.Timestamptz
+  isRead    Boolean          @default(false)
+  readAt    DateTime?        @db.Timestamptz
+
+  voter     VoterProfile     @relation(fields: [voterId], references: [id], onDelete: Cascade)
+
+  @@index([voterId, isRead])
+  @@map("voter_notifications")
+}
