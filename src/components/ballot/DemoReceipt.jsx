@@ -144,15 +144,17 @@ export default function DemoReceipt({
         {/* Educational Demonstration & Privacy Disclaimer */}
         <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-950 space-y-1">
           <strong className="block uppercase tracking-wider text-[11px]">
-            Educational Simulation &amp; Privacy Notice
+            Educational Simulation, Ballot Secrecy &amp; Counting Separation Notice
           </strong>
           <p className="leading-relaxed">
             This receipt confirms only that a simulated demonstration interaction
             was completed in this browser for{' '}
             <strong>{election.name || election.title}</strong>. It does not
-            represent a legally valid vote, and in accordance with ballot privacy
-            principles, no candidate name, party affiliation, or ballot choice is
-            stored or printed on this receipt.
+            represent a legally valid vote, no candidate name, party affiliation,
+            or ballot choice is stored or printed on this receipt, and counting
+            results in the Results Portal are independently simulated using
+            deterministic demo datasets with zero connection to individual voter
+            participation records.
           </p>
         </div>
 

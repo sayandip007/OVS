@@ -5,6 +5,7 @@ import {
   NOTIFICATION_TYPES,
   ELECTION_TYPES,
   RESULT_STATUSES,
+  DEMO_CLOCK_CONFIG,
 } from '../utils/constants';
 import { countingService } from '../services/countingService';
 import { defaultAvatar, eciLogo } from '../assets';
@@ -28,6 +29,7 @@ import {
 } from '../utils/validation';
 import {
   validateElectionStatusTransition,
+  validateElectionTimelineConsistency,
   validateCandidateStatusTransition,
   checkConstituencyModificationImpact,
   canDeleteParty,
@@ -807,9 +809,19 @@ export function ElectionProvider({ children }) {
         return { ok: false, error: 'Election not found.' };
       }
 
+      const scopedResults = (store.results || []).filter(
+        (r) => r.electionId === electionId
+      );
+
       const check = validateElectionStatusTransition({
         currentStatus: target.status,
         nextStatus,
+        election: target,
+        results: scopedResults,
+        referenceDate:
+          options.referenceDate ||
+          target.simulationClockDate ||
+          DEMO_CLOCK_CONFIG.referenceDate,
         confirmCancel: Boolean(
           options.confirmCancel || options.confirmCancellation
         ),
@@ -863,7 +875,7 @@ export function ElectionProvider({ children }) {
 
       return { ok: true, status: check.status };
     },
-    [store.elections, demoLifecycleMode, syncKey, appendAuditLog]
+    [store.elections, store.results, demoLifecycleMode, syncKey, appendAuditLog]
   );
 
   const setElectionStatus = useCallback(
@@ -1647,8 +1659,14 @@ export function ElectionProvider({ children }) {
         status: a.status || 'PUBLISHED',
         category: a.category || 'GENERAL_INFO',
         targetAudience: a.targetAudience || 'ALL_VOTERS',
-        publicationDate: a.publicationDate || a.date || '2026-10-30',
-        date: a.publicationDate || a.date || '2026-10-30',
+        publicationDate:
+          a.publicationDate ||
+          a.date ||
+          DEMO_CLOCK_CONFIG.portalNoticeDefaultDate,
+        date:
+          a.publicationDate ||
+          a.date ||
+          DEMO_CLOCK_CONFIG.portalNoticeDefaultDate,
         message: a.message || a.summary || '',
         summary: a.summary || a.message || '',
       })),
@@ -1676,7 +1694,7 @@ export function ElectionProvider({ children }) {
       const pubDate =
         input.publicationDate ||
         input.date ||
-        new Date().toISOString().slice(0, 10);
+        DEMO_CLOCK_CONFIG.portalNoticeDefaultDate;
       const status = input.status || 'DRAFT';
 
       const resolvedStateId = input.targetStateId || input.stateId || null;
@@ -1693,7 +1711,8 @@ export function ElectionProvider({ children }) {
         status,
         publicationDate: pubDate,
         date: pubDate,
-        expiryDate: input.expiryDate || '2029-12-31',
+        expiryDate:
+          input.expiryDate || DEMO_CLOCK_CONFIG.portalNoticeDefaultExpiry,
         targetAudience: input.targetAudience || 'ALL_VOTERS',
         targetStateId: resolvedStateId,
         stateId: resolvedStateId,
@@ -2359,7 +2378,7 @@ export function ElectionProvider({ children }) {
   );
 
   const castSimulatedVote = useCallback(
-    ({ voterId, electionId, constituencyId, selectedCandidateIdOrNota }) => {
+    ({ voterId, electionId }) => {
       const targetVoter = store.voters.find(
         (v) => (v.id || v.voterId) === voterId
       );
@@ -2367,11 +2386,11 @@ export function ElectionProvider({ children }) {
         return { ok: false, error: 'Voter profile not found.' };
       }
 
+      // Phase 7.5 Section 3: Strict separation of demo ballot and counting engine.
+      // Voter participation updates ONLY voter.elections[electionId] and never modifies tallies.
       const result = recordSimulatedParticipation({
         voter: targetVoter,
         electionId,
-        constituencyId,
-        selectedCandidateIdOrNota,
         tallies: store.tallies,
       });
 
@@ -2381,12 +2400,10 @@ export function ElectionProvider({ children }) {
         (v.id || v.voterId) === voterId ? enrichVoter(result.voter) : v
       );
       storageService.setDurableItem(STORAGE_KEYS.VOTERS, nextVoters);
-      storageService.setDurableItem(STORAGE_KEYS.TALLIES, result.tallies);
 
       setStore((prev) => ({
         ...prev,
         voters: nextVoters,
-        tallies: result.tallies,
       }));
 
       return { ok: true, voter: enrichVoter(result.voter) };
@@ -2639,6 +2656,8 @@ export function ElectionProvider({ children }) {
         exportDemoDatasets,
         importDemoDatasets,
         dataIntegrityReport,
+        demoClockConfig: DEMO_CLOCK_CONFIG,
+        validateElectionTimelineConsistency,
       }}
     >
       {children}

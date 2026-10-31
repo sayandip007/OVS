@@ -297,3 +297,29 @@ export const RESULT_STATUS_LABELS = {
   UNPUBLISHED: 'Unpublished (Withdrawn)',
 };
 
+/**
+ * Centralized Demonstration Clock & Election Lifecycle Configuration (Phase 7.5 Section 2).
+ * Prevents scattered hardcoded dates across components and provides a single source of truth
+ * for evaluating past, active simulated, upcoming, and completed elections.
+ */
+export const DEMO_CLOCK_CONFIG = {
+  referenceDate: '2029-04-20',
+  referenceTimestamp: '2029-04-20T10:30:00.000Z',
+  portalNoticeDefaultDate: '2029-04-10',
+  portalNoticeDefaultExpiry: '2029-12-31',
+  voterRegistryCutoffDate: '2029-01-01',
+  simulationMode: 'SIMULATED_ELECTION_TIMELINE',
+  sandboxConcurrencyMode: 'CONCURRENT_SIMULATION_SANDBOX',
+  simulationDisclaimer:
+    'DEMO / SIMULATION — Centralized demonstration clock set to 20 April 2029 for concurrent evaluation of active 2029 polling, upcoming 2029 schedules, and historical 2024 declared results.',
+};
+
+export function getDemoReferenceDate(customDate = null) {
+  return customDate || DEMO_CLOCK_CONFIG.referenceDate;
+}
+
+export function getDemoReferenceIso(customTimestamp = null) {
+  return customTimestamp || DEMO_CLOCK_CONFIG.referenceTimestamp;
+}
+
+

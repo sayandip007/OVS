@@ -165,16 +165,14 @@ export function generateNonSensitiveDemoReference(electionId, electionType, vote
 
 /**
  * Records simulated participation for ONE specific election without touching any other election.
- * Strictly omits storing which candidate or party was selected in the voter's participation record.
+ * Strictly omits storing which candidate or party was selected in the voter's participation record
+ * and NEVER modifies counting tallies (Phase 7.5 Section 3: strict separation of demo ballot and counting engine).
  * Generates both `demoReference` (e.g. `DEMO-LS-000001`) and `referenceId` (`DEMO-REF-...`).
  */
 export function recordSimulatedParticipation({
   voter,
   electionId,
   election,
-  constituencyId,
-  selectedCandidateIdOrNota,
-  candidateOrNotaId,
   tallies = {},
 }) {
   const targetElectionId = electionId || election?.id || election?.electionId;
@@ -184,12 +182,6 @@ export function recordSimulatedParticipation({
     (String(targetElectionId || '').startsWith('LS')
       ? ELECTION_TYPES.LOK_SABHA
       : ELECTION_TYPES.STATE_ASSEMBLY);
-
-  const resolvedConstituencyId =
-    constituencyId ||
-    (targetElectionType === ELECTION_TYPES.LOK_SABHA
-      ? voter?.parliamentaryConstituencyId
-      : voter?.assemblyConstituencyId);
 
   if (!voter || !targetElectionId) {
     return { ok: false, error: 'Missing required participation parameters.' };
@@ -216,7 +208,9 @@ export function recordSimulatedParticipation({
   );
   const participatedAt = new Date().toISOString();
 
-  // PRIVACY REQUIREMENT: Never store candidateId, partyId, or ballot selection in voter.elections
+  // PRIVACY & COUNTING SEPARATION REQUIREMENT (Phase 7.5 Section 3):
+  // 1. Never store candidateId, partyId, or ballot selection in voter.elections
+  // 2. Never increment candidate tallies from voter ballot participation; counting simulation uses independent demo counting datasets only
   const updatedVoter = {
     ...voter,
     elections: {
@@ -231,23 +225,16 @@ export function recordSimulatedParticipation({
     },
   };
 
-  // Optional aggregate tally increment (not linked to voter)
-  const choice = selectedCandidateIdOrNota || candidateOrNotaId;
-  let updatedTallies = { ...tallies };
-  if (choice && resolvedConstituencyId) {
-    const tallyKey = `${targetElectionId}::${resolvedConstituencyId}::${choice}`;
-    updatedTallies = {
-      ...tallies,
-      [tallyKey]: (tallies[tallyKey] || 0) + 1,
-    };
-  }
+  const unchangedTallies = { ...tallies };
 
   return {
     ok: true,
     voter: updatedVoter,
-    tallies: updatedTallies,
+    tallies: unchangedTallies,
     demoReference,
     referenceId,
     participatedAt,
+    ballotCountingSeparation: 'STRICT_DECOUPLED',
   };
 }
+

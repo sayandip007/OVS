@@ -1125,6 +1125,25 @@ export function transitionResultPublicationStatus(
         error: `Cannot publish result for ${resultRecord.constituencyId} while status is ${resultRecord.status}. Complete all counting rounds first.`,
       };
     }
+    if (
+      resultRecord.countingStatus &&
+      resultRecord.countingStatus !== 'COMPLETED'
+    ) {
+      return {
+        ok: false,
+        error: `Cannot publish result for ${resultRecord.constituencyId} while countingStatus is "${resultRecord.countingStatus}". Counting must be COMPLETED first.`,
+      };
+    }
+    const configuredRounds = Number(resultRecord.totalConfiguredRounds || 0);
+    const processedRounds = Array.isArray(resultRecord.rounds)
+      ? resultRecord.rounds.length
+      : Number(resultRecord.currentRound || 0);
+    if (configuredRounds > 0 && processedRounds < configuredRounds) {
+      return {
+        ok: false,
+        error: `Cannot publish result for ${resultRecord.constituencyId} before all ${configuredRounds} configured counting rounds are completed (${processedRounds}/${configuredRounds} rounds processed).`,
+      };
+    }
     if (resultRecord.isTied || resultRecord.status === RESULT_STATUSES.TIED) {
       return {
         ok: false,

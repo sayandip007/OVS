@@ -84,6 +84,11 @@ export default function DemoConfirmationModal({
               memory without storing any candidate or party choice.
             </li>
             <li>
+              Keep counting results and candidate vote totals completely
+              independent (counting simulation uses deterministic demo datasets
+              only and never reads voter ballot confirmations).
+            </li>
+            <li>
               Leave any other simultaneous election you are eligible for
               completely independent.
             </li>

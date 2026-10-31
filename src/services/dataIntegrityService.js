@@ -437,9 +437,19 @@ export function auditElectionDataIntegrity({
   );
 
   // =========================================================================
-  // Rule 12: Voter constituency references are valid
+  // Rule 12: Voter constituency references & zero ballot-choice persistence
   // =========================================================================
   const rule12Errors = [];
+  const forbiddenChoiceKeys = [
+    'candidateId',
+    'selectedCandidateId',
+    'selectedCandidateIdOrNota',
+    'candidateOrNotaId',
+    'partyId',
+    'selectedPartyId',
+    'ballotChoice',
+    'selectedOptionId',
+  ];
   for (const v of voters || []) {
     const vId = v.id || v.voterId;
     if (!stateMap.has(v.stateId)) {
@@ -471,22 +481,39 @@ export function auditElectionDataIntegrity({
         `Voter "${vId}" has invalid assemblyConstituencyId "${v.assemblyConstituencyId}".`
       );
     }
+    for (const [elId, partEntry] of Object.entries(v.elections || {})) {
+      if (partEntry && typeof partEntry === 'object') {
+        for (const fKey of forbiddenChoiceKeys) {
+          if (partEntry[fKey] !== undefined && partEntry[fKey] !== null) {
+            rule12Errors.push(
+              `Privacy violation: Voter "${vId}" participation record for "${elId}" contains forbidden ballot-choice field "${fKey}".`
+            );
+          }
+        }
+      }
+    }
   }
   recordRule(
     12,
-    'Voter Geography & Dual-Constituency Reference Integrity',
+    'Voter Geography, Dual-Constituency & Ballot Privacy Integrity',
     rule12Errors.length === 0,
     rule12Errors
   );
 
   // =========================================================================
-  // Rule 13: Election schedules are chronologically valid
+  // Rule 13: Election schedules & lifecycle timeline consistency
   // =========================================================================
   const rule13Errors = [];
   for (const el of elections || []) {
     const elId = el.id || el.electionId;
     const pairs = [
+      ['registrationDeadline', 'pollingStartDate'],
       ['nominationStartDate', 'nominationEndDate'],
+      ['nominationEndDate', 'scrutinyDate'],
+      ['scrutinyDate', 'withdrawalDeadline'],
+      ['withdrawalDeadline', 'campaignStartDate'],
+      ['campaignStartDate', 'campaignEndDate'],
+      ['campaignEndDate', 'pollingStartDate'],
       ['nominationEndDate', 'pollingStartDate'],
       ['pollingStartDate', 'pollingEndDate'],
       ['pollingEndDate', 'countingDate'],
@@ -501,10 +528,39 @@ export function auditElectionDataIntegrity({
         );
       }
     }
+
+    const status = el.status || 'DRAFT';
+    const refClock = el.simulationClockDate || '2029-04-20';
+    if (
+      (status === 'POLLING_ACTIVE' || status === 'ACTIVE') &&
+      el.pollingStartDate &&
+      new Date(refClock) < new Date(el.pollingStartDate)
+    ) {
+      rule13Errors.push(
+        `Election "${elId}" lifecycle violation: Status is ${status} before pollingStartDate (${el.pollingStartDate}) at reference date ${refClock}.`
+      );
+    }
+
+    const publishedForEl = (results || []).filter(
+      (r) =>
+        r.electionId === elId &&
+        (r.status === RESULT_STATUSES.PUBLISHED ||
+          r.status === RESULT_STATUSES.CORRECTED)
+    );
+    if (
+      ['DRAFT', 'UPCOMING', 'NOMINATION_OPEN', 'NOMINATION_CLOSED', 'READY'].includes(
+        status
+      ) &&
+      publishedForEl.length > 0
+    ) {
+      rule13Errors.push(
+        `Election "${elId}" lifecycle violation: Pre-polling election (${status}) has ${publishedForEl.length} published result(s).`
+      );
+    }
   }
   recordRule(
     13,
-    'Election Schedule Chronology Validation',
+    'Election Schedule Chronology & Lifecycle Consistency',
     rule13Errors.length === 0,
     rule13Errors
   );
@@ -586,7 +642,7 @@ export function auditElectionDataIntegrity({
   );
 
   // =========================================================================
-  // Rule 16: Published results reference valid candidates
+  // Rule 16: Published results reference valid candidates & completed counting
   // =========================================================================
   const rule16Errors = [];
   for (const res of results || []) {
@@ -595,6 +651,20 @@ export function auditElectionDataIntegrity({
       res.status === RESULT_STATUSES.PUBLISHED ||
       res.status === RESULT_STATUSES.CORRECTED
     ) {
+      if (res.countingStatus && res.countingStatus !== 'COMPLETED') {
+        rule16Errors.push(
+          `Published result "${rId}" has incomplete countingStatus "${res.countingStatus}".`
+        );
+      }
+      const totalRounds = Number(res.totalConfiguredRounds || 0);
+      const doneRounds = Array.isArray(res.rounds)
+        ? res.rounds.length
+        : Number(res.currentRound || 0);
+      if (totalRounds > 0 && doneRounds < totalRounds) {
+        rule16Errors.push(
+          `Published result "${rId}" was published before all configured rounds completed (${doneRounds}/${totalRounds}).`
+        );
+      }
       if (!res.winnerCandidateId) {
         rule16Errors.push(
           `Published result "${rId}" is missing winnerCandidateId.`

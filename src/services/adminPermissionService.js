@@ -1,6 +1,9 @@
 import {
   ADMIN_ROLES,
   ELECTION_TYPES,
+  DEMO_CLOCK_CONFIG,
+  RESULT_STATUSES,
+  getDemoReferenceDate,
 } from '../utils/constants';
 
 /**
@@ -300,8 +303,13 @@ export function canAdminPerformAction(
 }
 
 /**
- * Validates election status transitions (Phase 5 Section 5).
+ * Validates election status transitions (Phase 5 Section 5 & Phase 7.5 Section 2).
  * Supports both positional `(currentStatus, nextStatus, options)` and object `{ currentStatus, nextStatus, ... }`.
+ * Enforces:
+ * - Forward lifecycle transition rules
+ * - Cannot enter POLLING_ACTIVE before pollingStartDate (unless demoLifecycleOverride is enabled)
+ * - Cannot enter RESULTS_DECLARED before counting is complete
+ * - Cannot enter contradictory states (e.g., POLLING_ACTIVE when published results exist without sandbox override)
  */
 export function validateElectionStatusTransition(
   arg1,
@@ -312,6 +320,12 @@ export function validateElectionStatusTransition(
   let nextStatus;
   let confirmCancel = false;
   let demoLifecycleOverride = false;
+  let election = null;
+  let pollingStartDate = null;
+  let referenceDate = null;
+  let countingCompleted = undefined;
+  let hasPublishedResults = false;
+  let results = [];
 
   if (typeof arg1 === 'object' && arg1 !== null) {
     currentStatus = arg1.currentStatus;
@@ -320,6 +334,16 @@ export function validateElectionStatusTransition(
     demoLifecycleOverride = Boolean(
       arg1.demoLifecycleOverride || arg1.demoLifecycleMode
     );
+    election = arg1.election || null;
+    pollingStartDate =
+      arg1.pollingStartDate ||
+      arg1.election?.pollingStartDate ||
+      arg1.election?.pollingDate ||
+      null;
+    referenceDate = arg1.referenceDate || null;
+    countingCompleted = arg1.countingCompleted;
+    hasPublishedResults = Boolean(arg1.hasPublishedResults);
+    results = Array.isArray(arg1.results) ? arg1.results : [];
   } else {
     currentStatus = arg1;
     nextStatus = arg2;
@@ -327,6 +351,16 @@ export function validateElectionStatusTransition(
     demoLifecycleOverride = Boolean(
       arg3?.demoLifecycleOverride || arg3?.demoLifecycleMode
     );
+    election = arg3?.election || null;
+    pollingStartDate =
+      arg3?.pollingStartDate ||
+      arg3?.election?.pollingStartDate ||
+      arg3?.election?.pollingDate ||
+      null;
+    referenceDate = arg3?.referenceDate || null;
+    countingCompleted = arg3?.countingCompleted;
+    hasPublishedResults = Boolean(arg3?.hasPublishedResults);
+    results = Array.isArray(arg3?.results) ? arg3.results : [];
   }
 
   if (!currentStatus || !nextStatus) {
@@ -372,6 +406,66 @@ export function validateElectionStatusTransition(
     };
   }
 
+  // Phase 7.5 Section 2: Prevent entering POLLING_ACTIVE before pollingStartDate
+  if (normalizedNext === 'POLLING_ACTIVE' && !demoLifecycleOverride) {
+    const resolvedPollStart =
+      pollingStartDate ||
+      election?.pollingStartDate ||
+      election?.pollingDate ||
+      null;
+    const resolvedRefDate = getDemoReferenceDate(
+      referenceDate || election?.simulationClockDate || null
+    );
+    if (
+      resolvedPollStart &&
+      resolvedRefDate &&
+      new Date(`${resolvedRefDate}T00:00:00`) <
+        new Date(`${resolvedPollStart}T00:00:00`)
+    ) {
+      const error = `Cannot transition election to POLLING_ACTIVE before its scheduled polling start date (${resolvedPollStart}; current demo reference date: ${resolvedRefDate}). Enable Demo Lifecycle Mode only for sandbox overrides.`;
+      return { ok: false, valid: false, error };
+    }
+
+    const publishedExist =
+      hasPublishedResults ||
+      results.some(
+        (r) =>
+          r.status === RESULT_STATUSES.PUBLISHED ||
+          r.status === RESULT_STATUSES.CORRECTED
+      );
+    if (
+      publishedExist &&
+      election?.demoSandboxMode !== DEMO_CLOCK_CONFIG.sandboxConcurrencyMode
+    ) {
+      const error =
+        'Contradictory lifecycle state: An election cannot enter POLLING_ACTIVE when published final results already exist.';
+      return { ok: false, valid: false, error };
+    }
+  }
+
+  // Phase 7.5 Section 2: Prevent entering RESULTS_DECLARED before counting is complete
+  if (normalizedNext === 'RESULTS_DECLARED' && !demoLifecycleOverride) {
+    if (countingCompleted === false) {
+      const error =
+        'Cannot declare election results (RESULTS_DECLARED) while constituency counting is still incomplete.';
+      return { ok: false, valid: false, error };
+    }
+    if (results.length > 0) {
+      const incompleteSessions = results.filter((r) =>
+        [
+          RESULT_STATUSES.DRAFT,
+          RESULT_STATUSES.COUNTING_IN_PROGRESS,
+          RESULT_STATUSES.COUNTING_PAUSED,
+          RESULT_STATUSES.TIED,
+        ].includes(r.status)
+      );
+      if (incompleteSessions.length > 0) {
+        const error = `Cannot transition election to RESULTS_DECLARED while ${incompleteSessions.length} constituency counting session(s) remain incomplete or tied.`;
+        return { ok: false, valid: false, error };
+      }
+    }
+  }
+
   const allowedNext = VALID_ELECTION_TRANSITIONS[normalizedCurrent] || [];
   if (!allowedNext.includes(normalizedNext) && !demoLifecycleOverride) {
     const error = `Invalid lifecycle transition from ${normalizedCurrent} to ${normalizedNext}. Allowed next state(s): ${
@@ -381,6 +475,143 @@ export function validateElectionStatusTransition(
   }
 
   return { ok: true, valid: true, status: normalizedNext };
+}
+
+/**
+ * Validates full election timeline consistency against the centralized demo clock
+ * and associated constituency result records (Phase 7.5 Section 2).
+ */
+export function validateElectionTimelineConsistency(
+  election,
+  results = [],
+  options = {}
+) {
+  if (!election || typeof election !== 'object') {
+    return {
+      isValid: false,
+      errors: ['Election record is required for timeline validation.'],
+      warnings: [],
+    };
+  }
+
+  const errors = [];
+  const warnings = [];
+  const referenceDate = getDemoReferenceDate(
+    options.referenceDate || election.simulationClockDate || null
+  );
+
+  // 1. Validate 8+ milestone chronology (registration -> nomination -> scrutiny -> withdrawal -> campaign -> polling -> counting -> result)
+  const scheduleValidation = validateElectionSchedule(election);
+  if (!scheduleValidation.isValid) {
+    errors.push(...scheduleValidation.errors);
+  }
+
+  const toDate = (d) => (d ? new Date(`${d}T00:00:00`) : null);
+  const refDateObj = toDate(referenceDate);
+  const pollStartObj = toDate(
+    election.pollingStartDate || election.pollingDate
+  );
+  const pollEndObj = toDate(
+    election.pollingEndDate || election.pollingStartDate || election.pollingDate
+  );
+  const status = election.status || 'DRAFT';
+  const isSandboxConcurrent =
+    election.demoSandboxMode === DEMO_CLOCK_CONFIG.sandboxConcurrencyMode ||
+    Boolean(options.allowSandboxConcurrency);
+
+  const electionId = election.id || election.electionId;
+  const scopedResults = (results || []).filter(
+    (r) => !r.electionId || r.electionId === electionId
+  );
+  const publishedResults = scopedResults.filter(
+    (r) =>
+      r.status === RESULT_STATUSES.PUBLISHED ||
+      r.status === RESULT_STATUSES.CORRECTED
+  );
+  const incompleteResults = scopedResults.filter((r) =>
+    [
+      RESULT_STATUSES.DRAFT,
+      RESULT_STATUSES.COUNTING_IN_PROGRESS,
+      RESULT_STATUSES.COUNTING_PAUSED,
+      RESULT_STATUSES.TIED,
+    ].includes(r.status)
+  );
+
+  // 2. Election cannot be POLLING_ACTIVE before its pollingStartDate
+  if (
+    (status === 'POLLING_ACTIVE' || status === 'ACTIVE') &&
+    pollStartObj &&
+    refDateObj &&
+    refDateObj < pollStartObj &&
+    !options.demoLifecycleOverride
+  ) {
+    errors.push(
+      `Election "${electionId}" cannot be POLLING_ACTIVE on ${referenceDate} before its pollingStartDate (${election.pollingStartDate || election.pollingDate}).`
+    );
+  }
+
+  // 3. DRAFT or UPCOMING election cannot have PUBLISHED results
+  if (
+    ['DRAFT', 'UPCOMING', 'NOMINATION_OPEN', 'NOMINATION_CLOSED', 'READY'].includes(
+      status
+    ) &&
+    publishedResults.length > 0
+  ) {
+    errors.push(
+      `Election "${electionId}" in pre-polling status "${status}" cannot have ${publishedResults.length} published result(s).`
+    );
+  }
+
+  // 4. Non-sandbox election cannot simultaneously be POLLING_ACTIVE and have PUBLISHED final results
+  if (
+    (status === 'POLLING_ACTIVE' || status === 'ACTIVE') &&
+    publishedResults.length > 0 &&
+    !isSandboxConcurrent
+  ) {
+    errors.push(
+      `Contradictory lifecycle state for "${electionId}": Election is in ${status} while ${publishedResults.length} result(s) are already PUBLISHED without concurrent sandbox mode.`
+    );
+  } else if (
+    (status === 'POLLING_ACTIVE' || status === 'ACTIVE') &&
+    publishedResults.length > 0 &&
+    isSandboxConcurrent
+  ) {
+    warnings.push(
+      `Election "${electionId}" operates in ${DEMO_CLOCK_CONFIG.sandboxConcurrencyMode} so both live ballot simulation and sample constituency counting/results can be demonstrated concurrently.`
+    );
+  }
+
+  // 5. RESULTS_DECLARED election cannot have incomplete counting sessions
+  if (
+    (status === 'RESULTS_DECLARED' || status === 'COMPLETED') &&
+    incompleteResults.length > 0
+  ) {
+    errors.push(
+      `Election "${electionId}" is marked ${status} while ${incompleteResults.length} constituency counting session(s) are still incomplete.`
+    );
+  }
+
+  // 6. Past completed election check
+  if (
+    (status === 'RESULTS_DECLARED' || status === 'ARCHIVED') &&
+    pollEndObj &&
+    refDateObj &&
+    pollEndObj > refDateObj &&
+    !options.demoLifecycleOverride
+  ) {
+    errors.push(
+      `Election "${electionId}" is marked ${status}, but its pollingEndDate (${election.pollingEndDate}) is in the future relative to ${referenceDate}.`
+    );
+  }
+
+  return {
+    isValid: errors.length === 0,
+    referenceDate,
+    status,
+    isSandboxConcurrent,
+    errors,
+    warnings,
+  };
 }
 
 /**
@@ -505,15 +736,19 @@ export function canDeleteParty(partyId, candidates = []) {
 }
 
 /**
- * Validates a full 8-milestone election schedule (Phase 5 Section 11).
+ * Validates a full election schedule including registration, nominations, scrutiny,
+ * withdrawal, campaigning, polling, counting, and result publication (Phase 5 Section 11 & Phase 7.5 Section 2).
  */
 export function validateElectionSchedule(schedule = {}) {
   const fieldErrors = {};
   const {
+    registrationDeadline,
     nominationStartDate,
     nominationEndDate,
     scrutinyDate,
     withdrawalDeadline,
+    campaignStartDate,
+    campaignEndDate,
     pollingStartDate,
     pollingEndDate,
     countingDate,
@@ -522,15 +757,22 @@ export function validateElectionSchedule(schedule = {}) {
 
   const toDate = (d) => (d ? new Date(`${d}T00:00:00`) : null);
 
+  const regEnd = toDate(registrationDeadline);
   const nomStart = toDate(nominationStartDate);
   const nomEnd = toDate(nominationEndDate);
   const scrutiny = toDate(scrutinyDate);
   const withdrawal = toDate(withdrawalDeadline);
+  const campStart = toDate(campaignStartDate);
+  const campEnd = toDate(campaignEndDate);
   const pollStart = toDate(pollingStartDate || schedule.pollingDate);
   const pollEnd = toDate(pollingEndDate || pollingStartDate || schedule.pollingDate);
   const counting = toDate(countingDate);
   const result = toDate(resultDate);
 
+  if (regEnd && pollStart && pollStart < regEnd) {
+    fieldErrors.registrationDeadline =
+      'Voter registration deadline cannot be later than polling start date.';
+  }
   if (nomStart && nomEnd && nomEnd < nomStart) {
     fieldErrors.nominationEndDate =
       'Nomination end date cannot be earlier than nomination start date.';
@@ -542,6 +784,18 @@ export function validateElectionSchedule(schedule = {}) {
   if (scrutiny && withdrawal && withdrawal < scrutiny) {
     fieldErrors.withdrawalDeadline =
       'Withdrawal deadline cannot be earlier than scrutiny date.';
+  }
+  if (withdrawal && campStart && campStart < withdrawal) {
+    fieldErrors.campaignStartDate =
+      'Campaign start date cannot be earlier than candidate withdrawal deadline.';
+  }
+  if (campStart && campEnd && campEnd < campStart) {
+    fieldErrors.campaignEndDate =
+      'Campaign end date cannot be earlier than campaign start date.';
+  }
+  if (campEnd && pollStart && pollStart < campEnd) {
+    fieldErrors.campaignEndDate =
+      'Campaign end date cannot be later than polling start date.';
   }
   if (nomEnd && pollStart && pollStart < nomEnd) {
     fieldErrors.pollingStartDate =

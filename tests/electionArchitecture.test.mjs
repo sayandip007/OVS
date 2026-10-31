@@ -14,6 +14,8 @@ import {
   DEMO_OTP_CODES,
   NOTA_OPTION,
   RESULT_STATUSES,
+  DEMO_CLOCK_CONFIG,
+  getDemoReferenceDate,
 } from '../src/utils/constants.js';
 import {
   validateVoterInput,
@@ -62,6 +64,7 @@ import {
   canAdminAccessRoute,
   canAdminPerformAction,
   validateElectionStatusTransition,
+  validateElectionTimelineConsistency,
   validateCandidateStatusTransition,
   checkConstituencyModificationImpact,
   canDeleteParty,
@@ -2390,6 +2393,350 @@ test('PHASE 7.5 — Storage Corruption Recovery, ErrorBoundary, Accessibility, a
     assert.ok(content.length > 500, `${docFile} should be comprehensive`);
   }
 });
+
+test('PHASE 7.5.1 — Centralized Demo Clock & Election Timeline Lifecycle Validation (Past, Active Simulated, Upcoming, Completed & Unpublished Results)', () => {
+  // 1. Verify centralized demo clock configuration
+  assert.equal(DEMO_CLOCK_CONFIG.referenceDate, '2029-04-20');
+  assert.equal(getDemoReferenceDate(), '2029-04-20');
+  assert.equal(getDemoReferenceDate('2029-05-01'), '2029-05-01');
+
+  // 2. Verify all 5 seeded elections pass validateElectionTimelineConsistency under DEMO_CLOCK_CONFIG
+  for (const el of INITIAL_ELECTIONS) {
+    const check = validateElectionTimelineConsistency(el, INITIAL_RESULTS);
+    assert.equal(
+      check.isValid,
+      true,
+      `Expected ${el.id} to pass timeline consistency, got errors: ${check.errors.join('; ')}`
+    );
+  }
+
+  // 3. Verify specific required scenario types exist in INITIAL_ELECTIONS & INITIAL_RESULTS:
+  // (a) Past election: LS-2024 (RESULTS_DECLARED, 2024)
+  const pastElection = INITIAL_ELECTIONS.find((e) => e.id === 'LS-2024');
+  assert.ok(pastElection);
+  assert.equal(pastElection.status, 'RESULTS_DECLARED');
+  assert.ok(
+    new Date(pastElection.pollingEndDate) <
+      new Date(DEMO_CLOCK_CONFIG.referenceDate)
+  );
+
+  // (b) Upcoming election: MH-ASSEMBLY-2029 (UPCOMING, polling starts 2029-09-10 > 2029-04-20)
+  const upcomingElection = INITIAL_ELECTIONS.find(
+    (e) => e.id === 'MH-ASSEMBLY-2029'
+  );
+  assert.ok(upcomingElection);
+  assert.equal(upcomingElection.status, 'UPCOMING');
+  assert.ok(
+    new Date(upcomingElection.pollingStartDate) >
+      new Date(DEMO_CLOCK_CONFIG.referenceDate)
+  );
+
+  // (c) Active simulated elections: LS-2029, WB-ASSEMBLY-2029, DL-ASSEMBLY-2029
+  for (const activeId of ['LS-2029', 'WB-ASSEMBLY-2029', 'DL-ASSEMBLY-2029']) {
+    const activeEl = INITIAL_ELECTIONS.find((e) => e.id === activeId);
+    assert.ok(activeEl);
+    assert.equal(activeEl.status, 'POLLING_ACTIVE');
+    assert.ok(
+      new Date(activeEl.pollingStartDate) <=
+        new Date(DEMO_CLOCK_CONFIG.referenceDate)
+    );
+    assert.ok(
+      new Date(activeEl.pollingEndDate) >=
+        new Date(DEMO_CLOCK_CONFIG.referenceDate)
+    );
+  }
+
+  // (d) Unpublished / in-progress results exist and are hidden from public views
+  const unpublishedInProgress = INITIAL_RESULTS.find(
+    (r) => r.id === 'RESULT-LS-2029-MH-MUMBAI-NORTH'
+  );
+  const unpublishedReady = INITIAL_RESULTS.find(
+    (r) => r.id === 'RESULT-LS-2029-TN-PC-1'
+  );
+  const unpublishedDraft = INITIAL_RESULTS.find(
+    (r) => r.id === 'RESULT-MH-ASSEMBLY-2029-BANDRA-WEST'
+  );
+  assert.ok(unpublishedInProgress);
+  assert.equal(unpublishedInProgress.status, RESULT_STATUSES.COUNTING_IN_PROGRESS);
+  assert.equal(isResultPubliclyVisible(unpublishedInProgress), false);
+  assert.ok(unpublishedReady);
+  assert.equal(unpublishedReady.status, RESULT_STATUSES.RESULT_READY_FOR_REVIEW);
+  assert.equal(isResultPubliclyVisible(unpublishedReady), false);
+  assert.ok(unpublishedDraft);
+  assert.equal(unpublishedDraft.status, RESULT_STATUSES.DRAFT);
+  assert.equal(isResultPubliclyVisible(unpublishedDraft), false);
+
+  // 4. Prevent an election from entering POLLING_ACTIVE before its polling start date
+  const prematurePollingAttempt = validateElectionStatusTransition({
+    currentStatus: 'READY',
+    nextStatus: 'POLLING_ACTIVE',
+    election: upcomingElection, // pollingStartDate: 2029-09-10
+    referenceDate: '2029-04-20',
+    demoLifecycleOverride: false,
+  });
+  assert.equal(prematurePollingAttempt.valid, false);
+  assert.ok(
+    prematurePollingAttempt.error.includes('before its scheduled polling start date')
+  );
+
+  // 5. Prevent results from being published before counting is complete (all rounds processed)
+  const prematurePublishAttempt = transitionResultPublicationStatus(
+    unpublishedInProgress,
+    RESULT_STATUSES.PUBLISHED
+  );
+  assert.equal(prematurePublishAttempt.ok, false);
+
+  // Also test a record marked COUNTING_COMPLETED but missing configured rounds
+  const incompleteRoundsRecord = {
+    ...unpublishedReady,
+    totalConfiguredRounds: 4,
+    currentRound: 2,
+    rounds: unpublishedReady.rounds.slice(0, 2),
+  };
+  const blockedIncompleteRounds = transitionResultPublicationStatus(
+    incompleteRoundsRecord,
+    RESULT_STATUSES.PUBLISHED
+  );
+  assert.equal(blockedIncompleteRounds.ok, false);
+  assert.ok(blockedIncompleteRounds.error.includes('configured counting rounds'));
+
+  // 6. Prevent contradictory lifecycle states (e.g. RESULTS_DECLARED while counting is incomplete)
+  const prematureDeclaration = validateElectionStatusTransition({
+    currentStatus: 'COUNTING',
+    nextStatus: 'RESULTS_DECLARED',
+    results: [unpublishedInProgress],
+    demoLifecycleOverride: false,
+  });
+  assert.equal(prematureDeclaration.valid, false);
+  assert.ok(prematureDeclaration.error.includes('remain incomplete'));
+});
+
+test('PHASE 7.5.2 — Strict Separation of Demo Ballot and Counting Engine & Zero Candidate-Choice Persistence', () => {
+  const voterBefore = structuredClone(
+    INITIAL_VOTERS.find((v) => (v.id || v.voterId) === 'VOTER-001')
+  );
+  const talliesBefore = structuredClone(INITIAL_TALLIES);
+  const resultsBefore = structuredClone(INITIAL_RESULTS);
+
+  // 1. Confirming a demo ballot with a selected candidate ID or NOTA must NEVER increment tallies
+  const participationRes = recordSimulatedParticipation({
+    voter: voterBefore,
+    electionId: 'LS-2029',
+    election: INITIAL_ELECTIONS.find((e) => e.id === 'LS-2029'),
+    constituencyId: voterBefore.parliamentaryConstituencyId,
+    selectedCandidateIdOrNota: 'CAND-LS29-KRN-1',
+    candidateOrNotaId: 'CAND-LS29-KRN-1',
+    tallies: talliesBefore,
+  });
+
+  assert.equal(participationRes.ok, true);
+  assert.equal(
+    participationRes.ballotCountingSeparation,
+    'STRICT_DECOUPLED'
+  );
+  assert.deepEqual(
+    participationRes.tallies,
+    talliesBefore,
+    'Voter ballot confirmation must leave tallies 100% unchanged'
+  );
+  assert.deepEqual(
+    INITIAL_RESULTS,
+    resultsBefore,
+    'Voter ballot confirmation must leave counting result records 100% unchanged'
+  );
+
+  // 2. Verify voter.elections['LS-2029'] contains ONLY non-sensitive participation fields
+  const lsEntry = participationRes.voter.elections['LS-2029'];
+  assert.deepEqual(Object.keys(lsEntry).sort(), [
+    'demoReference',
+    'participated',
+    'participatedAt',
+    'referenceId',
+    'status',
+  ]);
+  assert.equal(
+    JSON.stringify(participationRes.voter).includes('CAND-LS29-KRN-1'),
+    false
+  );
+
+  // 3. Verify Rule 12 of auditElectionDataIntegrity catches any injected candidate choice field
+  const tamperedVoter = structuredClone(participationRes.voter);
+  tamperedVoter.elections['LS-2029'].selectedCandidateId = 'CAND-LS29-KRN-1';
+  const tamperedAudit = auditElectionDataIntegrity({
+    voters: [tamperedVoter],
+  });
+  assert.equal(tamperedAudit.isHealthy, false);
+  assert.ok(
+    tamperedAudit.errors.some((e) =>
+      e.includes('forbidden ballot-choice field "selectedCandidateId"')
+    )
+  );
+
+  // 4. Verify BallotReview.jsx, DemoConfirmationModal.jsx, and DemoReceipt.jsx explicitly explain counting separation
+  const ballotReviewSrc = fs.readFileSync(
+    path.resolve('src/components/ballot/BallotReview.jsx'),
+    'utf8'
+  );
+  const confirmModalSrc = fs.readFileSync(
+    path.resolve('src/components/ballot/DemoConfirmationModal.jsx'),
+    'utf8'
+  );
+  const receiptSrc = fs.readFileSync(
+    path.resolve('src/components/ballot/DemoReceipt.jsx'),
+    'utf8'
+  );
+
+  assert.ok(
+    ballotReviewSrc.includes('zero connection to election counting results')
+  );
+  assert.ok(
+    confirmModalSrc.includes(
+      'counting simulation uses deterministic demo datasets'
+    )
+  );
+  assert.ok(
+    receiptSrc.includes('independently simulated using')
+  );
+});
+
+test('PHASE 7.5.3 — End-to-End User Journey Simulations (Scenarios A–G) & Documentation Path Verification', () => {
+  // Scenario A: Public Portal Exploration (published results visible, unpublished hidden)
+  const publicResults = getPubliclyVisibleResults(INITIAL_RESULTS);
+  assert.ok(publicResults.length >= 4);
+  assert.ok(
+    publicResults.every(
+      (r) =>
+        r.status === RESULT_STATUSES.PUBLISHED ||
+        r.status === RESULT_STATUSES.CORRECTED
+    )
+  );
+
+  // Scenario B & C & D: Voter Registration -> Login -> Simultaneous Lok Sabha & Assembly Ballots -> Duplicate Prevention
+  const newVoterInput = {
+    fullName: 'Sourav Gangopadhyay',
+    dob: '1995-08-19',
+    gender: 'Male',
+    email: 'sourav.g@example.in',
+    mobile: '9830998877',
+    voterRef: 'WBX7766554',
+    address: '12 Rabindra Sarani, Krishnanagar, Nadia',
+    pinCode: '741101',
+    stateId: 'WB',
+    districtId: 'NADIA',
+    parliamentaryConstituencyId: 'WB-PC-KRISHNANAGAR',
+    assemblyConstituencyId: 'WB-AC-KRISHNANAGAR-UTTAR',
+  };
+  const regValidation = validateVoterInput(
+    newVoterInput,
+    INITIAL_STATES,
+    INITIAL_DISTRICTS,
+    INITIAL_CONSTITUENCIES,
+    INITIAL_VOTERS
+  );
+  assert.equal(regValidation.isValid, true);
+
+  let journeyVoter = {
+    id: 'VOTER-099',
+    voterId: 'VOTER-099',
+    ...newVoterInput,
+    epicRef: newVoterInput.voterRef,
+    elections: {
+      'LS-2029': { status: 'PENDING', participated: false },
+      'WB-ASSEMBLY-2029': { status: 'PENDING', participated: false },
+    },
+  };
+
+  // Step 1: Complete Lok Sabha ballot (1/2)
+  const lsStep = recordSimulatedParticipation({
+    voter: journeyVoter,
+    electionId: 'LS-2029',
+    election: INITIAL_ELECTIONS.find((e) => e.id === 'LS-2029'),
+  });
+  assert.equal(lsStep.ok, true);
+  journeyVoter = lsStep.voter;
+  assert.equal(journeyVoter.elections['LS-2029'].status, 'VOTED');
+  assert.equal(journeyVoter.elections['WB-ASSEMBLY-2029'].status, 'PENDING');
+
+  // Step 2: Duplicate Lok Sabha attempt blocked
+  const dupLsStep = recordSimulatedParticipation({
+    voter: journeyVoter,
+    electionId: 'LS-2029',
+  });
+  assert.equal(dupLsStep.ok, false);
+
+  // Step 3: Complete State Assembly ballot (2/2)
+  const asmStep = recordSimulatedParticipation({
+    voter: journeyVoter,
+    electionId: 'WB-ASSEMBLY-2029',
+    election: INITIAL_ELECTIONS.find((e) => e.id === 'WB-ASSEMBLY-2029'),
+  });
+  assert.equal(asmStep.ok, true);
+  journeyVoter = asmStep.voter;
+  assert.equal(journeyVoter.elections['WB-ASSEMBLY-2029'].status, 'VOTED');
+
+  // Scenario E & F: Admin RBAC + Counting Simulation -> Round Processing -> Completion -> Publication
+  const superAdmin = INITIAL_ADMIN_OFFICERS.find(
+    (o) => o.role === 'SUPER_ADMIN'
+  );
+  const auditor = INITIAL_ADMIN_OFFICERS.find(
+    (o) => o.role === 'READ_ONLY_AUDITOR'
+  );
+  assert.equal(
+    canAdminPerformAction(superAdmin, 'MANAGE_RESULT').allowed,
+    true
+  );
+  assert.equal(canAdminPerformAction(auditor, 'MANAGE_RESULT').allowed, false);
+
+  let countingTarget = structuredClone(
+    INITIAL_RESULTS.find((r) => r.id === 'RESULT-LS-2029-TN-PC-1')
+  );
+  while (
+    countingTarget.rounds.length < countingTarget.totalConfiguredRounds
+  ) {
+    const nextR = processNextCountingRound(countingTarget);
+    assert.equal(nextR.ok, true);
+    countingTarget = nextR.result;
+  }
+  const doneSession = completeCountingSession(countingTarget, {
+    readyForReview: true,
+  });
+  assert.equal(doneSession.ok, true);
+  const publishedSession = transitionResultPublicationStatus(
+    doneSession.result,
+    RESULT_STATUSES.PUBLISHED
+  );
+  assert.equal(publishedSession.ok, true);
+  assert.equal(isResultPubliclyVisible(publishedSession.result), true);
+
+  // Scenario G: Reset & Data Integrity Verification + Documentation File Path Verification
+  const restored = storageService.resetAllDemoData();
+  const integrity = auditElectionDataIntegrity(restored);
+  assert.equal(integrity.isHealthy, true);
+  assert.equal(integrity.rulesPassed, 17);
+
+  // Verify every `src/...` file path referenced in documentation actually exists on disk
+  const docsToVerify = [
+    'README.md',
+    'ARCHITECTURE.md',
+    'TESTING.md',
+    'SECURITY-LIMITATIONS.md',
+    'plan.md',
+  ];
+  const srcPathRegex = /\bsrc\/[A-Za-z0-9_./-]+\.(?:js|jsx|css)\b/g;
+
+  for (const docName of docsToVerify) {
+    const text = fs.readFileSync(path.resolve(docName), 'utf8');
+    const matches = text.match(srcPathRegex) || [];
+    for (const relPath of matches) {
+      assert.equal(
+        fs.existsSync(path.resolve(relPath)),
+        true,
+        `Documentation file ${docName} references non-existent path: ${relPath}`
+      );
+    }
+  }
+});
+
 
 
 

@@ -115,18 +115,21 @@ export default function BallotReview({
       {/* Mandatory Privacy & Demonstration Disclaimer */}
       <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-950 space-y-1.5">
         <strong className="block uppercase tracking-wider text-[11px] text-amber-900">
-          Important Privacy &amp; Educational Prototype Notice
+          Important Privacy, Ballot Secrecy &amp; Counting Separation Notice
         </strong>
         <p className="leading-relaxed">
           This review screen is part of an educational frontend demonstration and
-          does not submit a real vote. When you confirm below, only your{' '}
-          <strong>participation status</strong> (<code className="font-mono">VOTED</code>),{' '}
+          does not submit or transmit a legally valid vote. When you confirm below,
+          only your <strong>participation status</strong> (<code className="font-mono">VOTED</code>),{' '}
           <strong>timestamp</strong>, and a{' '}
           <strong>non-sensitive demo reference</strong> will be recorded for{' '}
           <strong>{election.id || election.electionId}</strong>. Your selected
-          candidate or party is <strong>never</strong> saved to{' '}
+          candidate or party is held strictly in temporary in-memory component
+          state, is <strong>never</strong> saved to{' '}
           <code className="font-mono">localStorage</code>, your voter profile,
-          participation history, or confirmation receipt.
+          participation history, or confirmation receipt, and has{' '}
+          <strong>zero connection to election counting results</strong> (which are
+          independently simulated using deterministic demo datasets).
         </p>
       </div>
 
