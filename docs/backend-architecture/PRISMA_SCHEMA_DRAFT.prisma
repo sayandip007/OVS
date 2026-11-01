@@ -489,9 +489,10 @@ model CandidateNomination {
   scrutinizedByAdmin          AdminUser?                @relation(fields: [scrutinizedByAdminId], references: [id], onDelete: SetNull)
   tallies                     CandidateTally[]
 
-  // NOTE: Candidates may contest multiple constituencies in an election (RPA 1951 s.33(7) allows up to 2).
+  // NOTE: Candidates may contest multiple constituencies in an election (simulated up to 2 constituencies).
   // Per-constituency uniqueness is enforced via PostgreSQL partial unique indexes:
   // uq_nomination_candidate_pc and uq_nomination_candidate_ac.
+  @@unique([id, candidateId, partyId]) // Composite key for historical party tally integrity
   @@index([candidateId, electionId])
   @@index([partyId])
   @@index([electionId, status])
@@ -666,7 +667,7 @@ model CandidateTally {
   updatedAt           DateTime             @updatedAt @db.Timestamptz(6) @map("updated_at")
 
   session             CountingSession      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  candidate           Candidate            @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  candidate           Candidate            @relation(fields: [candidateId], references: [id], onDelete: Restrict)
   nomination          CandidateNomination? @relation(fields: [nominationId], references: [id], onDelete: Restrict)
   party               PoliticalParty?      @relation(fields: [partyId], references: [id], onDelete: Restrict)
 
@@ -702,10 +703,14 @@ model TieResolution {
   approvedByAdminId String          @db.Uuid @map("approved_by_admin_id")
   resolvedAt        DateTime        @default(now()) @db.Timestamptz(6) @map("resolved_at")
 
-  session           CountingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  // Consistent referential policy: onDelete: Restrict preserves immutable tie-resolution evidence
+  // and blocks deletion of a CountingSession that has a tie-resolution record.
+  session           CountingSession @relation(fields: [sessionId], references: [id], onDelete: Restrict)
   selectedWinner    Candidate       @relation("TieResolutionWinner", fields: [selectedWinnerId], references: [id], onDelete: Restrict)
   approvedByAdmin   AdminUser       @relation("TieResolutionApprover", fields: [approvedByAdminId], references: [id], onDelete: Restrict)
 
+  @@index([selectedWinnerId])
+  @@index([approvedByAdminId])
   @@map("tie_resolutions")
 }
 

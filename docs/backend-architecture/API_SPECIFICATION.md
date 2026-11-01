@@ -205,27 +205,30 @@ Auxiliary states: `TIED`, `UNDER_REVIEW`, `CORRECTED`, `UNPUBLISHED`.
   5. Automatically sets `isPublished = true`, `status = 'PUBLISHED'`, `publishedAt = NOW()`, and `publishedByAdminId = admin.id`.
 - **Responses**:
   - `200 OK`: `{ "success": true, "data": { "isPublished": true, "status": "PUBLISHED" } }`
-### 7.5 Statutory Tie Resolution (Section 102 RPA 1951)
+### 7.5 Simulated Educational Tie Resolution (Inspired by Section 102 RPA 1951)
 - **Method & Path**: `POST /api/v1/admin/counting-sessions/:sessionId/resolve-tie`
-- **Purpose**: Records legal tie resolution evidence (draw of lots / coin toss by Returning Officer) when a session is in `TIED` state.
-- **Auth / Role**: Authorized Returning Officer / ECI Admin (`SUPER_ADMIN`, `NATIONAL_ADMIN`, `STATE_ADMIN`).
+- **Purpose**: Records simulated educational tie-resolution evidence (simulated Returning Officer draw-of-lots workflow) when a counting session is in `TIED` state. *(Note: This is an educational governance simulation workflow, not a legally authoritative statutory certification).*
+- **Auth / Role**: Active authorized ECI Admin (`SUPER_ADMIN`, `NATIONAL_ADMIN`, `STATE_ADMIN` matching constituency state, or `ELECTION_OFFICER` with assigned `admin_election_scopes`; `READ_ONLY_AUDITOR` is forbidden).
 - **Request Body**:
   ```json
   {
-    "resolutionMethod": "DRAW_OF_LOTS",
-    "selectedCandidateId": "CAND-01",
-    "notes": "Tie broken by draw of lots conducted in presence of candidate election agents pursuant to RPA 1951 Section 102.",
-    "documentRef": "ECI/ELEC/2029/RO-LOTS-001"
+    "decision": "SIMULATED_TIE_BROKEN_DRAW_OF_LOTS",
+    "resolutionMethod": "SIMULATED_DRAW_OF_LOTS",
+    "selectedWinnerId": "CAND-01",
+    "justificationNote": "Simulated educational draw of lots conducted by Returning Officer after tied final round tally."
   }
   ```
-- **Behavior**:
-  1. Verifies that counting session is in status `TIED`.
-  2. Verifies that `selectedCandidateId` is one of the tied contesting candidates.
-  3. Inserts an immutable row into `tie_resolutions`.
-  4. Updates `counting_sessions`: sets `winner_candidate_id = selectedCandidateId`, `lead_margin = 1`, and advances status to `RESULT_READY_FOR_REVIEW`.
+- **Database & Trigger Validation (`trg_verify_tie_resolution_insert`)**:
+  1. Verifies that the counting session exists (`FOR UPDATE` lock) and is currently in status `TIED`.
+  2. Verifies that no prior `tie_resolutions` row exists for the session.
+  3. Verifies that `selectedWinnerId` holds an `APPROVED` nomination in the session's exact election and constituency.
+  4. Verifies that `selectedWinnerId` is tied for the highest vote count (`MAX(votes) > 0` shared by at least 2 candidates in `candidate_tallies`).
+  5. Verifies that the approving admin is active and holds valid role, state jurisdiction, and election scope.
+  6. Inserts an immutable row into `tie_resolutions` (`ON DELETE RESTRICT`).
+  7. Updates `counting_sessions`: sets `winner_candidate_id = selectedWinnerId`, `lead_margin = 0`, and transitions status to `RESULT_READY_FOR_REVIEW`. Both `RESULT_READY_FOR_REVIEW` and `PUBLISHED` states enforce `winner_candidate_id = tie_resolutions.selected_winner_id`.
 - **Responses**:
   - `200 OK`: Returns created tie resolution record and updated session.
-  - `400 Bad Request`: Session is not tied, or candidate is not eligible.
+  - `400 Bad Request` / `403 Forbidden`: Session is not tied, candidate is not tied for top votes, or officer lacks jurisdiction/scope.
 
 ### 7.6 Result Correction & Recount
 - **Method & Path**: `POST /api/v1/admin/results/:sessionId/review` (Places session `UNDER_REVIEW`).

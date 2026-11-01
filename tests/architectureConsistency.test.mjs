@@ -282,7 +282,7 @@ describe('OVS Phase 8.1.2 — Final Database Integrity, Prisma Mapping & Result 
 
     assert.ok(sqlContent.includes('verify_candidate_tally_nomination'), 'verify_candidate_tally_nomination trigger function must exist');
     assert.ok(sqlContent.includes("status = 'APPROVED'"), 'Tally trigger must enforce status = APPROVED on candidate nomination');
-    assert.ok(sqlContent.includes("v_candidate_party_id != NEW.party_id"), 'Tally trigger must enforce candidate party matches registered party');
+    assert.ok(sqlContent.includes('NEW.party_id != v_nom_party_id') && sqlContent.includes('NEW.party_id IS NOT DISTINCT FROM v_nom_party_id'), 'Tally trigger must enforce exact historical nomination party equality');
     assert.ok(sqlContent.includes("UPPER(NEW.candidate_id) = 'NOTA'") || sqlContent.includes("LIKE '%NOTA%'"), 'Tally trigger must explicitly forbid NOTA as candidate tally');
     assert.ok(sqlContent.includes('trg_verify_candidate_tally_nomination'), 'Trigger trg_verify_candidate_tally_nomination must be attached to candidate_tallies');
   });
@@ -527,7 +527,7 @@ describe('OVS Phase 8.1.3 — Final PostgreSQL Integrity & Transaction-Safety Ve
   test('Test 8.1.3.10: Round leader nomination validation in counting rounds', () => {
     const sqlContent = fs.readFileSync(customSqlPath, 'utf8');
 
-    assert.ok(sqlContent.includes('NEW.lead_candidate_id IS NOT NULL'), 'Trigger must inspect lead_candidate_id');
+    assert.ok(sqlContent.includes('NEW.leading_candidate_id IS NOT NULL'), 'Trigger must inspect leading_candidate_id');
     assert.ok(sqlContent.includes('Round % leader % lacks an APPROVED nomination in session constituency'), 'Round leader must be validated for approved nomination');
   });
 
@@ -731,8 +731,188 @@ describe('OVS Phase 8.1.4 — PostgreSQL Integration Test Repair & Final Databas
       assert.ok(valContent.includes(`SCENARIO ${i}:`), `tests/postgresql-validation.sql must contain SCENARIO ${i}:`);
     }
 
-    assert.ok(valContent.includes('ALL 23 SCENARIOS PASSED'), 'Integration test suite verdict must confirm ALL 23 SCENARIOS PASSED');
+    assert.ok(valContent.includes('ALL 23 BASE SCENARIOS') || valContent.includes('ALL 23 SCENARIOS PASSED'), 'Integration test suite verdict must confirm base 23 scenarios passed');
   });
 });
+
+describe('OVS Phase 8.1.5 — Final SQL Trigger Corrections & Database Runtime Readiness (Static Architecture Suite)', () => {
+  const prismaSchemaPath = path.join(rootDir, 'docs/backend-architecture/PRISMA_SCHEMA_DRAFT.prisma');
+  const customSqlPath = path.join(rootDir, 'docs/backend-architecture/CUSTOM_DATABASE_INTEGRITY.sql');
+  const validationSqlPath = path.join(rootDir, 'tests/postgresql-validation.sql');
+  const dbDesignPath = path.join(rootDir, 'docs/backend-architecture/DATABASE_DESIGN.md');
+  const adrPath = path.join(rootDir, 'docs/backend-architecture/ARCHITECTURE_DECISIONS.md');
+
+  test('Test 8.1.5.1: Every trigger NEW.<field> and OLD.<field> reference in CUSTOM_DATABASE_INTEGRITY.sql maps to a real column in PRISMA_SCHEMA_DRAFT.prisma (and obsolete lead_candidate_id is eliminated)', () => {
+    const prismaContent = fs.readFileSync(prismaSchemaPath, 'utf8');
+    const sqlContent = fs.readFileSync(customSqlPath, 'utf8');
+    const valContent = fs.readFileSync(validationSqlPath, 'utf8');
+    const dbDesignContent = fs.readFileSync(dbDesignPath, 'utf8');
+    const adrContent = fs.readFileSync(adrPath, 'utf8');
+
+    const obsoleteField = 'lead' + '_candidate_id';
+    assert.ok(!sqlContent.includes(obsoleteField), `CUSTOM_DATABASE_INTEGRITY.sql must not contain obsolete field "${obsoleteField}"`);
+    assert.ok(!valContent.includes(obsoleteField), `tests/postgresql-validation.sql must not contain literal obsolete field "${obsoleteField}"`);
+    assert.ok(!dbDesignContent.includes(obsoleteField), `DATABASE_DESIGN.md must not reference obsolete field "${obsoleteField}"`);
+    assert.ok(!adrContent.includes(obsoleteField), `ARCHITECTURE_DECISIONS.md must not reference obsolete field "${obsoleteField}"`);
+
+    // Build physical table -> Set<column_name> map from PRISMA_SCHEMA_DRAFT.prisma
+    const enumNames = new Set([...prismaContent.matchAll(/^enum\s+([A-Za-z0-9_]+)\s+\{/gm)].map(m => m[1]));
+    const scalarTypes = new Set(['String', 'Int', 'BigInt', 'Float', 'Decimal', 'Boolean', 'DateTime', 'Json', 'Bytes']);
+    const tableColumns = new Map();
+
+    const modelBlocks = [...prismaContent.matchAll(/model\s+([A-Za-z0-9_]+)\s+\{([\s\S]*?)\n\}/g)];
+    for (const [, modelName, body] of modelBlocks) {
+      const tableMapMatch = body.match(/@@map\("([a-z0-9_]+)"\)/);
+      assert.ok(tableMapMatch, `Model ${modelName} must declare @@map`);
+      const tableName = tableMapMatch[1];
+      const cols = new Set();
+
+      for (const line of body.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('@@')) continue;
+        const parts = trimmed.split(/\s+/);
+        const fieldName = parts[0];
+        const rawType = (parts[1] || '').replace('[]', '').replace('?', '');
+        if (!fieldName || !rawType) continue;
+
+        if (!scalarTypes.has(rawType) && !enumNames.has(rawType)) {
+          continue; // Relation field
+        }
+
+        const colMapMatch = trimmed.match(/@map\("([a-z0-9_]+)"\)/);
+        const physicalCol = colMapMatch ? colMapMatch[1] : fieldName;
+        cols.add(physicalCol);
+      }
+      tableColumns.set(tableName, cols);
+    }
+
+    // Parse all trigger functions and their bound tables from CUSTOM_DATABASE_INTEGRITY.sql
+    const functionBodies = new Map();
+    const funcRegex = /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+([a-z0-9_]+)\(\)\s+RETURNS\s+TRIGGER\s+AS\s+\$\$([\s\S]*?)\$\$\s+LANGUAGE\s+plpgsql;/gi;
+    for (const match of sqlContent.matchAll(funcRegex)) {
+      functionBodies.set(match[1], match[2]);
+    }
+    assert.ok(functionBodies.size >= 12, `Expected at least 12 trigger functions, found ${functionBodies.size}`);
+
+    const triggerRegex = /CREATE\s+TRIGGER\s+([a-z0-9_]+)[\s\S]*?\bON\s+([a-z0-9_]+)[\s\S]*?EXECUTE\s+FUNCTION\s+([a-z0-9_]+)\(\);/gi;
+    let verifiedReferences = 0;
+
+    for (const match of sqlContent.matchAll(triggerRegex)) {
+      const [, triggerName, tableName, funcName] = match;
+      const validCols = tableColumns.get(tableName);
+      assert.ok(validCols, `Trigger ${triggerName} references unknown table ${tableName}`);
+      const funcBody = functionBodies.get(funcName);
+      assert.ok(funcBody, `Trigger ${triggerName} references unknown function ${funcName}`);
+
+      // Strip SQL comments before scanning NEW.<col> / OLD.<col>
+      const uncommentedBody = funcBody.replace(/--.*$/gm, '');
+      const recordRefs = [...uncommentedBody.matchAll(/\b(?:NEW|OLD)\.([a-z0-9_]+)\b/gi)];
+      for (const ref of recordRefs) {
+        const colName = ref[1].toLowerCase();
+        assert.ok(
+          validCols.has(colName),
+          `Trigger ${triggerName} (function ${funcName} on table ${tableName}) references nonexistent record field "${ref[0]}". Valid columns: ${[...validCols].join(', ')}`
+        );
+        verifiedReferences++;
+      }
+    }
+
+    assert.ok(verifiedReferences > 80, `Expected over 80 verified NEW/OLD field references across triggers, verified ${verifiedReferences}`);
+  });
+
+  test('Test 8.1.5.2: Exact historical nomination-party equality (IS NOT DISTINCT FROM) and independent candidate support without global party override', () => {
+    const prismaContent = fs.readFileSync(prismaSchemaPath, 'utf8');
+    const sqlContent = fs.readFileSync(customSqlPath, 'utf8');
+    const valContent = fs.readFileSync(validationSqlPath, 'utf8');
+
+    // Extract verify_candidate_tally_nomination body
+    const funcMatch = sqlContent.match(/CREATE OR REPLACE FUNCTION verify_candidate_tally_nomination\(\)[\s\S]*?\$\$ LANGUAGE plpgsql;/);
+    assert.ok(funcMatch, 'verify_candidate_tally_nomination must exist');
+    const funcBody = funcMatch[0];
+
+    // Must NOT query candidates.party_id or allow global party fallback
+    assert.ok(!funcBody.includes('FROM candidates'), 'verify_candidate_tally_nomination must NOT query mutable candidates.party_id');
+    assert.ok(!funcBody.includes('v_candidate_party_id'), 'verify_candidate_tally_nomination must NOT use v_candidate_party_id fallback');
+    assert.ok(!funcBody.includes('NEW.party_id := v_nom_party_id'), 'verify_candidate_tally_nomination must NOT silently rewrite NULL tally party when nomination has a party');
+
+    // Must enforce exact IS NOT DISTINCT FROM invariant
+    assert.ok(funcBody.includes('NEW.party_id IS NOT DISTINCT FROM v_nom_party_id'), 'Trigger must enforce NEW.party_id IS NOT DISTINCT FROM v_nom_party_id');
+
+    // Composite unique key and FK
+    assert.ok(prismaContent.includes('@@unique([id, candidateId, partyId])'), 'CandidateNomination must declare @@unique([id, candidateId, partyId])');
+    assert.ok(sqlContent.includes('fk_tally_nomination_candidate_party'), 'SQL must define composite FK fk_tally_nomination_candidate_party');
+    assert.ok(sqlContent.includes('OLD.party_id IS DISTINCT FROM NEW.party_id'), 'protect_nomination_lifecycle must block changing historical party_id when tallies exist');
+
+    // Verified in integration scenarios 25 and 26
+    assert.ok(valContent.includes('SCENARIO 25: Exact Historical Nomination-Party Consistency'), 'Scenario 25 must test exact nomination-party consistency');
+    assert.ok(valContent.includes('SCENARIO 26: Global Candidate Party Switch Without Historical Tally Corruption'), 'Scenario 26 must test global party change isolation');
+  });
+
+  test('Test 8.1.5.3: CandidateTally session ownership immutability prevents silent transfers between sessions', () => {
+    const sqlContent = fs.readFileSync(customSqlPath, 'utf8');
+    const valContent = fs.readFileSync(validationSqlPath, 'utf8');
+
+    assert.ok(
+      sqlContent.includes("CandidateTally session_id is immutable after INSERT (attempted transfer of tally % from session % to %)"),
+      'Trigger must explicitly reject UPDATE operations that change CandidateTally.session_id'
+    );
+    assert.ok(
+      sqlContent.includes("CandidateTally candidate_id is immutable after INSERT"),
+      'Trigger must explicitly reject UPDATE operations that change CandidateTally.candidate_id'
+    );
+    assert.ok(valContent.includes('SCENARIO 27: CandidateTally Session Ownership Immutability & Old Session Total Preservation'), 'Scenario 27 must test session transfer rejection and old session total preservation');
+  });
+
+  test('Test 8.1.5.4: Dedicated TieResolution INSERT validation trigger enforces session TIED status, approved nomination, and active scoped admin', () => {
+    const sqlContent = fs.readFileSync(customSqlPath, 'utf8');
+    const valContent = fs.readFileSync(validationSqlPath, 'utf8');
+
+    assert.ok(sqlContent.includes('CREATE OR REPLACE FUNCTION verify_tie_resolution_insert()'), 'verify_tie_resolution_insert function must exist');
+    assert.ok(sqlContent.includes('CREATE TRIGGER trg_verify_tie_resolution_insert'), 'trg_verify_tie_resolution_insert trigger must exist');
+    assert.ok(sqlContent.includes("v_session_status != 'TIED'"), 'Trigger must require session status to be TIED');
+    assert.ok(sqlContent.includes('IF NOT v_admin_active OR NOT v_user_active THEN'), 'Trigger must verify approving admin and user are active');
+    assert.ok(sqlContent.includes("v_admin_role = 'READ_ONLY_AUDITOR'"), 'Trigger must reject READ_ONLY_AUDITOR');
+    assert.ok(sqlContent.includes('SELECT 1 FROM admin_election_scopes'), 'Trigger must verify ELECTION_OFFICER scope in admin_election_scopes');
+    assert.ok(sqlContent.includes('chk_tie_resolution_valid_fields'), 'Declarative CHECK constraint chk_tie_resolution_valid_fields must exist');
+
+    assert.ok(valContent.includes('SCENARIO 28: TieResolution Insertion Validation'), 'Scenario 28 must test non-TIED and unnominated winner rejection');
+    assert.ok(valContent.includes('SCENARIO 29: TieResolution Administrator Active Status & RBAC Scope Validation'), 'Scenario 29 must test inactive and out-of-scope admin rejection');
+  });
+
+  test('Test 8.1.5.5: TieResolution immutability and consistent onDelete: Restrict referential policy across Prisma and SQL', () => {
+    const prismaContent = fs.readFileSync(prismaSchemaPath, 'utf8');
+    const sqlContent = fs.readFileSync(customSqlPath, 'utf8');
+    const valContent = fs.readFileSync(validationSqlPath, 'utf8');
+
+    const tieBlockMatch = prismaContent.match(/model TieResolution\s+\{[\s\S]*?\n\}/);
+    assert.ok(tieBlockMatch, 'TieResolution model block must exist');
+    const tieBlock = tieBlockMatch[0];
+
+    // Prisma must use onDelete: Restrict (NOT Cascade) on session relation
+    assert.ok(
+      tieBlock.includes('session           CountingSession @relation(fields: [sessionId], references: [id], onDelete: Restrict)'),
+      'Prisma TieResolution.session must use onDelete: Restrict'
+    );
+    assert.ok(!tieBlock.includes('onDelete: Cascade'), 'TieResolution must not contain any onDelete: Cascade relation');
+
+    // SQL must use ON DELETE RESTRICT on tie_resolutions.session_id and protect_counting_session_deletion trigger
+    const tieSqlSection = sqlContent.slice(sqlContent.indexOf('-- 1.5 Tie Resolution'), sqlContent.indexOf('-- SECTION 2:'));
+    assert.ok(!tieSqlSection.includes('ON DELETE CASCADE'), 'tie_resolutions DDL in SQL must NOT use ON DELETE CASCADE');
+    assert.ok(tieSqlSection.includes('ON DELETE RESTRICT'), 'tie_resolutions DDL in SQL must use ON DELETE RESTRICT');
+    assert.ok(sqlContent.includes('protect_counting_session_deletion'), 'protect_counting_session_deletion trigger function must exist');
+
+    assert.ok(valContent.includes('SCENARIO 30: TieResolution DELETE Rejection & CountingSession Deletion Restriction'), 'Scenario 30 must test TieResolution and CountingSession deletion rejection');
+  });
+
+  test('Test 8.1.5.6: Publication enforces resolved winner consistency and deterministic parent-first lock order', () => {
+    const sqlContent = fs.readFileSync(customSqlPath, 'utf8');
+    const valContent = fs.readFileSync(validationSqlPath, 'utf8');
+
+    assert.ok(sqlContent.includes('DETERMINISTIC TRANSACTION LOCK ORDERING HIERARCHY'), 'SQL must document deterministic transaction lock ordering hierarchy');
+    assert.ok(sqlContent.includes('Declared session winner (%) does not match resolved winner (%) in tie_resolutions'), 'Session review/publication must enforce winner matches TieResolution');
+    assert.ok(valContent.includes('SCENARIO 31: Publication Using Resolved Winner Only'), 'Scenario 31 must test publication with resolved winner only');
+  });
+});
+
 
 

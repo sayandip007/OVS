@@ -125,6 +125,21 @@ The OVS testing architecture guarantees that all electoral domain rules, constit
 - **Counting Round UPDATE Immutability & Re-synchronization**: Protects against tampering with `session_id` and `round_number` during `UPDATE`, prevents alteration of earlier rounds when later rounds exist, and re-evaluates `current_round` on `INSERT`, `UPDATE`, and `DELETE`.
 - **23 Comprehensive Scenarios**: Validates end-to-end relational workflows from geographic hierarchy and nomination lifecycle to concurrent voting privacy and certified result publication.
 
+### 3.12 Suite 12: Phase 8.1.5 Final SQL Trigger Corrections & Runtime Readiness Suite
+- **Static Trigger Record Field Verification (`tests/architectureConsistency.test.mjs`)**: Parses every `CREATE OR REPLACE FUNCTION ... RETURNS TRIGGER` in `CUSTOM_DATABASE_INTEGRITY.sql`, maps each trigger `ON <table_name>` to its physical columns in `PRISMA_SCHEMA_DRAFT.prisma`, and verifies that every `NEW.<field>` and `OLD.<field>` reference exists on the target table (preventing defects like the former nonexistent `NEW.lead_candidate_id` reference).
+- **Exact Historical Nomination-Party Equality (Scenarios 24–25)**: Verifies that changing `candidates.party_id` does not affect historical tallies, rejects tallies whose `party_id` mismatches `candidate_nominations.party_id` (even if it matches the candidate's new global party), rejects non-NULL `party_id` for independent nominations (`party_id IS NULL`), and blocks mutating `candidate_nominations.party_id` once dependent tallies exist.
+- **`CandidateTally.session_id` Immutability (Scenario 26)**: Verifies that `UPDATE candidate_tallies SET session_id = ...` is rejected with `P0001`, preventing silent cross-session tally movement and stale source-session totals.
+- **10-Rule Simulated `TieResolution` Insert Validation & `onDelete: Restrict` (Scenarios 27–31)**:
+  - Rejects `TieResolution` insertion when the session is not in `TIED` status.
+  - Rejects `TieResolution` insertion when `selected_winner_id` is not tied for the top vote total (`MAX(votes)`).
+  - Rejects `TieResolution` insertion when `approved_by_admin_id` is inactive, has role `READ_ONLY_AUDITOR`, violates `STATE_ADMIN` state jurisdiction, or lacks `admin_election_scopes` for `ELECTION_OFFICER`.
+  - Rejects `TieResolution` insertion with empty `justification_note` or invalid `resolution_method`.
+  - Rejects deleting or updating a `tie_resolutions` row or deleting a `counting_sessions` row that has tie-resolution evidence (`ON DELETE RESTRICT` + `trg_protect_counting_session_deletion`).
+  - Rejects changing `winner_candidate_id` during publication away from `tie_resolutions.selected_winner_id`.
+- **Clear Separation of Static vs. Live PostgreSQL Verification**:
+  - `npm test` runs Node.js domain unit tests and static SQL/Prisma/trigger architecture consistency checks (`tests/architectureConsistency.test.mjs`).
+  - `tests/postgresql-validation.sql` (31 scenarios) requires a live PostgreSQL 16+ server (`psql -v ON_ERROR_STOP=1 -f tests/postgresql-validation.sql`) and is never claimed as executed when only static Node.js tests have run.
+
 ---
 
 ## 4. CI/CD Pipeline Integration
@@ -135,15 +150,19 @@ The automated GitHub Actions workflow (`.github/workflows/ci.yml`) executes the 
 npm run lint          # ESLint across all JS/TS files
 npm run typecheck     # TypeScript compiler validation (tsc --noEmit)
 
-# 2. Domain, Architecture & Unit Tests
+# 2. Domain, Architecture & Unit Tests (Static Architecture + Domain Logic)
 npm test              # node:test suites (electionArchitecture.test.mjs + architectureConsistency.test.mjs)
 
-# 3. Backend API & Database Tests (PostgreSQL service container)
+# 3. Live PostgreSQL 16+ Trigger & Constraint Integration Suite (31 Scenarios)
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/postgresql-validation.sql
+
+# 4. Backend API & Database Tests (PostgreSQL service container)
 npm run test:backend  # Supertest integration test suite
 
-# 4. Production Build Verification
+# 5. Production Build Verification
 npm run build         # Vite production bundle compilation
 
-# 5. Real Browser E2E Test Suite
+# 6. Real Browser E2E Test Suite
 npm run test:e2e      # 12 Playwright Chromium browser specs
 ```
+

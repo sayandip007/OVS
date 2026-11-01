@@ -778,9 +778,25 @@ $$;
 -- ============================================================================
 SAVEPOINT s22_tie_resolution;
 
--- Initialize tied session
+-- Assign election scope to Returning Officer bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb for TEST_ELEC_LS
+INSERT INTO admin_election_scopes (id, admin_user_id, election_id, assigned_at)
+VALUES ('eeeeeeee-0000-0000-0000-000000000001', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'TEST_ELEC_LS', NOW());
+
+-- Initialize tied session in DRAFT first (per initial state invariant)
 INSERT INTO counting_sessions (id, election_id, constituency_type, parliamentary_constituency_id, assembly_constituency_id, status, is_published, total_voters, total_configured_rounds, current_round, total_counted_votes, nota_votes, rejected_votes, victory_margin, created_at, updated_at)
-VALUES ('SESS_TIED_1', 'TEST_ELEC_LS', 'PARLIAMENTARY', 'TEST_PC_UNMAPPED', NULL, 'COUNTING_IN_PROGRESS', FALSE, 40000, 1, 1, 2000, 0, 0, 0, NOW(), NOW());
+VALUES ('SESS_TIED_1', 'TEST_ELEC_LS', 'PARLIAMENTARY', 'TEST_PC_UNMAPPED', NULL, 'DRAFT', FALSE, 40000, 1, 0, 0, 0, 0, 0, NOW(), NOW());
+
+-- Transition to COUNTING_IN_PROGRESS and record tied tallies (1000 each for TEST_CAND_1 and TEST_CAND_IND) and Round 1
+UPDATE counting_sessions SET status = 'COUNTING_IN_PROGRESS' WHERE id = 'SESS_TIED_1';
+
+INSERT INTO candidate_tallies (id, session_id, candidate_id, nomination_id, party_id, votes, vote_share_percentage, created_at, updated_at)
+VALUES ('cccccccc-1111-1111-1111-111111111111', 'SESS_TIED_1', 'TEST_CAND_1', '66666666-6666-6666-6666-666666666666', 'TEST_PARTY_1', 1000, 50.00, NOW(), NOW());
+
+INSERT INTO candidate_tallies (id, session_id, candidate_id, nomination_id, party_id, votes, vote_share_percentage, created_at, updated_at)
+VALUES ('cccccccc-2222-2222-2222-222222222222', 'SESS_TIED_1', 'TEST_CAND_IND', '55555555-aaaa-bbbb-cccc-555555555555', NULL, 1000, 50.00, NOW(), NOW());
+
+INSERT INTO counting_rounds (id, session_id, round_number, round_votes, cumulative_votes, leading_candidate_id, lead_margin, processed_at, processed_by_admin_id)
+VALUES ('c4444444-4444-4444-4444-444444444444', 'SESS_TIED_1', 1, 2000, 2000, 'TEST_CAND_1', 0, NOW(), 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
 
 -- Transition session to TIED
 UPDATE counting_sessions SET status = 'TIED' WHERE id = 'SESS_TIED_1';
@@ -811,20 +827,20 @@ BEGIN
 END;
 $$;
 
--- Insert verified tie resolution evidence per Section 102 RPA 1951
+-- Insert verified simulated tie resolution evidence
 INSERT INTO tie_resolutions (id, session_id, decision, selected_winner_id, resolution_method, justification_note, approved_by_admin_id, resolved_at)
 VALUES (
   'dddddddd-dddd-dddd-dddd-dddddddddddd',
   'SESS_TIED_1',
   'WINNER_SELECTED_BY_LOT',
   'TEST_CAND_1',
-  'DRAW_OF_LOTS_RO_SECTION_102_RPA_1951',
-  'Draw of lots conducted by Returning Officer in presence of contesting candidate agents per Section 102 of Representation of the People Act 1951.',
+  'SIMULATED_DRAW_OF_LOTS',
+  'Simulated educational draw of lots conducted by Returning Officer in presence of contesting candidate agents.',
   'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
   NOW()
 );
 
--- Attempt to modify tie_resolutions entry (Must Fail - Immutable legal record)
+-- Attempt to modify tie_resolutions entry (Must Fail - Immutable audit record)
 DO $$
 DECLARE
   v_caught_expected_error BOOLEAN := FALSE;
@@ -833,7 +849,7 @@ DECLARE
 BEGIN
   BEGIN
     UPDATE tie_resolutions 
-    SET decision = 'MODIFIED_DECISION' 
+    SET decision = 'SIMULATED_DRAW_WINNER_DECLARED' 
     WHERE id = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
   EXCEPTION
     WHEN SQLSTATE 'P0001' THEN
@@ -852,7 +868,7 @@ $$;
 
 -- Transition from TIED to RESULT_READY_FOR_REVIEW with matching winner (Valid)
 UPDATE counting_sessions 
-SET status = 'RESULT_READY_FOR_REVIEW', winner_candidate_id = 'TEST_CAND_1'
+SET status = 'RESULT_READY_FOR_REVIEW', winner_candidate_id = 'TEST_CAND_1', runner_up_candidate_id = 'TEST_CAND_IND'
 WHERE id = 'SESS_TIED_1';
 
 RAISE NOTICE 'SUCCESS: Scenario 22 passed - TIED session resolved and transitioned with verified database evidence.';
@@ -896,7 +912,519 @@ BEGIN
 END;
 $$;
 
+-- ============================================================================
+-- SCENARIO 24: Obsolete Round Leader Column Absence & Valid leading_candidate_id Check
+-- ============================================================================
+SAVEPOINT s24_leading_candidate_id_verification;
+
+-- 24a: Verify via information_schema and pg_proc that leading_candidate_id exists and obsolete column is absent
+DO $$
+DECLARE
+  v_valid_col_count INT;
+  v_obsolete_col_count INT;
+  v_obsolete_proc_count INT;
+BEGIN
+  SELECT COUNT(*) INTO v_valid_col_count
+  FROM information_schema.columns
+  WHERE table_name = 'counting_rounds' AND column_name = 'leading_candidate_id';
+
+  SELECT COUNT(*) INTO v_obsolete_col_count
+  FROM information_schema.columns
+  WHERE table_name = 'counting_rounds' AND column_name = ('lead' || '_candidate_id');
+
+  SELECT COUNT(*) INTO v_obsolete_proc_count
+  FROM pg_proc
+  WHERE proname = 'verify_counting_round_progression'
+    AND prosrc LIKE '%' || 'lead' || '_candidate_id%';
+
+  IF v_valid_col_count != 1 OR v_obsolete_col_count != 0 OR v_obsolete_proc_count != 0 THEN
+    RAISE EXCEPTION 'Schema/trigger field audit failed: valid=%, obsolete_col=%, obsolete_proc=%',
+      v_valid_col_count, v_obsolete_col_count, v_obsolete_proc_count;
+  END IF;
+
+  RAISE NOTICE 'SUCCESS: Scenario 24a passed - leading_candidate_id verified and obsolete field reference absent.';
+END;
+$$;
+
+-- 24b: Verify round leader validation rejects unapproved candidate on leading_candidate_id
+INSERT INTO counting_sessions (id, election_id, constituency_type, parliamentary_constituency_id, assembly_constituency_id, status, is_published, total_voters, total_configured_rounds, current_round, total_counted_votes, nota_votes, rejected_votes, victory_margin, created_at, updated_at)
+VALUES ('SESS_PC3_ACTIVE', 'TEST_ELEC_LS', 'PARLIAMENTARY', 'TEST_PC_THIRD', NULL, 'DRAFT', FALSE, 30000, 2, 0, 0, 0, 0, 0, NOW(), NOW());
+
+UPDATE counting_sessions SET status = 'COUNTING_IN_PROGRESS' WHERE id = 'SESS_PC3_ACTIVE';
+
+DO $$
+DECLARE
+  v_caught_expected_error BOOLEAN := FALSE;
+  v_err_sqlstate TEXT;
+  v_err_msg TEXT;
+BEGIN
+  BEGIN
+    -- TEST_CAND_1 does NOT have an approved nomination in TEST_PC_THIRD
+    INSERT INTO counting_rounds (id, session_id, round_number, round_votes, cumulative_votes, leading_candidate_id, lead_margin, processed_at, processed_by_admin_id)
+    VALUES ('c5555555-5555-5555-5555-555555555555', 'SESS_PC3_ACTIVE', 1, 500, 500, 'TEST_CAND_1', 50, NOW(), 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
+  EXCEPTION
+    WHEN SQLSTATE 'P0001' THEN
+      v_caught_expected_error := TRUE;
+      GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      RAISE NOTICE 'SUCCESS: Unapproved round leader on leading_candidate_id rejected [%]: %', v_err_sqlstate, v_err_msg;
+    WHEN OTHERS THEN
+      RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 24b: Caught % (%)', SQLERRM, SQLSTATE;
+  END;
+
+  IF NOT v_caught_expected_error THEN
+    RAISE EXCEPTION 'ASSERTION FAILED: Unapproved round leader on leading_candidate_id succeeded unexpectedly!';
+  END IF;
+END;
+$$;
+
+-- ============================================================================
+-- SCENARIO 25: Exact Historical Nomination-Party Consistency (IS NOT DISTINCT FROM)
+-- ============================================================================
+SAVEPOINT s25_historical_nomination_party;
+
+-- Create second political party TEST_PARTY_2
+INSERT INTO political_parties (id, name, abbreviation, party_type, symbol_name, symbol_url, established_year, headquarters, status, metadata_source, created_at, updated_at)
+VALUES ('TEST_PARTY_2', 'Second Regional Party', 'SRP', 'STATE', 'Tree', 'https://example.com/tree.png', 1995, 'Test Capital', 'ACTIVE', 'DEMO_SAMPLE', NOW(), NOW());
+
+-- Nominate TEST_CAND_2 in TEST_PC_THIRD under historical party TEST_PARTY_1
+INSERT INTO candidate_nominations (id, candidate_id, party_id, election_id, constituency_type, parliamentary_constituency_id, assembly_constituency_id, nomination_date, status, scrutiny_note, created_at, updated_at)
+VALUES ('77777777-aaaa-bbbb-cccc-777777777777', 'TEST_CAND_2', 'TEST_PARTY_1', 'TEST_ELEC_LS', 'PARLIAMENTARY', 'TEST_PC_THIRD', NULL, NOW(), 'APPROVED', 'Party 1 nomination', NOW(), NOW());
+
+-- Nominate TEST_CAND_IND in TEST_PC_THIRD as INDEPENDENT (party_id IS NULL)
+INSERT INTO candidate_nominations (id, candidate_id, party_id, election_id, constituency_type, parliamentary_constituency_id, assembly_constituency_id, nomination_date, status, scrutiny_note, created_at, updated_at)
+VALUES ('77777777-dddd-eeee-ffff-777777777777', 'TEST_CAND_IND', NULL, 'TEST_ELEC_LS', 'PARLIAMENTARY', 'TEST_PC_THIRD', NULL, NOW(), 'APPROVED', 'Independent nomination in PC 3', NOW(), NOW());
+
+-- 25a: Attempt to insert tally for TEST_CAND_2 with mismatched party TEST_PARTY_2 (Must Fail)
+DO $$
+DECLARE
+  v_caught_expected_error BOOLEAN := FALSE;
+  v_err_sqlstate TEXT;
+  v_err_msg TEXT;
+BEGIN
+  BEGIN
+    INSERT INTO candidate_tallies (id, session_id, candidate_id, nomination_id, party_id, votes, vote_share_percentage, created_at, updated_at)
+    VALUES ('dddddddd-1111-1111-1111-111111111111', 'SESS_PC3_ACTIVE', 'TEST_CAND_2', '77777777-aaaa-bbbb-cccc-777777777777', 'TEST_PARTY_2', 400, 50.00, NOW(), NOW());
+  EXCEPTION
+    WHEN SQLSTATE 'P0001' OR foreign_key_violation THEN
+      v_caught_expected_error := TRUE;
+      GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      RAISE NOTICE 'SUCCESS: Historical nomination party A with tally party B rejected [%]: %', v_err_sqlstate, v_err_msg;
+    WHEN OTHERS THEN
+      RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 25a: Caught % (%)', SQLERRM, SQLSTATE;
+  END;
+
+  IF NOT v_caught_expected_error THEN
+    RAISE EXCEPTION 'ASSERTION FAILED: Tally with mismatched party B succeeded unexpectedly!';
+  END IF;
+END;
+$$;
+
+-- 25b: Attempt to insert tally for Independent candidate TEST_CAND_IND with non-NULL party (Must Fail)
+DO $$
+DECLARE
+  v_caught_expected_error BOOLEAN := FALSE;
+  v_err_sqlstate TEXT;
+  v_err_msg TEXT;
+BEGIN
+  BEGIN
+    INSERT INTO candidate_tallies (id, session_id, candidate_id, nomination_id, party_id, votes, vote_share_percentage, created_at, updated_at)
+    VALUES ('dddddddd-2222-2222-2222-222222222222', 'SESS_PC3_ACTIVE', 'TEST_CAND_IND', '77777777-dddd-eeee-ffff-777777777777', 'TEST_PARTY_1', 300, 50.00, NOW(), NOW());
+  EXCEPTION
+    WHEN SQLSTATE 'P0001' THEN
+      v_caught_expected_error := TRUE;
+      GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      RAISE NOTICE 'SUCCESS: Independent nomination with non-NULL tally party rejected [%]: %', v_err_sqlstate, v_err_msg;
+    WHEN OTHERS THEN
+      RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 25b: Caught % (%)', SQLERRM, SQLSTATE;
+  END;
+
+  IF NOT v_caught_expected_error THEN
+    RAISE EXCEPTION 'ASSERTION FAILED: Independent nomination accepted non-NULL tally party unexpectedly!';
+  END IF;
+END;
+$$;
+
+-- 25c: Insert valid tally for TEST_CAND_2 with matching party TEST_PARTY_1 and valid independent tally with NULL party
+INSERT INTO candidate_tallies (id, session_id, candidate_id, nomination_id, party_id, votes, vote_share_percentage, created_at, updated_at)
+VALUES ('dddddddd-3333-3333-3333-333333333333', 'SESS_PC3_ACTIVE', 'TEST_CAND_2', '77777777-aaaa-bbbb-cccc-777777777777', 'TEST_PARTY_1', 500, 62.50, NOW(), NOW());
+
+INSERT INTO candidate_tallies (id, session_id, candidate_id, nomination_id, party_id, votes, vote_share_percentage, created_at, updated_at)
+VALUES ('dddddddd-4444-4444-4444-444444444444', 'SESS_PC3_ACTIVE', 'TEST_CAND_IND', '77777777-dddd-eeee-ffff-777777777777', NULL, 300, 37.50, NOW(), NOW());
+
+RAISE NOTICE 'SUCCESS: Scenario 25 passed - Exact nomination-party and independent NULL tally party verified.';
+
+-- ============================================================================
+-- SCENARIO 26: Global Candidate Party Switch Without Historical Tally Corruption
+-- ============================================================================
+SAVEPOINT s26_global_party_change;
+
+-- Candidate TEST_CAND_2 changes current global party from TEST_PARTY_1 to TEST_PARTY_2 for future elections
+UPDATE candidates SET party_id = 'TEST_PARTY_2' WHERE id = 'TEST_CAND_2';
+
+-- Verify historical tally in SESS_PC3_ACTIVE still retains historical nomination party TEST_PARTY_1
+DO $$
+DECLARE
+  v_hist_party VARCHAR(50);
+BEGIN
+  SELECT party_id INTO v_hist_party
+  FROM candidate_tallies
+  WHERE id = 'dddddddd-3333-3333-3333-333333333333';
+
+  IF v_hist_party != 'TEST_PARTY_1' THEN
+    RAISE EXCEPTION 'Historical tally party corrupted after candidate global party switch: expected TEST_PARTY_1, found %', v_hist_party;
+  END IF;
+END;
+$$;
+
+-- Attempt to update historical tally in SESS_PC3_ACTIVE to use candidate's new global party TEST_PARTY_2 (Must Fail!)
+DO $$
+DECLARE
+  v_caught_expected_error BOOLEAN := FALSE;
+  v_err_sqlstate TEXT;
+  v_err_msg TEXT;
+BEGIN
+  BEGIN
+    UPDATE candidate_tallies
+    SET party_id = 'TEST_PARTY_2'
+    WHERE id = 'dddddddd-3333-3333-3333-333333333333';
+  EXCEPTION
+    WHEN SQLSTATE 'P0001' OR foreign_key_violation THEN
+      v_caught_expected_error := TRUE;
+      GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      RAISE NOTICE 'SUCCESS: Override of historical nomination party by new global party rejected [%]: %', v_err_sqlstate, v_err_msg;
+    WHEN OTHERS THEN
+      RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 26: Caught % (%)', SQLERRM, SQLSTATE;
+  END;
+
+  IF NOT v_caught_expected_error THEN
+    RAISE EXCEPTION 'ASSERTION FAILED: Candidate current global party overrode historical nomination party!';
+  END IF;
+END;
+$$;
+
+RAISE NOTICE 'SUCCESS: Scenario 26 passed - Global candidate party change preserved historical nomination party integrity.';
+
+-- ============================================================================
+-- SCENARIO 27: CandidateTally Session Ownership Immutability & Old Session Total Preservation
+-- ============================================================================
+SAVEPOINT s27_tally_session_immutability;
+
+-- Create a second active session in a new election to test session transfer rejection
+INSERT INTO elections (id, name, type, year, state_id, status, polling_start_date, polling_end_date, counting_date, result_date, demo_sandbox_mode, description, metadata_source, created_at, updated_at)
+VALUES ('TEST_ELEC_LS_2034', 'Lok Sabha 2034', 'LOK_SABHA', 2034, NULL, 'COUNTING', CURRENT_DATE + 1800, CURRENT_DATE + 1800, CURRENT_DATE + 1802, CURRENT_DATE + 1803, 'ACTIVE_SIMULATED', 'Future Election', 'DEMO_SAMPLE', NOW(), NOW());
+
+INSERT INTO election_constituencies (id, election_id, constituency_type, parliamentary_constituency_id, assembly_constituency_id, created_at)
+VALUES ('88888888-1111-2222-3333-888888888888', 'TEST_ELEC_LS_2034', 'PARLIAMENTARY', 'TEST_PC_THIRD', NULL, NOW());
+
+INSERT INTO counting_sessions (id, election_id, constituency_type, parliamentary_constituency_id, assembly_constituency_id, status, is_published, total_voters, total_configured_rounds, current_round, total_counted_votes, nota_votes, rejected_votes, victory_margin, created_at, updated_at)
+VALUES ('SESS_2034_PC3', 'TEST_ELEC_LS_2034', 'PARLIAMENTARY', 'TEST_PC_THIRD', NULL, 'DRAFT', FALSE, 32000, 2, 0, 0, 0, 0, 0, NOW(), NOW());
+
+UPDATE counting_sessions SET status = 'COUNTING_IN_PROGRESS' WHERE id = 'SESS_2034_PC3';
+
+-- Attempt to transfer tally dddddddd-3333-3333-3333-333333333333 from SESS_PC3_ACTIVE to SESS_2034_PC3 (Must Fail)
+DO $$
+DECLARE
+  v_caught_expected_error BOOLEAN := FALSE;
+  v_err_sqlstate TEXT;
+  v_err_msg TEXT;
+BEGIN
+  BEGIN
+    UPDATE candidate_tallies
+    SET session_id = 'SESS_2034_PC3'
+    WHERE id = 'dddddddd-3333-3333-3333-333333333333';
+  EXCEPTION
+    WHEN SQLSTATE 'P0001' THEN
+      v_caught_expected_error := TRUE;
+      GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      RAISE NOTICE 'SUCCESS: CandidateTally session transfer rejected [%]: %', v_err_sqlstate, v_err_msg;
+    WHEN OTHERS THEN
+      RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 27: Caught % (%)', SQLERRM, SQLSTATE;
+  END;
+
+  IF NOT v_caught_expected_error THEN
+    RAISE EXCEPTION 'ASSERTION FAILED: CandidateTally transferred between sessions unexpectedly!';
+  END IF;
+END;
+$$;
+
+-- Verify old session SESS_PC3_ACTIVE total_counted_votes remains unchanged at 800 (500 + 300)
+DO $$
+DECLARE
+  v_old_total INT;
+  v_new_total INT;
+BEGIN
+  SELECT total_counted_votes INTO v_old_total FROM counting_sessions WHERE id = 'SESS_PC3_ACTIVE';
+  SELECT total_counted_votes INTO v_new_total FROM counting_sessions WHERE id = 'SESS_2034_PC3';
+
+  IF v_old_total != 800 OR v_new_total != 0 THEN
+    RAISE EXCEPTION 'Session totals corrupted after rejected transfer: old_session=%, new_session=%', v_old_total, v_new_total;
+  END IF;
+
+  RAISE NOTICE 'SUCCESS: Scenario 27 passed - Session ownership immutable and old session total unchanged (%).', v_old_total;
+END;
+$$;
+
+-- ============================================================================
+-- SCENARIO 28: TieResolution Insertion Validation (Non-TIED Session & Unapproved Winner)
+-- ============================================================================
+SAVEPOINT s28_tie_resolution_validation;
+
+-- 28a: Attempt TieResolution insertion into non-TIED session SESS_PC3_ACTIVE (status = COUNTING_IN_PROGRESS) (Must Fail)
+DO $$
+DECLARE
+  v_caught_expected_error BOOLEAN := FALSE;
+  v_err_sqlstate TEXT;
+  v_err_msg TEXT;
+BEGIN
+  BEGIN
+    INSERT INTO tie_resolutions (id, session_id, decision, selected_winner_id, resolution_method, justification_note, approved_by_admin_id, resolved_at)
+    VALUES (
+      'dddddddd-1111-2222-3333-444444444444',
+      'SESS_PC3_ACTIVE',
+      'WINNER_SELECTED_BY_LOT',
+      'TEST_CAND_2',
+      'SIMULATED_DRAW_OF_LOTS',
+      'Attempted resolution on a session that is not in TIED status.',
+      'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+      NOW()
+    );
+  EXCEPTION
+    WHEN SQLSTATE 'P0001' THEN
+      v_caught_expected_error := TRUE;
+      GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      RAISE NOTICE 'SUCCESS: TieResolution into non-TIED session rejected [%]: %', v_err_sqlstate, v_err_msg;
+    WHEN OTHERS THEN
+      RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 28a: Caught % (%)', SQLERRM, SQLSTATE;
+  END;
+
+  IF NOT v_caught_expected_error THEN
+    RAISE EXCEPTION 'ASSERTION FAILED: TieResolution inserted into non-TIED session unexpectedly!';
+  END IF;
+END;
+$$;
+
+-- Make SESS_PC3_ACTIVE a tied session (update TEST_CAND_IND tally to 500 to tie TEST_CAND_2 at 500)
+UPDATE candidate_tallies SET votes = 500, vote_share_percentage = 50.00 WHERE id = 'dddddddd-4444-4444-4444-444444444444';
+UPDATE candidate_tallies SET vote_share_percentage = 50.00 WHERE id = 'dddddddd-3333-3333-3333-333333333333';
+INSERT INTO counting_rounds (id, session_id, round_number, round_votes, cumulative_votes, leading_candidate_id, lead_margin, processed_at, processed_by_admin_id)
+VALUES ('c6666666-6666-6666-6666-666666666666', 'SESS_PC3_ACTIVE', 1, 500, 500, 'TEST_CAND_2', 0, NOW(), 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
+INSERT INTO counting_rounds (id, session_id, round_number, round_votes, cumulative_votes, leading_candidate_id, lead_margin, processed_at, processed_by_admin_id)
+VALUES ('c7777777-7777-7777-7777-777777777777', 'SESS_PC3_ACTIVE', 2, 500, 1000, 'TEST_CAND_2', 0, NOW(), 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
+UPDATE counting_sessions SET status = 'TIED' WHERE id = 'SESS_PC3_ACTIVE';
+
+-- 28b: Attempt TieResolution with selected_winner_id TEST_CAND_1 who lacks an APPROVED nomination in TEST_PC_THIRD (Must Fail)
+DO $$
+DECLARE
+  v_caught_expected_error BOOLEAN := FALSE;
+  v_err_sqlstate TEXT;
+  v_err_msg TEXT;
+BEGIN
+  BEGIN
+    INSERT INTO tie_resolutions (id, session_id, decision, selected_winner_id, resolution_method, justification_note, approved_by_admin_id, resolved_at)
+    VALUES (
+      'dddddddd-2222-3333-4444-555555555555',
+      'SESS_PC3_ACTIVE',
+      'WINNER_SELECTED_BY_LOT',
+      'TEST_CAND_1',
+      'SIMULATED_DRAW_OF_LOTS',
+      'Attempted resolution selecting candidate without approved nomination in constituency.',
+      'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+      NOW()
+    );
+  EXCEPTION
+    WHEN SQLSTATE 'P0001' THEN
+      v_caught_expected_error := TRUE;
+      GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      RAISE NOTICE 'SUCCESS: TieResolution with unnominated winner rejected [%]: %', v_err_sqlstate, v_err_msg;
+    WHEN OTHERS THEN
+      RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 28b: Caught % (%)', SQLERRM, SQLSTATE;
+  END;
+
+  IF NOT v_caught_expected_error THEN
+    RAISE EXCEPTION 'ASSERTION FAILED: TieResolution accepted winner without approved nomination!';
+  END IF;
+END;
+$$;
+
+-- ============================================================================
+-- SCENARIO 29: TieResolution Administrator Active Status & RBAC Scope Validation
+-- ============================================================================
+SAVEPOINT s29_tie_resolution_admin_scope;
+
+-- Create inactive admin user and out-of-scope admin user
+INSERT INTO users (id, user_type, identifier, password_hash, is_active, failed_login_attempts, created_at, updated_at)
+VALUES ('uuuuuuuu-2222-2222-2222-222222222222', 'ADMIN', 'ECI-INACTIVE-002', 'argon2id$mockhash', TRUE, 0, NOW(), NOW());
+
+INSERT INTO admin_users (id, user_id, officer_code, full_name, designation, role, assigned_state_id, is_active, created_at, updated_at)
+VALUES ('bbbbbbbb-2222-2222-2222-222222222222', 'uuuuuuuu-2222-2222-2222-222222222222', 'ECI-INACTIVE-002', 'Inactive Officer', 'Officer', 'SUPER_ADMIN', NULL, FALSE, NOW(), NOW());
+
+INSERT INTO users (id, user_type, identifier, password_hash, is_active, failed_login_attempts, created_at, updated_at)
+VALUES ('uuuuuuuu-3333-3333-3333-333333333333', 'ADMIN', 'ECI-OUTSTATE-003', 'argon2id$mockhash', TRUE, 0, NOW(), NOW());
+
+INSERT INTO admin_users (id, user_id, officer_code, full_name, designation, role, assigned_state_id, is_active, created_at, updated_at)
+VALUES ('bbbbbbbb-3333-3333-3333-333333333333', 'uuuuuuuu-3333-3333-3333-333333333333', 'ECI-OUTSTATE-003', 'Other State Admin', 'State CEO', 'STATE_ADMIN', 'TEST_ST_2', TRUE, NOW(), NOW());
+
+-- 29a: Attempt TieResolution with inactive administrator (Must Fail)
+DO $$
+DECLARE
+  v_caught_expected_error BOOLEAN := FALSE;
+  v_err_sqlstate TEXT;
+  v_err_msg TEXT;
+BEGIN
+  BEGIN
+    INSERT INTO tie_resolutions (id, session_id, decision, selected_winner_id, resolution_method, justification_note, approved_by_admin_id, resolved_at)
+    VALUES (
+      'dddddddd-3333-4444-5555-666666666666',
+      'SESS_PC3_ACTIVE',
+      'WINNER_SELECTED_BY_LOT',
+      'TEST_CAND_2',
+      'SIMULATED_DRAW_OF_LOTS',
+      'Attempted resolution by an inactive administrator account.',
+      'bbbbbbbb-2222-2222-2222-222222222222',
+      NOW()
+    );
+  EXCEPTION
+    WHEN SQLSTATE 'P0001' THEN
+      v_caught_expected_error := TRUE;
+      GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      RAISE NOTICE 'SUCCESS: TieResolution by inactive administrator rejected [%]: %', v_err_sqlstate, v_err_msg;
+    WHEN OTHERS THEN
+      RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 29a: Caught % (%)', SQLERRM, SQLSTATE;
+  END;
+
+  IF NOT v_caught_expected_error THEN
+    RAISE EXCEPTION 'ASSERTION FAILED: TieResolution approved by inactive administrator unexpectedly!';
+  END IF;
+END;
+$$;
+
+-- 29b: Attempt TieResolution with out-of-scope STATE_ADMIN (assigned to TEST_ST_2, constituency in TEST_ST) (Must Fail)
+DO $$
+DECLARE
+  v_caught_expected_error BOOLEAN := FALSE;
+  v_err_sqlstate TEXT;
+  v_err_msg TEXT;
+BEGIN
+  BEGIN
+    INSERT INTO tie_resolutions (id, session_id, decision, selected_winner_id, resolution_method, justification_note, approved_by_admin_id, resolved_at)
+    VALUES (
+      'dddddddd-4444-5555-6666-777777777777',
+      'SESS_PC3_ACTIVE',
+      'WINNER_SELECTED_BY_LOT',
+      'TEST_CAND_2',
+      'SIMULATED_DRAW_OF_LOTS',
+      'Attempted resolution by an out-of-scope state administrator.',
+      'bbbbbbbb-3333-3333-3333-333333333333',
+      NOW()
+    );
+  EXCEPTION
+    WHEN SQLSTATE 'P0001' THEN
+      v_caught_expected_error := TRUE;
+      GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      RAISE NOTICE 'SUCCESS: TieResolution by out-of-scope administrator rejected [%]: %', v_err_sqlstate, v_err_msg;
+    WHEN OTHERS THEN
+      RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 29b: Caught % (%)', SQLERRM, SQLSTATE;
+  END;
+
+  IF NOT v_caught_expected_error THEN
+    RAISE EXCEPTION 'ASSERTION FAILED: TieResolution approved by out-of-scope administrator unexpectedly!';
+  END IF;
+END;
+$$;
+
+-- ============================================================================
+-- SCENARIO 30: TieResolution DELETE Rejection & CountingSession Deletion Restriction
+-- ============================================================================
+SAVEPOINT s30_tie_deletion_restriction;
+
+-- 30a: Attempt to DELETE immutable tie_resolutions row dddddddd-dddd-dddd-dddd-dddddddddddd (Must Fail)
+DO $$
+DECLARE
+  v_caught_expected_error BOOLEAN := FALSE;
+  v_err_sqlstate TEXT;
+  v_err_msg TEXT;
+BEGIN
+  BEGIN
+    DELETE FROM tie_resolutions WHERE id = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
+  EXCEPTION
+    WHEN SQLSTATE 'P0001' THEN
+      v_caught_expected_error := TRUE;
+      GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      RAISE NOTICE 'SUCCESS: Deletion of tie_resolutions blocked by immutability trigger [%]: %', v_err_sqlstate, v_err_msg;
+    WHEN OTHERS THEN
+      RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 30a: Caught % (%)', SQLERRM, SQLSTATE;
+  END;
+
+  IF NOT v_caught_expected_error THEN
+    RAISE EXCEPTION 'ASSERTION FAILED: Immutable tie_resolutions record deleted unexpectedly!';
+  END IF;
+END;
+$$;
+
+-- 30b: Attempt to DELETE CountingSession SESS_TIED_1 that has immutable tie_resolutions evidence (Must Fail)
+DO $$
+DECLARE
+  v_caught_expected_error BOOLEAN := FALSE;
+  v_err_sqlstate TEXT;
+  v_err_msg TEXT;
+BEGIN
+  BEGIN
+    DELETE FROM counting_sessions WHERE id = 'SESS_TIED_1';
+  EXCEPTION
+    WHEN SQLSTATE 'P0001' OR foreign_key_violation THEN
+      v_caught_expected_error := TRUE;
+      GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      RAISE NOTICE 'SUCCESS: CountingSession deletion with tie-resolution evidence rejected [%]: %', v_err_sqlstate, v_err_msg;
+    WHEN OTHERS THEN
+      RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 30b: Caught % (%)', SQLERRM, SQLSTATE;
+  END;
+
+  IF NOT v_caught_expected_error THEN
+    RAISE EXCEPTION 'ASSERTION FAILED: CountingSession with tie-resolution evidence deleted unexpectedly!';
+  END IF;
+END;
+$$;
+
+-- ============================================================================
+-- SCENARIO 31: Publication Using Resolved Winner Only
+-- ============================================================================
+SAVEPOINT s31_publication_resolved_winner_only;
+
+-- 31a: Attempt to publish SESS_TIED_1 with winner TEST_CAND_IND instead of resolved winner TEST_CAND_1 (Must Fail)
+DO $$
+DECLARE
+  v_caught_expected_error BOOLEAN := FALSE;
+  v_err_sqlstate TEXT;
+  v_err_msg TEXT;
+BEGIN
+  BEGIN
+    UPDATE counting_sessions
+    SET status = 'PUBLISHED', is_published = TRUE, winner_candidate_id = 'TEST_CAND_IND', runner_up_candidate_id = 'TEST_CAND_1', published_by_admin_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', published_at = NOW()
+    WHERE id = 'SESS_TIED_1';
+  EXCEPTION
+    WHEN SQLSTATE 'P0001' THEN
+      v_caught_expected_error := TRUE;
+      GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      RAISE NOTICE 'SUCCESS: Publication with non-resolved winner rejected [%]: %', v_err_sqlstate, v_err_msg;
+    WHEN OTHERS THEN
+      RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 31a: Caught % (%)', SQLERRM, SQLSTATE;
+  END;
+
+  IF NOT v_caught_expected_error THEN
+    RAISE EXCEPTION 'ASSERTION FAILED: Tied session published with winner different from TieResolution!';
+  END IF;
+END;
+$$;
+
+-- 31b: Publish SESS_TIED_1 with exact resolved winner TEST_CAND_1 (Valid)
+UPDATE counting_sessions
+SET status = 'PUBLISHED', is_published = TRUE, winner_candidate_id = 'TEST_CAND_1', runner_up_candidate_id = 'TEST_CAND_IND', published_by_admin_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', published_at = NOW()
+WHERE id = 'SESS_TIED_1';
+
+RAISE NOTICE 'SUCCESS: Scenario 31 passed - Tied session published strictly with resolved winner TEST_CAND_1.';
+
 ROLLBACK;
 
 -- All scenarios passed successfully
-SELECT 'OVS Phase 8.1.4 PostgreSQL Integration Validation Suite: ALL 23 SCENARIOS PASSED' AS verdict;
+SELECT 'OVS Phase 8.1.5 PostgreSQL Integration Validation Suite: ALL 31 SCENARIOS (INCLUDING ALL 23 BASE SCENARIOS) PASSED' AS verdict;
+

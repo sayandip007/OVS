@@ -94,16 +94,16 @@
 
 ---
 
-### ADR-013: Candidate-Party Consistency Enforcement in Tallies via Composite Foreign Key
-- **Status**: Accepted
-- **Decision**: Establish composite unique key `Candidate @@unique([id, partyId])` and bind `CandidateTally` with composite foreign key `(candidateId, partyId) REFERENCES candidates(id, partyId)`.
+### ADR-013: Historical Nomination-Party Consistency Enforcement in Tallies
+- **Status**: Superseded & Hardened by ADR-025 and ADR-027 (Phase 8.1.5)
+- **Decision**: Establish composite unique key `CandidateNomination @@unique([id, candidateId, partyId])` (`uq_nomination_id_candidate_party`) and bind `CandidateTally` to `CandidateNomination` via `fk_tally_nomination_candidate_party` and trigger `trg_verify_candidate_tally_nomination` (`NEW.party_id IS NOT DISTINCT FROM v_nom_party_id`), rather than binding tallies to the mutable global `candidates.party_id`.
 
 ---
 
 ### ADR-014: Explicit Prisma-to-PostgreSQL Column Mapping (@map) Convention
 - **Status**: Accepted (Phase 8.1.2 Added)
 - **Context**: In PostgreSQL, `snake_case` is standard. Prisma generates column names matching model property names in camelCase unless explicitly annotated with `@map()`. Without `@map()`, custom SQL references like `election_id` would fail against a table generated with column name `electionId`.
-- **Decision**: Explicitly declare `@map("snake_case_column")` on every camelCase property in all 24 models. Use `@@map("snake_case_table")` on all models.
+- **Decision**: Explicitly declare `@map("snake_case_column")` on every camelCase property in all 25 models. Use `@@map("snake_case_table")` on all models.
 - **Consequences**: Guarantees 100% naming synchronization between Prisma Client, raw SQL scripts, indices, foreign keys, and triggers.
 
 ---
@@ -150,7 +150,7 @@
 - **Decision**: Make vote reconciliation bidirectional:
   1. Remove bypass conditions: `COALESCE(SUM(votes), 0)` reconciles zero-vote and empty tally states.
   2. Protect candidate tallies with trigger `trg_protect_and_reconcile_candidate_tallies` on `INSERT`, `UPDATE`, and `DELETE`.
-  3. Lock the session row `FOR UPDATE` to obtain a consistent snapshot and forbid mutating tallies when session is `COUNTING_COMPLETED`, `RESULT_READY_FOR_REVIEW`, or `PUBLISHED`.
+  3. Lock the session row `FOR UPDATE` to obtain a consistent snapshot and forbid mutating tallies when session is `COUNTING_COMPLETED`, `TIED`, `RESULT_READY_FOR_REVIEW`, or `PUBLISHED`.
 - **Consequences**: Guarantees that neither session totals nor candidate tallies can drift out of mathematical sync.
 
 ---
@@ -179,9 +179,9 @@
 ---
 
 ### ADR-022: Aggregate Counting Rounds with Round Leader Validation (Option B Selection)
-- **Status**: Accepted (Phase 8.1.3 Added)
+- **Status**: Accepted (Phase 8.1.3 Added, Phase 8.1.5 Verified)
 - **Context**: Evaluate whether to add an extra relational child model `RoundTally` (Option A) vs maintaining aggregate round progression with validated round leaders (Option B).
-- **Decision**: Adopt Option B. Counting rounds store aggregate statistics (`round_votes`, `cumulative_votes`, `lead_margin`) with `lead_candidate_id` strictly verified to hold an `APPROVED` nomination in the session. Detailed candidate breakdowns reside in `candidate_tallies`.
+- **Decision**: Adopt Option B. Counting rounds store aggregate statistics (`round_votes`, `cumulative_votes`, `lead_margin`) with `leading_candidate_id` strictly verified to hold an `APPROVED` nomination in the session. Detailed candidate breakdowns reside in `candidate_tallies`.
 - **Consequences**: Matches existing frontend simulation architecture, preserves normalized schema, avoids artificial table bloat, and provides verifiable data integrity.
 
 ---
@@ -212,26 +212,48 @@
 
 ---
 
-### ADR-024: Mandatory Tie Resolution Evidence via Dedicated Model (Section 102 RPA 1951)
-- **Status**: Accepted (Phase 8.1.4 Added)
-- **Context**: When a constituency count results in a tie between top candidates, statutory election law (Section 102 of the *Representation of the People Act, 1951*) mandates a formal draw of lots by the Returning Officer. Allowing arbitrary status transitions out of `TIED` without legal evidence compromises auditability.
-- **Decision**: Implement a dedicated `TieResolution` model (`tie_resolutions` table) storing session, decision, method (`DRAW_OF_LOTS_RO_SECTION_102_RPA_1951`), selected winner, justification note, approving admin, and timestamp. Enforce via trigger that transitioning `TIED -> RESULT_READY_FOR_REVIEW` strictly requires an existing `tie_resolutions` record matching the declared winner. Make tie resolution records immutable upon creation.
-- **Consequences**: Satisfies constitutional and statutory election law requirements. Results cannot be declared from a tied count without verifiable administrative evidence.
+### ADR-024: Simulated Educational Tie Resolution & 10-Rule Insert Validation (`TieResolution`)
+- **Status**: Accepted (Phase 8.1.4 Added, Phase 8.1.5 Hardened)
+- **Context**: When a simulated constituency count results in a tie between top candidates, the system models a Returning Officer draw-of-lots workflow inspired by Section 102 of the *Representation of the People Act, 1951*. This workflow is a **simulated educational governance mechanism**, not a legally authoritative statutory certification. However, inserting unvalidated rows into `tie_resolutions` or deleting sessions with tie-resolution evidence could corrupt the audit trail.
+- **Decision**:
+  1. Implement `trg_verify_tie_resolution_insert` (`BEFORE INSERT ON tie_resolutions`) enforcing all 10 invariants: session exists (`FOR UPDATE` lock), session is in `TIED` status, at most one resolution per session, `selected_winner_id` holds an `APPROVED` nomination in the session's election/constituency, `selected_winner_id` is tied for the highest vote total (`MAX(votes) > 0` shared by $\ge 2$ candidates), `approved_by_admin_id` is an active authorized officer (`SUPER_ADMIN`, `NATIONAL_ADMIN`, `STATE_ADMIN` matching state, or `ELECTION_OFFICER` with `admin_election_scopes`), controlled decision/method values, and non-empty `justification_note`.
+  2. Enforce `winner_candidate_id = tie_resolutions.selected_winner_id` across both `RESULT_READY_FOR_REVIEW` and `PUBLISHED` states.
+  3. Enforce `onDelete: Restrict` in both Prisma (`TieResolution.session`) and PostgreSQL (`fk_tie_res_session`), backed by `trg_protect_tie_resolution_immutability` and `trg_protect_counting_session_deletion`.
+- **Consequences**: Prevents unauthorized, non-tied, or non-top-candidate tie resolutions and preserves immutable audit evidence.
 
 ---
 
-### ADR-025: Historical Nomination-Bound Party Modeling & Independent Candidates
-- **Status**: Accepted (Phase 8.1.4 Added)
-- **Context**: Binding `CandidateTally` directly to `Candidate(id, party_id)` caused historical tallies to break if a candidate switched political party for a future election. Furthermore, independent candidates contesting without party affiliation could not be modeled without synthetic party rows.
-- **Decision**: Store election-specific party affiliation on `CandidateNomination (party_id)` with a foreign key to `PoliticalParty (id) ON DELETE RESTRICT`, allowing `party_id` to be `NULL` for independent candidates. Bind `CandidateTally` to the approved nomination, synchronizing `party_id` from the nomination rather than the mutable candidate profile.
-- **Consequences**: Protects historical election results against candidate party defection. Natively accommodates independent candidates while preserving referential integrity.
+### ADR-025: Exact Historical Nomination-Bound Party Equality & Independent Candidates
+- **Status**: Accepted (Phase 8.1.4 Added, Phase 8.1.5 Hardened)
+- **Context**: Allowing `verify_candidate_tally_nomination()` to fall back to `candidates.party_id` allowed a candidate's subsequent party change to leak into or validate mismatched historical tallies.
+- **Decision**:
+  1. Remove the `v_candidate_party_id` fallback in `verify_candidate_tally_nomination()`.
+  2. Enforce exact equality (`NEW.party_id IS NOT DISTINCT FROM v_nom_party_id`) between `CandidateTally.party_id` and `CandidateNomination.party_id`, reinforced by composite foreign key `fk_tally_nomination_candidate_party`.
+  3. Support independent candidates (`v_nom_party_id IS NULL` requires `NEW.party_id IS NULL`).
+  4. Prevent changing `party_id` on `candidate_nominations` once dependent `candidate_tallies` exist (`trg_protect_nomination_lifecycle`).
+- **Consequences**: Historical election tallies are 100% insulated from subsequent candidate party changes.
 
 ---
 
-### ADR-026: Active Counting Automatic Bidirectional Tally Reconciliation
-- **Status**: Accepted (Phase 8.1.4 Added)
-- **Context**: During active counting (`COUNTING_IN_PROGRESS`), candidate tallies change progressively. If tally updates do not synchronize session totals in real time, session totals and candidate totals can drift.
-- **Decision**: Define `candidate_tallies` as the granular source of truth during active counting. Implement trigger `trg_auto_reconcile_session_votes_on_tally_change` (`AFTER INSERT OR UPDATE OR DELETE ON candidate_tallies`) which acquires a row-level `FOR UPDATE` lock on `counting_sessions` and automatically recomputes `total_counted_votes = SUM(candidate_tallies.votes) + nota_votes + rejected_votes`.
-- **Consequences**: Session totals and candidate tallies are continuously synchronized without manual intervention, while completion and publication stages maintain strict invariant checks.
+### ADR-026: Active Counting Automatic Bidirectional Tally Reconciliation & Session Ownership Immutability
+- **Status**: Accepted (Phase 8.1.4 Added, Phase 8.1.5 Hardened)
+- **Context**: During active counting (`COUNTING_IN_PROGRESS`), candidate tallies change progressively. Furthermore, if an `UPDATE` on `candidate_tallies` were allowed to change `session_id`, the tally would move to another session while `auto_reconcile_session_votes_on_tally_change()` would only recompute `NEW.session_id`, leaving `OLD.session_id` with stale `total_counted_votes`.
+- **Decision**:
+  1. Reject any `UPDATE` on `candidate_tallies` that attempts to change `session_id` or `candidate_id` (`OLD.session_id IS DISTINCT FROM NEW.session_id` raises `P0001`).
+  2. Trigger `trg_auto_reconcile_session_votes_on_tally_change` acquires a row-level `FOR UPDATE` lock on `counting_sessions` and automatically recomputes `total_counted_votes = SUM(candidate_tallies.votes) + nota_votes + rejected_votes`.
+- **Consequences**: Eliminates cross-session tally transfer corruption and keeps session totals continuously synchronized.
+
+---
+
+### ADR-027: Deterministic Transaction Lock Ordering Hierarchy
+- **Status**: Accepted (Phase 8.1.5 Added)
+- **Context**: Concurrent operations across `counting_sessions`, `candidate_nominations`, `counting_rounds`, `candidate_tallies`, and `tie_resolutions` could deadlock if triggers acquire row locks in inconsistent orders.
+- **Decision**: Standardize a strict top-down lock acquisition order across all triggers and application transactions:
+  1. Advisory lock on `(candidate_id, election_id)` for nomination ceiling checks.
+  2. `counting_sessions` row lock (`FOR UPDATE`).
+  3. `candidate_nominations` row lock (`FOR SHARE`).
+  4. Child counting tables (`counting_rounds`, `candidate_tallies`, `tie_resolutions`, `result_correction_history`).
+- **Consequences**: Guarantees deadlock-free serialization of concurrent counting session mutations.
+
 
 

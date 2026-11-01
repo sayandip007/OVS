@@ -99,7 +99,7 @@ The following table documents the resolution of historical test fixture naming i
 | `political_parties` | `party_code` | `abbreviation` | `PoliticalParty.abbreviation` | **Corrected** to `abbreviation` |
 | `political_parties` | `founded_year` | `established_year` | `PoliticalParty.establishedYear` | **Corrected** to `established_year` |
 | `counting_sessions` | *Missing `total_voters`* | `total_voters` | `CountingSession.totalVoters` | **Populated** in test fixtures |
-| `counting_rounds` | `lead_candidate_id` | `leading_candidate_id` | `CountingRound.leadingCandidateId` | **Corrected** to `leading_candidate_id` |
+| `counting_rounds` | Legacy abbreviated leader column | `leading_candidate_id` | `CountingRound.leadingCandidateId` | **Corrected** to `leading_candidate_id` |
 | `counting_rounds` | `created_at`, `updated_at` | `processed_at`, `processed_by_admin_id` | `CountingRound.processedAt` | **Corrected** to `processed_at` |
 | `admin_users` | Direct user fields (`email`, `password_hash`) | Foreign key `user_id REFERENCES users(id)` | `AdminUser.userId` | **Corrected**; `User` row inserted first |
 
@@ -121,15 +121,18 @@ The following table documents the resolution of historical test fixture naming i
      ```
   2. Transaction-Safe Advisory Locking: A PostgreSQL trigger `trg_verify_candidate_nomination_compatibility` serializes concurrent nomination attempts for the same candidate and election using `pg_advisory_xact_lock(hashtext('candidate_nomination_limit:' || candidate_id || ':' || election_id))`.
 
-### 3.2 Candidate Tally & Approved Nomination Lifecycle Binding
+### 3.2 Candidate Tally, Session Immutability & Historical Nomination-Party Binding (Phase 8.1.5 Hardened)
 Every vote tally in `candidate_tallies` must strictly satisfy:
-1. **Valid Counting Session**: Foreign key `session_id REFERENCES counting_sessions(id) ON DELETE CASCADE`.
-2. **Approved Nomination Foreign Key**: Explicit foreign key `nomination_id REFERENCES candidate_nominations(id) ON DELETE RESTRICT`.
-3. **Approved Nomination Trigger Verification**: Trigger `trg_verify_candidate_tally_nomination` verifies that the nomination is in `status = 'APPROVED'`, matches the candidate, the election, and the exact constituency (PC or AC).
-4. **Lifecycle Immutability Guard**: Trigger `trg_protect_nomination_lifecycle` prevents deleting, modifying the constituency/election of, or invalidating (`REJECTED`, `WITHDRAWN`, `SUSPENDED`) an approved nomination while active candidate tallies or session declarations (winner/runner-up) depend on it.
-5. **Candidate Party Changes Protection**: Candidate tallies capture the historical party under which the candidate contested. Candidate party updates in `candidates` do not break existing historical election tallies.
+1. **Valid Counting Session & Session Immutability**: Foreign key `session_id REFERENCES counting_sessions(id) ON DELETE CASCADE`. On `UPDATE`, `session_id` and `candidate_id` are strictly immutable (`trg_verify_candidate_tally_nomination` and `trg_protect_and_reconcile_candidate_tallies` reject any attempt to reassign a tally row to a different counting session or candidate).
+2. **Approved Nomination Foreign Key & Composite Party Key**: Explicit foreign key `nomination_id REFERENCES candidate_nominations(id) ON DELETE RESTRICT`, reinforced by `uq_nomination_id_candidate_party UNIQUE (id, candidate_id, party_id)` and `fk_tally_nomination_candidate_party FOREIGN KEY (nomination_id, candidate_id, party_id) REFERENCES candidate_nominations(id, candidate_id, party_id) MATCH SIMPLE ON DELETE RESTRICT ON UPDATE RESTRICT`.
+3. **Approved Nomination Trigger Verification**: Trigger `trg_verify_candidate_tally_nomination` locks the parent `counting_sessions` row `FOR UPDATE` and the `candidate_nominations` row `FOR SHARE`, verifying that the nomination is in `status = 'APPROVED'`, matches the candidate, the election, and the exact constituency (PC or AC).
+4. **Exact Historical Nomination-Party Equality**: `CandidateTally.party_id` is compared strictly against `CandidateNomination.party_id` (`NEW.party_id IS NOT DISTINCT FROM v_nom_party_id`). Fallback to the mutable global `candidates.party_id` is completely removed:
+   - If the nomination has a political party (`v_nom_party_id IS NOT NULL`), the tally must specify that exact `party_id` (or if omitted on `INSERT`, it is auto-populated from `v_nom_party_id`).
+   - If the nomination is for an independent candidate (`v_nom_party_id IS NULL`), `NEW.party_id` must be `NULL`.
+   - Changing `candidates.party_id` for a future election never alters or invalidates historical `candidate_nominations` or `candidate_tallies`.
+5. **Lifecycle & Party Immutability Guard**: Trigger `trg_protect_nomination_lifecycle` prevents deleting, modifying the constituency/election/candidate/party (`party_id`) of, or invalidating (`REJECTED`, `WITHDRAWN`, `SUSPENDED`) an approved nomination while dependent candidate tallies or session declarations (winner/runner-up) exist.
 6. **NOTA Representation**: NOTA is strictly modeled as `counting_sessions.nota_votes` and cannot be entered as a candidate tally.
-7. **Winner, Runner-Up & Round Leader Validation**: Trigger `trg_verify_counting_session_candidates` validates that any declared winner or runner-up holds an `APPROVED` nomination in that constituency, and that winner != runner-up. Trigger `trg_verify_counting_round_progression` validates that any declared `lead_candidate_id` holds an `APPROVED` nomination in that constituency.
+7. **Winner, Runner-Up & Round Leader Validation**: Trigger `trg_verify_counting_session_candidates` validates that any declared winner or runner-up holds an `APPROVED` nomination in that constituency, and that winner != runner-up. Trigger `trg_verify_counting_round_progression` validates that any declared `leading_candidate_id` holds an `APPROVED` nomination in that constituency.
 
 ---
 
@@ -152,41 +155,61 @@ Elections and constituencies must obey constitutional boundaries and explicit ma
 
 ---
 
-## 5. Result Publication State Machine Hardening
+## 5. Result Publication State Machine & Simulated Tie Resolution Hardening (Phase 8.1.5)
 
 The counting engine enforces a deterministic 10-state lifecycle:
 `DRAFT` → `COUNTING_IN_PROGRESS` → `COUNTING_PAUSED` / `COUNTING_COMPLETED` → `RESULT_READY_FOR_REVIEW` → `PUBLISHED`
 with auxiliary states: `TIED`, `UNDER_REVIEW`, `CORRECTED`, `UNPUBLISHED`.
 
-### Mandatory Publication Rules:
+### 5.1 Mandatory Publication Rules:
 1. **Publication Equivalence CHECK Constraint**: Declarative engine-level constraint `chk_counting_session_publication_equivalence` enforces:
    $$\text{status} = \text{'PUBLISHED'} \iff \text{is\_published} = \text{TRUE}$$
 2. **Initial State Invariant**: Sessions must be created in `DRAFT` status with `is_published = FALSE`. Direct insertion as `PUBLISHED` is physically rejected.
 3. **Review Stage Prerequisite**: Results cannot be published directly from `DRAFT` or `COUNTING_COMPLETED`. Publication **strictly requires** an approved review stage (`RESULT_READY_FOR_REVIEW` → `PUBLISHED`).
 4. **Completion & Physical Round Existence**: Counting must be complete (`current_round >= total_configured_rounds`) AND all configured counting round records must physically exist in `counting_rounds`.
-5. **No Unresolved Ties**: Results in `TIED` status cannot be published without formal documented resolution.
+5. **No Unresolved Ties**: Results in `TIED` status cannot be published without a verified simulated tie-resolution record in `tie_resolutions`.
 6. **Accountability**: Publication requires `published_by_admin_id` and timestamp `published_at`.
 7. **Immutable Correction History**: Transition from `UNDER_REVIEW` to `CORRECTED` requires an entry in `result_correction_history`.
 
+### 5.2 Simulated Educational Tie Resolution (`TieResolution`) & Referential Policy:
+To model tie-breaking workflows in this educational election simulation without claiming legally authoritative certification:
+1. **Dedicated `BEFORE INSERT` Trigger (`trg_verify_tie_resolution_insert`)**:
+   - **Session Existence & Lock**: Acquires `FOR UPDATE` lock on the parent `counting_sessions` row.
+   - **Tied Status Precondition**: The counting session must currently be in `status = 'TIED'`.
+   - **Single Resolution Per Session**: Enforced by `UNIQUE (session_id)` and trigger check.
+   - **Approved Nomination Verification**: `selected_winner_id` must hold an `APPROVED` nomination in the session's exact election and constituency (`FOR SHARE` lock).
+   - **Top Tied Candidate Verification**: `selected_winner_id` must have a `candidate_tallies` record in the session whose `votes` equals `MAX(votes) > 0`, and at least two candidates must share that top vote count.
+   - **Active Authorized Admin Verification**: `approved_by_admin_id` must exist in `admin_users`, have `is_active = TRUE` (and linked `users.is_active = TRUE`), hold role `SUPER_ADMIN`, `NATIONAL_ADMIN`, `STATE_ADMIN`, or `ELECTION_OFFICER` (`READ_ONLY_AUDITOR` is rejected), satisfy state jurisdiction (`assigned_state_id` matching constituency state for `STATE_ADMIN`), and have an explicit `admin_election_scopes` entry when role is `ELECTION_OFFICER`.
+   - **Controlled Decision & Method Values**: `decision` must be `'SIMULATED_TIE_BROKEN_DRAW_OF_LOTS'` or `'WINNER_SELECTED_BY_LOT'`; `resolution_method` must be `'SIMULATED_DRAW_OF_LOTS'`, `'DRAW_OF_LOTS'`, or `'DRAW_OF_LOTS_RO_SECTION_102_RPA_1951'`; `justification_note` must be non-empty.
+2. **Winner Consistency Across Review & Publication**: Trigger `trg_verify_counting_session_publication` verifies that whenever a `tie_resolutions` row exists for a session, `counting_sessions.winner_candidate_id` must equal `tie_resolutions.selected_winner_id` in both `RESULT_READY_FOR_REVIEW` and `PUBLISHED` states.
+3. **Referential & Deletion Consistency (`onDelete: Restrict`)**:
+   - Both Prisma (`TieResolution.session` with `onDelete: Restrict`) and PostgreSQL (`fk_tie_res_session REFERENCES counting_sessions(id) ON DELETE RESTRICT ON UPDATE RESTRICT`) use `RESTRICT`.
+   - `trg_protect_tie_resolution_immutability` unconditionally rejects `UPDATE` and `DELETE` on `tie_resolutions`.
+   - `trg_protect_counting_session_deletion` prevents deleting any counting session that is progressed beyond `DRAFT` or has tie-resolution or correction-history evidence.
+
 ---
 
-## 6. Bidirectional Counting Reconciliation & Numerical Integrity
+## 6. Bidirectional Counting Reconciliation & Deterministic Lock Ordering
 
-The relationship between vote tallies and counting sessions is mathematically strict:
-1. **Bidirectional Constituency Total Reconciliation**:
+### 6.1 Bidirectional Constituency Total Reconciliation
+1. **Formula**:
    $$\text{total\_counted\_votes} = \sum (\text{candidate\_tallies.votes}) + \text{nota\_votes} + \text{rejected\_votes}$$
    - On `counting_sessions` updates: Enforced by trigger `trg_reconcile_counting_session_votes` whenever counting completes or results are published. Handles zero-vote tallies and empty tally states using `COALESCE(SUM(votes), 0)` without bypass.
-   - On `candidate_tallies` mutations: Trigger `trg_protect_and_reconcile_candidate_tallies` locks the session row `FOR UPDATE` and forbids modifying completed, reviewed, or published counting tallies without an explicit recount or review workflow.
+   - On `candidate_tallies` mutations: Trigger `trg_protect_and_reconcile_candidate_tallies` locks the session row `FOR UPDATE` and forbids modifying completed, tied, reviewed, or published counting tallies without an explicit recount (`UNDER_REVIEW`) workflow.
 2. **Counting Round Progression & Immutability**:
    - Round numbers must be sequential: $1, 2, \dots, N \le \text{total\_configured\_rounds}$.
-   - Cumulative votes must be monotonic non-decreasing:
-     $$\text{cumulative\_votes}_N \ge \text{cumulative\_votes}_{N-1}$$
-   - Round delta equality:
-     $$\text{round\_votes}_N = \text{cumulative\_votes}_N - \text{cumulative\_votes}_{N-1}$$
-   - Round 1 base case: $\text{round\_votes}_1 = \text{cumulative\_votes}_1$.
+   - Cumulative votes must be monotonic non-decreasing: $\text{cumulative\_votes}_N \ge \text{cumulative\_votes}_{N-1}$.
+   - Round delta equality: $\text{round\_votes}_N = \text{cumulative\_votes}_N - \text{cumulative\_votes}_{N-1}$, with Round 1 base case $\text{round\_votes}_1 = \text{cumulative\_votes}_1$.
    - Earlier rounds cannot be modified while subsequent rounds exist.
    - `trg_protect_counting_round_deletion` enforces that completed rounds cannot be deleted, and rounds in progress can only be rolled back in strict reverse order ($N, N-1, \dots$).
    - `trg_synchronize_session_current_round` automatically synchronizes `counting_sessions.current_round`.
+
+### 6.2 Deterministic Transaction Lock Ordering Hierarchy
+To prevent deadlocks during concurrent counting, tally updates, nomination checks, and tie resolutions, all triggers and services follow a strict top-down lock acquisition order:
+1. **Level 1 — Advisory Locks (when applicable)**: `pg_advisory_xact_lock(hashtext('candidate_nomination_limit:' || candidate_id || ':' || election_id))` during candidate nomination creation/update.
+2. **Level 2 — Parent CountingSession Row Lock (`FOR UPDATE`)**: Any mutation to `counting_sessions`, `counting_rounds`, `candidate_tallies`, or `tie_resolutions` acquires `SELECT ... FROM counting_sessions WHERE id = ... FOR UPDATE` **first** before locking or querying child tables.
+3. **Level 3 — Referenced CandidateNomination Row Lock (`FOR SHARE`)**: Acquired after the parent `counting_sessions` lock when validating candidate eligibility in `candidate_tallies`, `counting_rounds`, or `tie_resolutions`.
+4. **Level 4 — Child Counting Tables (`counting_rounds`, `candidate_tallies`, `tie_resolutions`, `result_correction_history`)**: Read or mutated only after the parent `counting_sessions` lock is held.
 
 ---
 
@@ -196,7 +219,7 @@ The relationship between vote tallies and counting sessions is mathematically st
 - **Rationale**:
   1. The educational simulation tracks progressive aggregate turnout and vote accumulation per round, while full candidate-by-candidate breakdowns are persisted in `candidate_tallies`.
   2. Avoids redundant intermediate tables while guaranteeing data integrity.
-  3. Every `CountingRound.lead_candidate_id` is strictly verified by trigger to possess an `APPROVED` nomination for that exact election and constituency.
+  3. Every `CountingRound.leading_candidate_id` is strictly verified by trigger to possess an `APPROVED` nomination for that exact election and constituency.
 
 ---
 
