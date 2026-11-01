@@ -483,6 +483,7 @@ model CandidateNomination {
   parliamentaryConstituency   ParliamentaryConstituency? @relation(fields: [parliamentaryConstituencyId], references: [id], onDelete: Cascade)
   assemblyConstituency        AssemblyConstituency?     @relation(fields: [assemblyConstituencyId], references: [id], onDelete: Cascade)
   scrutinizedByAdmin          AdminUser?                @relation(fields: [scrutinizedByAdminId], references: [id], onDelete: SetNull)
+  tallies                     CandidateTally[]
 
   // NOTE: Candidates may contest multiple constituencies in an election (RPA 1951 s.33(7) allows up to 2).
   // Per-constituency uniqueness is enforced via PostgreSQL partial unique indexes:
@@ -648,20 +649,23 @@ model CountingRound {
 
 model CandidateTally {
   id                  String          @id @default(uuid()) @db.Uuid
-  sessionId           String          @db.VarChar(100) @map("session_id")
-  candidateId         String          @db.VarChar(50) @map("candidate_id")
-  partyId             String          @db.VarChar(50) @map("party_id")
-  votes               Int             @default(0)
-  voteSharePercentage Decimal         @default(0.00) @db.Decimal(5, 2) @map("vote_share_percentage")
-  createdAt           DateTime        @default(now()) @db.Timestamptz(6) @map("created_at")
-  updatedAt           DateTime        @updatedAt @db.Timestamptz(6) @map("updated_at")
+  sessionId           String               @db.VarChar(100) @map("session_id")
+  candidateId         String               @db.VarChar(50) @map("candidate_id")
+  nominationId        String?              @db.Uuid @map("nomination_id")
+  partyId             String               @db.VarChar(50) @map("party_id")
+  votes               Int                  @default(0)
+  voteSharePercentage Decimal              @default(0.00) @db.Decimal(5, 2) @map("vote_share_percentage")
+  createdAt           DateTime             @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt           DateTime             @updatedAt @db.Timestamptz(6) @map("updated_at")
 
-  session             CountingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  candidate           Candidate       @relation(fields: [candidateId, partyId], references: [id, partyId], onDelete: Cascade)
-  party               PoliticalParty  @relation(fields: [partyId], references: [id], onDelete: Restrict)
+  session             CountingSession      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  candidate           Candidate            @relation(fields: [candidateId, partyId], references: [id, partyId], onDelete: Cascade)
+  nomination          CandidateNomination? @relation(fields: [nominationId], references: [id], onDelete: Restrict)
+  party               PoliticalParty       @relation(fields: [partyId], references: [id], onDelete: Restrict)
 
   @@unique([sessionId, candidateId])
   @@index([sessionId])
+  @@index([nominationId])
   @@map("candidate_tallies")
 }
 

@@ -66,7 +66,7 @@ The following verification table demonstrates the 1-to-1 mapping between Prisma 
 
 ## 3. Candidate Nomination & Counting Integrity
 
-### 3.1 Statutory Candidate Nomination Uniqueness (Section 33(7) RPA 1951)
+### 3.1 Statutory Candidate Nomination Uniqueness & Advisory Locking (Section 33(7) RPA 1951)
 - Under Section 33(7) of the *Representation of the People Act, 1951*, a candidate is legally permitted to contest from **up to two constituencies** in an election (e.g. Narendra Modi contesting Varanasi and Vadodara in 2014; Rahul Gandhi contesting Wayanad and Raebareli in 2024).
 - The overly restrictive `@@unique([candidateId, electionId])` has been replaced with:
   1. Partial unique indexes guaranteeing that a candidate cannot be nominated twice in the exact same constituency:
@@ -78,21 +78,23 @@ The following verification table demonstrates the 1-to-1 mapping between Prisma 
        ON candidate_nominations (candidate_id, election_id, assembly_constituency_id) 
        WHERE assembly_constituency_id IS NOT NULL;
      ```
-  2. A PostgreSQL trigger `trg_verify_candidate_nomination_compatibility` enforcing the statutory ceiling of at most 2 active nominations per candidate per election.
+  2. Transaction-Safe Advisory Locking: A PostgreSQL trigger `trg_verify_candidate_nomination_compatibility` serializes concurrent nomination attempts for the same candidate and election using `pg_advisory_xact_lock(hashtext('candidate_nomination_limit:' || candidate_id || ':' || election_id))`.
 
-### 3.2 Candidate Tally & Approved Nomination Binding
+### 3.2 Candidate Tally & Approved Nomination Lifecycle Binding
 Every vote tally in `candidate_tallies` must strictly satisfy:
-1. **Valid Counting Session**: Foreign key `session_id REFERENCES counting_sessions(id)`.
-2. **Approved Nomination**: Trigger `trg_verify_candidate_tally_nomination` verifies that a row exists in `candidate_nominations` with `status = 'APPROVED'`, matching the candidate, the election, and the exact constituency (PC or AC).
-3. **Party Consistency**: Enforced declaratively by composite foreign key `FOREIGN KEY (candidate_id, party_id) REFERENCES candidates(id, party_id)`.
-4. **NOTA Representation**: NOTA is strictly modeled as `counting_sessions.nota_votes` and cannot be entered as a candidate tally.
-5. **Winner & Runner-Up Validation**: Trigger `trg_verify_counting_session_candidates` validates that any declared winner or runner-up holds an `APPROVED` nomination in that constituency, and that winner != runner-up.
+1. **Valid Counting Session**: Foreign key `session_id REFERENCES counting_sessions(id) ON DELETE CASCADE`.
+2. **Approved Nomination Foreign Key**: Explicit foreign key `nomination_id REFERENCES candidate_nominations(id) ON DELETE RESTRICT`.
+3. **Approved Nomination Trigger Verification**: Trigger `trg_verify_candidate_tally_nomination` verifies that the nomination is in `status = 'APPROVED'`, matches the candidate, the election, and the exact constituency (PC or AC).
+4. **Lifecycle Immutability Guard**: Trigger `trg_protect_nomination_lifecycle` prevents deleting, modifying the constituency/election of, or invalidating (`REJECTED`, `WITHDRAWN`, `SUSPENDED`) an approved nomination while active candidate tallies or session declarations (winner/runner-up) depend on it.
+5. **Candidate Party Changes Protection**: Candidate tallies capture the historical party under which the candidate contested. Candidate party updates in `candidates` do not break existing historical election tallies.
+6. **NOTA Representation**: NOTA is strictly modeled as `counting_sessions.nota_votes` and cannot be entered as a candidate tally.
+7. **Winner, Runner-Up & Round Leader Validation**: Trigger `trg_verify_counting_session_candidates` validates that any declared winner or runner-up holds an `APPROVED` nomination in that constituency, and that winner != runner-up. Trigger `trg_verify_counting_round_progression` validates that any declared `lead_candidate_id` holds an `APPROVED` nomination in that constituency.
 
 ---
 
-## 4. Election-to-Constituency Compatibility
+## 4. Election-to-Constituency Compatibility & Mapping Integrity
 
-Elections and constituencies must obey constitutional boundaries:
+Elections and constituencies must obey constitutional boundaries and explicit mapping rules:
 - **Lok Sabha General Elections (`LOK_SABHA`)**:
   - Can ONLY map to Parliamentary Constituencies (`constituency_type = 'PARLIAMENTARY'`).
   - `state_id` on the election must be `NULL` (national scope).
@@ -101,9 +103,11 @@ Elections and constituencies must obey constitutional boundaries:
   - Can ONLY map to Assembly Constituencies (`constituency_type = 'ASSEMBLY'`).
   - `state_id` on the election must be `NOT NULL`.
   - **Constituency State Match**: The referenced Assembly Constituency's `state_id` must match `election.state_id`.
-- **Enforcement Architecture**:
-  - Declarative `CHECK` constraints enforce mutual exclusivity of PC and AC foreign keys.
-  - PostgreSQL triggers (`trg_verify_election_constituency_compatibility`, `trg_verify_nomination_election_compatibility`, and `trg_verify_counting_session_compatibility`) enforce cross-table type and state consistency.
+- **Explicit ElectionConstituency Membership**:
+  - A candidate nomination or counting session cannot reference a constituency unless that constituency has been explicitly mapped to that election in `election_constituencies`.
+  - Enforced via `trg_verify_candidate_nomination_compatibility` and `trg_verify_counting_session_compatibility`.
+- **Mapping Deletion Protection**:
+  - `trg_prevent_election_constituency_mutation`: `election_constituencies` rows cannot be deleted or mutated while dependent candidate nominations or counting sessions exist.
 
 ---
 
@@ -114,36 +118,48 @@ The counting engine enforces a deterministic 10-state lifecycle:
 with auxiliary states: `TIED`, `UNDER_REVIEW`, `CORRECTED`, `UNPUBLISHED`.
 
 ### Mandatory Publication Rules:
-1. **No Direct Insertion**: Sessions cannot be inserted directly with `is_published = TRUE` or `status = 'PUBLISHED'`. They must be initialized in `DRAFT`.
-2. **Review Stage Prerequisite**: Results cannot be published directly from `DRAFT` or `COUNTING_COMPLETED`. Publication **strictly requires** an approved review stage (`RESULT_READY_FOR_REVIEW` → `PUBLISHED`).
-3. **Completion Requirement**: Counting must be complete (`current_round >= total_configured_rounds`).
-4. **No Unresolved Ties**: Results in `TIED` status cannot be published without formal documented resolution.
-5. **Accountability**: Publication requires `published_by_admin_id` and timestamp `published_at`.
-6. **Immutable Correction History**: Transition from `UNDER_REVIEW` to `CORRECTED` requires an entry in `result_correction_history`.
-7. **Database-Level Enforcement**: Enforced by the `trg_verify_counting_session_publication` trigger on both `INSERT` and `UPDATE` operations.
+1. **Publication Equivalence CHECK Constraint**: Declarative engine-level constraint `chk_counting_session_publication_equivalence` enforces:
+   $$\text{status} = \text{'PUBLISHED'} \iff \text{is\_published} = \text{TRUE}$$
+2. **Initial State Invariant**: Sessions must be created in `DRAFT` status with `is_published = FALSE`. Direct insertion as `PUBLISHED` is physically rejected.
+3. **Review Stage Prerequisite**: Results cannot be published directly from `DRAFT` or `COUNTING_COMPLETED`. Publication **strictly requires** an approved review stage (`RESULT_READY_FOR_REVIEW` → `PUBLISHED`).
+4. **Completion & Physical Round Existence**: Counting must be complete (`current_round >= total_configured_rounds`) AND all configured counting round records must physically exist in `counting_rounds`.
+5. **No Unresolved Ties**: Results in `TIED` status cannot be published without formal documented resolution.
+6. **Accountability**: Publication requires `published_by_admin_id` and timestamp `published_at`.
+7. **Immutable Correction History**: Transition from `UNDER_REVIEW` to `CORRECTED` requires an entry in `result_correction_history`.
 
 ---
 
-## 6. Counting Reconciliation & Mathematical Integrity
+## 6. Bidirectional Counting Reconciliation & Numerical Integrity
 
 The relationship between vote tallies and counting sessions is mathematically strict:
-1. **Constituency Total Reconciliation**:
+1. **Bidirectional Constituency Total Reconciliation**:
    $$\text{total\_counted\_votes} = \sum (\text{candidate\_tallies.votes}) + \text{nota\_votes} + \text{rejected\_votes}$$
-   Enforced by trigger `trg_reconcile_counting_session_votes` whenever counting completes or results are published.
-2. **Round Progression Invariants**:
+   - On `counting_sessions` updates: Enforced by trigger `trg_reconcile_counting_session_votes` whenever counting completes or results are published. Handles zero-vote tallies and empty tally states using `COALESCE(SUM(votes), 0)` without bypass.
+   - On `candidate_tallies` mutations: Trigger `trg_protect_and_reconcile_candidate_tallies` locks the session row `FOR UPDATE` and forbids modifying completed, reviewed, or published counting tallies without an explicit recount or review workflow.
+2. **Counting Round Progression & Immutability**:
    - Round numbers must be sequential: $1, 2, \dots, N \le \text{total\_configured\_rounds}$.
    - Cumulative votes must be monotonic non-decreasing:
      $$\text{cumulative\_votes}_N \ge \text{cumulative\_votes}_{N-1}$$
    - Round delta equality:
      $$\text{round\_votes}_N = \text{cumulative\_votes}_N - \text{cumulative\_votes}_{N-1}$$
    - Round 1 base case: $\text{round\_votes}_1 = \text{cumulative\_votes}_1$.
-   - Final round cumulative votes must equal the session's $\text{total\_counted\_votes}$.
-   - Enforced by trigger `trg_verify_counting_round_progression`.
-3. **Bounds**: All vote quantities $\ge 0$, vote shares between $0.00\%$ and $100.00\%$ via declarative `CHECK` constraints.
+   - Earlier rounds cannot be modified while subsequent rounds exist.
+   - `trg_protect_counting_round_deletion` enforces that completed rounds cannot be deleted, and rounds in progress can only be rolled back in strict reverse order ($N, N-1, \dots$).
+   - `trg_synchronize_session_current_round` automatically synchronizes `counting_sessions.current_round`.
 
 ---
 
-## 7. Custom PostgreSQL SQL Integrity Script
+## 7. Round Leader & Per-Round Vote Architecture (Option B Selection)
+
+- **Design Decision**: The OVS schema adopts **Option B (Aggregate Counting Rounds with Validated Round Leader)**.
+- **Rationale**:
+  1. The educational simulation tracks progressive aggregate turnout and vote accumulation per round, while full candidate-by-candidate breakdowns are persisted in `candidate_tallies`.
+  2. Avoids redundant intermediate tables while guaranteeing data integrity.
+  3. Every `CountingRound.lead_candidate_id` is strictly verified by trigger to possess an `APPROVED` nomination for that exact election and constituency.
+
+---
+
+## 8. Custom PostgreSQL SQL Integrity Script
 
 All DDL, constraints, triggers, and procedural functions are centralized in:
 `docs/backend-architecture/CUSTOM_DATABASE_INTEGRITY.sql`.

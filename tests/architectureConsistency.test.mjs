@@ -329,7 +329,7 @@ describe('OVS Phase 8.1.2 — Final Database Integrity, Prisma Mapping & Result 
 
     // INSERT protection
     assert.ok(sqlContent.includes("IF TG_OP = 'INSERT' THEN"), 'Trigger must explicitly branch on TG_OP = INSERT');
-    assert.ok(sqlContent.includes("NEW.is_published = TRUE OR NEW.status = 'PUBLISHED'"), 'Direct insertion as PUBLISHED must be checked');
+    assert.ok(sqlContent.includes("NEW.is_published = TRUE OR NEW.status = 'PUBLISHED'") || sqlContent.includes("NEW.is_published = TRUE OR NEW.status != 'DRAFT'"), 'Direct insertion as PUBLISHED must be checked');
     assert.ok(sqlContent.includes("New counting sessions cannot be directly inserted as PUBLISHED. Must begin in DRAFT"), 'Clear exception on direct published insertion');
 
     // UPDATE state machine validation
@@ -405,3 +405,190 @@ describe('OVS Phase 8.1.2 — Final Database Integrity, Prisma Mapping & Result 
     assert.ok(testingDoc.includes('Suite 7') && testingDoc.includes('Suite 8') && testingDoc.includes('Suite 9'), 'Testing strategy must detail Suites 7, 8, and 9');
   });
 });
+
+describe('OVS Phase 8.1.3 — Final PostgreSQL Integrity & Transaction-Safety Verification', () => {
+  const prismaSchemaPath = path.join(rootDir, 'docs/backend-architecture/PRISMA_SCHEMA_DRAFT.prisma');
+  const customSqlPath = path.join(rootDir, 'docs/backend-architecture/CUSTOM_DATABASE_INTEGRITY.sql');
+  const dbDesignPath = path.join(rootDir, 'docs/backend-architecture/DATABASE_DESIGN.md');
+  const phaseReportPath = path.join(rootDir, 'PHASE_8_1_2_CORRECTION_REPORT.md');
+  const validationSqlPath = path.join(rootDir, 'tests/postgresql-validation.sql');
+
+  test('Test 8.1.3.1: ElectionConstituency membership validation for CandidateNomination and CountingSession', () => {
+    const sqlContent = fs.readFileSync(customSqlPath, 'utf8');
+
+    // CandidateNomination checks election_constituencies mapping
+    assert.ok(sqlContent.includes('SELECT 1 FROM election_constituencies'), 'Nomination trigger must check membership in election_constituencies');
+    assert.ok(sqlContent.includes('is not mapped to election % in election_constituencies'), 'Nomination trigger must reject unmapped constituencies');
+
+    // CountingSession checks election_constituencies mapping
+    assert.ok(sqlContent.includes('references PC % which is not mapped to election %') || sqlContent.includes('not mapped to election % in election_constituencies'), 'Counting session trigger must reject unmapped constituencies');
+
+    // ElectionConstituency mutation protection trigger
+    assert.ok(sqlContent.includes('prevent_election_constituency_mutation_with_dependents'), 'Trigger function to prevent election constituency mutation with dependents must exist');
+    assert.ok(sqlContent.includes('trg_prevent_election_constituency_mutation'), 'Trigger trg_prevent_election_constituency_mutation must be attached to election_constituencies');
+  });
+
+  test('Test 8.1.3.2: Candidate nomination lifecycle integrity and tally binding', () => {
+    const prismaContent = fs.readFileSync(prismaSchemaPath, 'utf8');
+    const sqlContent = fs.readFileSync(customSqlPath, 'utf8');
+
+    // Prisma schema has nominationId in CandidateTally
+    assert.ok(prismaContent.includes('nominationId') && prismaContent.includes('@map("nomination_id")'), 'CandidateTally must declare nominationId @map("nomination_id")');
+    assert.ok(prismaContent.includes('nomination          CandidateNomination? @relation(fields: [nominationId], references: [id], onDelete: Restrict)'), 'CandidateTally must define Restrict FK to CandidateNomination');
+
+    // SQL foreign key
+    assert.ok(sqlContent.includes('fk_tally_nomination'), 'fk_tally_nomination constraint must exist in SQL');
+    assert.ok(sqlContent.includes('REFERENCES candidate_nominations(id)'), 'Tally must reference candidate_nominations(id)');
+    assert.ok(sqlContent.includes('ON DELETE RESTRICT'), 'fk_tally_nomination must specify ON DELETE RESTRICT');
+
+    // Nomination protection trigger
+    assert.ok(sqlContent.includes('protect_nomination_lifecycle'), 'protect_nomination_lifecycle trigger function must exist');
+    assert.ok(sqlContent.includes('trg_protect_nomination_lifecycle'), 'Trigger trg_protect_nomination_lifecycle must be attached to candidate_nominations');
+    assert.ok(sqlContent.includes('Cannot delete candidate nomination %: % dependent counting tallies exist'), 'Deletion of nomination with tallies must be blocked');
+    assert.ok(sqlContent.includes('Cannot change nomination % status from APPROVED to %'), 'Invalidating nomination status with active tallies must be blocked');
+  });
+
+  test('Test 8.1.3.3: CountingSession mapping integrity and state scope', () => {
+    const sqlContent = fs.readFileSync(customSqlPath, 'utf8');
+
+    assert.ok(sqlContent.includes('verify_counting_session_compatibility'), 'verify_counting_session_compatibility function must exist');
+    assert.ok(sqlContent.includes('Counting session % for Lok Sabha must reference a Parliamentary Constituency'), 'Lok Sabha session must be PC');
+    assert.ok(sqlContent.includes('Counting session % for State Assembly must reference an Assembly Constituency'), 'State Assembly session must be AC');
+    assert.ok(sqlContent.includes('Counting session constituency state (%) does not match election state (%)'), 'AC state must match election state');
+  });
+
+  test('Test 8.1.3.4: Bidirectional tally INSERT, UPDATE and DELETE reconciliation', () => {
+    const sqlContent = fs.readFileSync(customSqlPath, 'utf8');
+
+    // Tally mutation protection and session lock
+    assert.ok(sqlContent.includes('protect_and_reconcile_candidate_tallies'), 'protect_and_reconcile_candidate_tallies trigger function must exist');
+    assert.ok(sqlContent.includes('trg_protect_and_reconcile_candidate_tallies'), 'Trigger must be attached to candidate_tallies');
+    assert.ok(sqlContent.includes('FOR UPDATE'), 'Trigger must acquire FOR UPDATE lock on counting session');
+    assert.ok(sqlContent.includes('BEFORE INSERT OR UPDATE OR DELETE ON candidate_tallies'), 'Tally protection trigger must run on INSERT, UPDATE and DELETE');
+    assert.ok(sqlContent.includes('Cannot % candidate tallies: session % is in % status'), 'Tally mutations on completed sessions must be blocked');
+  });
+
+  test('Test 8.1.3.5: Zero-vote reconciliation without bypass conditions', () => {
+    const sqlContent = fs.readFileSync(customSqlPath, 'utf8');
+
+    assert.ok(sqlContent.includes('reconcile_counting_session_votes'), 'reconcile_counting_session_votes trigger must exist');
+    // Ensure no "v_candidate_votes_sum > 0" bypass exists
+    assert.ok(!sqlContent.includes('v_candidate_votes_sum > 0'), 'Reconciliation must not bypass when candidate votes sum is zero');
+    assert.ok(sqlContent.includes('COALESCE(SUM(votes), 0)'), 'Reconciliation must handle empty tallies using COALESCE(SUM(votes), 0)');
+    assert.ok(sqlContent.includes('v_calculated_total := v_candidate_votes_sum + NEW.nota_votes + NEW.rejected_votes'), 'Formula must be candidate votes + NOTA + rejected');
+  });
+
+  test('Test 8.1.3.6: Publication status and flag equivalence & DRAFT-only initial state', () => {
+    const sqlContent = fs.readFileSync(customSqlPath, 'utf8');
+
+    // CHECK constraints
+    assert.ok(sqlContent.includes('chk_counting_session_publication_equivalence'), 'chk_counting_session_publication_equivalence constraint must exist');
+    assert.ok(sqlContent.includes("(status = 'PUBLISHED' AND is_published = TRUE)"), 'Equivalence CHECK constraint must require PUBLISHED <=> is_published = TRUE');
+    assert.ok(sqlContent.includes('chk_counting_session_initial_draft'), 'chk_counting_session_initial_draft constraint must exist');
+
+    // Trigger enforcement on INSERT
+    assert.ok(sqlContent.includes("TG_OP = 'INSERT'"), 'Publication trigger must inspect TG_OP = INSERT');
+    assert.ok(sqlContent.includes("NEW.status != 'DRAFT'"), 'New counting session must be in DRAFT status');
+  });
+
+  test('Test 8.1.3.7: Counting round progression, earlier-round immutability & deletion protection', () => {
+    const sqlContent = fs.readFileSync(customSqlPath, 'utf8');
+
+    // Progression trigger
+    assert.ok(sqlContent.includes('verify_counting_round_progression'), 'verify_counting_round_progression function must exist');
+    assert.ok(sqlContent.includes('FOR UPDATE'), 'Counting round trigger must lock counting session FOR UPDATE');
+    assert.ok(sqlContent.includes('Round number % is not sequential'), 'Round sequentiality must be enforced on INSERT');
+    assert.ok(sqlContent.includes('Cannot modify vote totals for earlier round % when subsequent rounds exist'), 'Earlier rounds must be immutable when later rounds exist');
+
+    // Deletion protection trigger
+    assert.ok(sqlContent.includes('protect_counting_round_deletion'), 'protect_counting_round_deletion trigger must exist');
+    assert.ok(sqlContent.includes('trg_protect_counting_round_deletion'), 'Trigger trg_protect_counting_round_deletion must be attached to counting_rounds');
+    assert.ok(sqlContent.includes('Rounds must be deleted in strict reverse order'), 'Strict reverse-order round rollback must be enforced');
+
+    // Current round synchronization
+    assert.ok(sqlContent.includes('synchronize_session_current_round'), 'synchronize_session_current_round trigger function must exist');
+  });
+
+  test('Test 8.1.3.8: Actual round completeness required for publication', () => {
+    const sqlContent = fs.readFileSync(customSqlPath, 'utf8');
+
+    assert.ok(sqlContent.includes('SELECT COUNT(*) INTO v_actual_rounds \n    FROM counting_rounds') || sqlContent.includes('SELECT COUNT(*) INTO v_actual_rounds FROM counting_rounds'), 'Publication trigger must count actual round records');
+    assert.ok(sqlContent.includes('v_actual_rounds < NEW.total_configured_rounds'), 'Publication trigger must verify all configured rounds exist');
+    assert.ok(sqlContent.includes('only % of % configured counting round records exist'), 'Clear exception message when round records are missing');
+  });
+
+  test('Test 8.1.3.9: Transaction-safe nomination limit via advisory locking', () => {
+    const sqlContent = fs.readFileSync(customSqlPath, 'utf8');
+
+    assert.ok(sqlContent.includes('pg_advisory_xact_lock'), 'Nomination trigger must employ pg_advisory_xact_lock for concurrency protection');
+    assert.ok(sqlContent.includes('candidate_nomination_limit:'), 'Advisory lock must use deterministic candidate-election key namespace');
+  });
+
+  test('Test 8.1.3.10: Round leader nomination validation in counting rounds', () => {
+    const sqlContent = fs.readFileSync(customSqlPath, 'utf8');
+
+    assert.ok(sqlContent.includes('NEW.lead_candidate_id IS NOT NULL'), 'Trigger must inspect lead_candidate_id');
+    assert.ok(sqlContent.includes('Round % leader % lacks an APPROVED nomination in session constituency'), 'Round leader must be validated for approved nomination');
+  });
+
+  test('Test 8.1.3.11: Accurate 24-model inventory and documentation consistency', () => {
+    const prismaContent = fs.readFileSync(prismaSchemaPath, 'utf8');
+    const dbDesignContent = fs.readFileSync(dbDesignPath, 'utf8');
+    const reportContent = fs.readFileSync(phaseReportPath, 'utf8');
+
+    const expectedModels = [
+      'State',
+      'District',
+      'ParliamentaryConstituency',
+      'AssemblyConstituency',
+      'User',
+      'VoterProfile',
+      'UserSession',
+      'AuthChallenge',
+      'Election',
+      'ElectionConstituency',
+      'ElectionLifecycleHistory',
+      'PoliticalParty',
+      'Candidate',
+      'CandidateNomination',
+      'AdminUser',
+      'AdminElectionScope',
+      'AdminActionLog',
+      'DemoParticipation',
+      'CountingSession',
+      'CountingRound',
+      'CandidateTally',
+      'ResultCorrectionHistory',
+      'Announcement',
+      'VoterNotification',
+    ];
+
+    const actualModels = [...prismaContent.matchAll(/^model\s+([A-Za-z0-9_]+)\s+\{/gm)].map(m => m[1]);
+    assert.equal(actualModels.length, 24, 'Actual Prisma schema must define exactly 24 models');
+    assert.deepEqual(actualModels.sort(), expectedModels.slice().sort(), 'Models in Prisma schema must match expected 24 models');
+
+    // Ensure phantom models do NOT exist in the actual schema or documentation tables
+    assert.ok(!actualModels.includes('RoundTally'), 'Schema must not define phantom model RoundTally');
+    assert.ok(!actualModels.includes('ElectionResult'), 'Schema must not define phantom model ElectionResult');
+    assert.ok(!actualModels.includes('ResultAuditHistory'), 'Schema must not define phantom model ResultAuditHistory');
+    assert.ok(!actualModels.includes('AppSession'), 'Schema must not define phantom model AppSession (it is UserSession)');
+
+    // Ensure DATABASE_DESIGN.md and PHASE_8_1_2_CORRECTION_REPORT.md tables contain the true 24 models
+    for (const m of expectedModels) {
+      assert.ok(dbDesignContent.includes(`\`${m}\``), `DATABASE_DESIGN.md must document model ${m}`);
+      assert.ok(reportContent.includes(`\`${m}\``), `PHASE_8_1_2_CORRECTION_REPORT.md must document model ${m}`);
+    }
+  });
+
+  test('Test 8.1.3.12: Standalone PostgreSQL integration test suite file exists and is comprehensive', () => {
+    assert.ok(fs.existsSync(validationSqlPath), 'tests/postgresql-validation.sql must exist');
+    const valContent = fs.readFileSync(validationSqlPath, 'utf8');
+    assert.ok(valContent.length > 5000, 'tests/postgresql-validation.sql must be a comprehensive test script');
+    assert.ok(valContent.includes('SCENARIO 1: Valid Geographic Hierarchy Insertion'), 'Must test scenario 1');
+    assert.ok(valContent.includes('SCENARIO 2: Invalid Geographic Hierarchy Rejection'), 'Must test scenario 2');
+    assert.ok(valContent.includes('SCENARIO 5: Section 33(7) Nomination Ceiling Enforcement'), 'Must test scenario 5');
+    assert.ok(valContent.includes('SCENARIO 9: Bidirectional Vote Reconciliation'), 'Must test scenario 9');
+    assert.ok(valContent.includes('SCENARIO 10: Publication Review Gate & Completeness Guard'), 'Must test scenario 10');
+  });
+});
+

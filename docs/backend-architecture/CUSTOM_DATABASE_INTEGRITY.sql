@@ -1,6 +1,6 @@
 -- ============================================================================
 -- Online Voting System (OVS) — Standalone Custom PostgreSQL Integrity Script
--- Phase 8.1.2: Complete Database Integrity, Constraints, Triggers & Reconciliation
+-- Phase 8.1.3: Final PostgreSQL Integrity & Transaction-Safety Hardening
 -- ============================================================================
 -- NOTE: This script documents and specifies the complete PostgreSQL 16+ DDL
 -- and procedural logic required beyond standard Prisma Schema Language (PSL).
@@ -15,21 +15,31 @@
 
 -- 1.1 District & PC Composite Uniqueness (Enabled for composite FK references)
 ALTER TABLE districts 
+  DROP CONSTRAINT IF EXISTS uq_districts_id_state;
+ALTER TABLE districts 
   ADD CONSTRAINT uq_districts_id_state 
   UNIQUE (id, state_id);
 
+ALTER TABLE parliamentary_constituencies 
+  DROP CONSTRAINT IF EXISTS uq_parliamentary_constituencies_id_state;
 ALTER TABLE parliamentary_constituencies 
   ADD CONSTRAINT uq_parliamentary_constituencies_id_state 
   UNIQUE (id, state_id);
 
 ALTER TABLE assembly_constituencies 
+  DROP CONSTRAINT IF EXISTS uq_assembly_constituencies_id_state;
+ALTER TABLE assembly_constituencies 
   ADD CONSTRAINT uq_assembly_constituencies_id_state 
   UNIQUE (id, state_id);
 
 ALTER TABLE assembly_constituencies 
+  DROP CONSTRAINT IF EXISTS uq_assembly_constituencies_id_parent_pc;
+ALTER TABLE assembly_constituencies 
   ADD CONSTRAINT uq_assembly_constituencies_id_parent_pc 
   UNIQUE (id, parent_parliamentary_constituency_id);
 
+ALTER TABLE candidates 
+  DROP CONSTRAINT IF EXISTS uq_candidates_id_party;
 ALTER TABLE candidates 
   ADD CONSTRAINT uq_candidates_id_party 
   UNIQUE (id, party_id);
@@ -37,11 +47,15 @@ ALTER TABLE candidates
 -- 1.2 Multi-Level Geographic Composite Foreign Keys
 -- Enforce that an AC strictly belongs to a District and PC within the same State
 ALTER TABLE assembly_constituencies
+  DROP CONSTRAINT IF EXISTS fk_ac_district_state;
+ALTER TABLE assembly_constituencies
   ADD CONSTRAINT fk_ac_district_state
   FOREIGN KEY (district_id, state_id) 
   REFERENCES districts(id, state_id) 
   ON DELETE RESTRICT;
 
+ALTER TABLE assembly_constituencies
+  DROP CONSTRAINT IF EXISTS fk_ac_parent_pc_state;
 ALTER TABLE assembly_constituencies
   ADD CONSTRAINT fk_ac_parent_pc_state
   FOREIGN KEY (parent_parliamentary_constituency_id, state_id) 
@@ -50,11 +64,15 @@ ALTER TABLE assembly_constituencies
 
 -- Enforce that a Voter's AC strictly belongs to their assigned PC and District in the same State
 ALTER TABLE voter_profiles
+  DROP CONSTRAINT IF EXISTS fk_voter_district_state;
+ALTER TABLE voter_profiles
   ADD CONSTRAINT fk_voter_district_state
   FOREIGN KEY (district_id, state_id) 
   REFERENCES districts(id, state_id) 
   ON DELETE RESTRICT;
 
+ALTER TABLE voter_profiles
+  DROP CONSTRAINT IF EXISTS fk_voter_pc_state;
 ALTER TABLE voter_profiles
   ADD CONSTRAINT fk_voter_pc_state
   FOREIGN KEY (parliamentary_constituency_id, state_id) 
@@ -62,17 +80,40 @@ ALTER TABLE voter_profiles
   ON DELETE RESTRICT;
 
 ALTER TABLE voter_profiles
+  DROP CONSTRAINT IF EXISTS fk_voter_ac_parent_pc;
+ALTER TABLE voter_profiles
   ADD CONSTRAINT fk_voter_ac_parent_pc
   FOREIGN KEY (assembly_constituency_id, parliamentary_constituency_id) 
   REFERENCES assembly_constituencies(id, parent_parliamentary_constituency_id) 
   ON DELETE RESTRICT;
 
--- Enforce Candidate-Party consistency in Tallies
+-- 1.3 Candidate Tally Referential Integrity & Nomination Lifecycle Binding
+-- Tally references approved nomination with ON DELETE RESTRICT
 ALTER TABLE candidate_tallies
-  ADD CONSTRAINT fk_tally_candidate_party
-  FOREIGN KEY (candidate_id, party_id) 
-  REFERENCES candidates(id, party_id) 
-  ON DELETE CASCADE;
+  DROP CONSTRAINT IF EXISTS fk_tally_nomination;
+ALTER TABLE candidate_tallies
+  ADD CONSTRAINT fk_tally_nomination
+  FOREIGN KEY (nomination_id)
+  REFERENCES candidate_nominations(id)
+  ON DELETE RESTRICT;
+
+-- Tally references registered party
+ALTER TABLE candidate_tallies
+  DROP CONSTRAINT IF EXISTS fk_tally_party;
+ALTER TABLE candidate_tallies
+  ADD CONSTRAINT fk_tally_party
+  FOREIGN KEY (party_id)
+  REFERENCES political_parties(id)
+  ON DELETE RESTRICT;
+
+-- Tally references candidate
+ALTER TABLE candidate_tallies
+  DROP CONSTRAINT IF EXISTS fk_tally_candidate;
+ALTER TABLE candidate_tallies
+  ADD CONSTRAINT fk_tally_candidate
+  FOREIGN KEY (candidate_id)
+  REFERENCES candidates(id)
+  ON DELETE RESTRICT;
 
 -- ============================================================================
 -- SECTION 2: PARTIAL UNIQUE INDEXES (NULLABLE COMPOSITE UNIQUENESS)
@@ -113,6 +154,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_counting_session_ac
 
 -- 3.1 Constituency Type Mutual Exclusivity
 ALTER TABLE election_constituencies
+  DROP CONSTRAINT IF EXISTS chk_election_constituency_type_exclusivity;
+ALTER TABLE election_constituencies
   ADD CONSTRAINT chk_election_constituency_type_exclusivity
   CHECK (
     (constituency_type = 'PARLIAMENTARY' AND parliamentary_constituency_id IS NOT NULL AND assembly_constituency_id IS NULL)
@@ -121,6 +164,8 @@ ALTER TABLE election_constituencies
   );
 
 ALTER TABLE candidate_nominations
+  DROP CONSTRAINT IF EXISTS chk_nomination_constituency_type_exclusivity;
+ALTER TABLE candidate_nominations
   ADD CONSTRAINT chk_nomination_constituency_type_exclusivity
   CHECK (
     (constituency_type = 'PARLIAMENTARY' AND parliamentary_constituency_id IS NOT NULL AND assembly_constituency_id IS NULL)
@@ -128,6 +173,8 @@ ALTER TABLE candidate_nominations
     (constituency_type = 'ASSEMBLY' AND assembly_constituency_id IS NOT NULL AND parliamentary_constituency_id IS NULL)
   );
 
+ALTER TABLE counting_sessions
+  DROP CONSTRAINT IF EXISTS chk_counting_session_constituency_type_exclusivity;
 ALTER TABLE counting_sessions
   ADD CONSTRAINT chk_counting_session_constituency_type_exclusivity
   CHECK (
@@ -138,6 +185,8 @@ ALTER TABLE counting_sessions
 
 -- 3.2 Election Scope CHECK Constraint
 ALTER TABLE elections
+  DROP CONSTRAINT IF EXISTS chk_election_type_state_scope;
+ALTER TABLE elections
   ADD CONSTRAINT chk_election_type_state_scope
   CHECK (
     (type = 'LOK_SABHA' AND state_id IS NULL)
@@ -146,6 +195,8 @@ ALTER TABLE elections
   );
 
 -- 3.3 Announcement Targeting CHECK Constraint
+ALTER TABLE announcements
+  DROP CONSTRAINT IF EXISTS chk_announcement_constituency_targeting;
 ALTER TABLE announcements
   ADD CONSTRAINT chk_announcement_constituency_targeting
   CHECK (
@@ -158,26 +209,55 @@ ALTER TABLE announcements
 
 -- 3.4 Numerical Bounds CHECK Constraints
 ALTER TABLE counting_sessions
+  DROP CONSTRAINT IF EXISTS chk_counting_round_bounds;
+ALTER TABLE counting_sessions
   ADD CONSTRAINT chk_counting_round_bounds
   CHECK (current_round <= total_configured_rounds AND total_configured_rounds >= 1 AND current_round >= 0);
 
 ALTER TABLE counting_sessions
+  DROP CONSTRAINT IF EXISTS chk_counting_vote_non_negative;
+ALTER TABLE counting_sessions
   ADD CONSTRAINT chk_counting_vote_non_negative
-  CHECK (nota_votes >= 0 AND rejected_votes >= 0 AND total_counted_votes >= 0 AND total_voters >= 0 AND victory_margin >= 0);
+  CHECK (nota_votes >= 0 AND rejected_votes >= 0 AND total_counted_votes >= 0 AND victory_margin >= 0);
 
+ALTER TABLE counting_rounds
+  DROP CONSTRAINT IF EXISTS chk_counting_rounds_vote_non_negative;
 ALTER TABLE counting_rounds
   ADD CONSTRAINT chk_counting_rounds_vote_non_negative
   CHECK (round_number >= 1 AND round_votes >= 0 AND cumulative_votes >= 0 AND lead_margin >= 0);
 
 ALTER TABLE candidate_tallies
+  DROP CONSTRAINT IF EXISTS chk_tally_vote_and_share_bounds;
+ALTER TABLE candidate_tallies
   ADD CONSTRAINT chk_tally_vote_and_share_bounds
   CHECK (votes >= 0 AND vote_share_percentage >= 0.00 AND vote_share_percentage <= 100.00);
 
+-- 3.5 Publication State & Flag Equivalence CHECK Constraint
+-- Invariant: status = 'PUBLISHED' <=> is_published = TRUE
+ALTER TABLE counting_sessions
+  DROP CONSTRAINT IF EXISTS chk_counting_session_publication_equivalence;
+ALTER TABLE counting_sessions
+  ADD CONSTRAINT chk_counting_session_publication_equivalence
+  CHECK (
+    (status = 'PUBLISHED' AND is_published = TRUE)
+    OR
+    (status != 'PUBLISHED' AND is_published = FALSE)
+  );
+
+-- Invariant: A session cannot be initialized as published
+ALTER TABLE counting_sessions
+  DROP CONSTRAINT IF EXISTS chk_counting_session_initial_draft;
+ALTER TABLE counting_sessions
+  ADD CONSTRAINT chk_counting_session_initial_draft
+  CHECK (
+    NOT (current_round = 0 AND total_counted_votes = 0 AND is_published = TRUE)
+  );
+
 -- ============================================================================
--- SECTION 4: ELECTION-TO-CONSTITUENCY COMPATIBILITY TRIGGERS
+-- SECTION 4: ELECTION-TO-CONSTITUENCY COMPATIBILITY & MAPPING TRIGGERS
 -- ============================================================================
 
--- 4.1 Verify Election-Constituency Compatibility
+-- 4.1 Verify Election-Constituency Compatibility & Mapping
 CREATE OR REPLACE FUNCTION verify_election_constituency_compatibility()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -225,7 +305,63 @@ CREATE TRIGGER trg_verify_election_constituency_compatibility
   FOR EACH ROW
   EXECUTE FUNCTION verify_election_constituency_compatibility();
 
--- 4.2 Verify Candidate Nomination Compatibility & Statutory Limit (RPA 1951 s.33(7))
+-- 4.2 Protect ElectionConstituency Deletion & Mutation with Dependents
+CREATE OR REPLACE FUNCTION prevent_election_constituency_mutation_with_dependents()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_nomination_count INT;
+  v_session_count INT;
+BEGIN
+  IF TG_OP = 'DELETE' OR (TG_OP = 'UPDATE' AND (
+    OLD.election_id != NEW.election_id OR 
+    OLD.constituency_type != NEW.constituency_type OR
+    OLD.parliamentary_constituency_id IS DISTINCT FROM NEW.parliamentary_constituency_id OR
+    OLD.assembly_constituency_id IS DISTINCT FROM NEW.assembly_constituency_id
+  )) THEN
+    IF OLD.constituency_type = 'PARLIAMENTARY' THEN
+      SELECT COUNT(*) INTO v_nomination_count 
+      FROM candidate_nominations 
+      WHERE election_id = OLD.election_id 
+        AND parliamentary_constituency_id = OLD.parliamentary_constituency_id;
+
+      SELECT COUNT(*) INTO v_session_count 
+      FROM counting_sessions 
+      WHERE election_id = OLD.election_id 
+        AND parliamentary_constituency_id = OLD.parliamentary_constituency_id;
+    ELSE
+      SELECT COUNT(*) INTO v_nomination_count 
+      FROM candidate_nominations 
+      WHERE election_id = OLD.election_id 
+        AND assembly_constituency_id = OLD.assembly_constituency_id;
+
+      SELECT COUNT(*) INTO v_session_count 
+      FROM counting_sessions 
+      WHERE election_id = OLD.election_id 
+        AND assembly_constituency_id = OLD.assembly_constituency_id;
+    END IF;
+
+    IF v_nomination_count > 0 THEN
+      RAISE EXCEPTION 'Cannot % election_constituency mapping for % in election %: % dependent candidate nominations exist.',
+        TG_OP, COALESCE(OLD.parliamentary_constituency_id, OLD.assembly_constituency_id), OLD.election_id, v_nomination_count;
+    END IF;
+
+    IF v_session_count > 0 THEN
+      RAISE EXCEPTION 'Cannot % election_constituency mapping for % in election %: % dependent counting sessions exist.',
+        TG_OP, COALESCE(OLD.parliamentary_constituency_id, OLD.assembly_constituency_id), OLD.election_id, v_session_count;
+    END IF;
+  END IF;
+
+  RETURN COALESCE(NEW, OLD);
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_prevent_election_constituency_mutation ON election_constituencies;
+CREATE TRIGGER trg_prevent_election_constituency_mutation
+  BEFORE DELETE OR UPDATE ON election_constituencies
+  FOR EACH ROW
+  EXECUTE FUNCTION prevent_election_constituency_mutation_with_dependents();
+
+-- 4.3 Verify Candidate Nomination Compatibility, Mapping & Concurrency-Safe Limits
 CREATE OR REPLACE FUNCTION verify_candidate_nomination_compatibility()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -234,6 +370,9 @@ DECLARE
   v_ac_state_id VARCHAR(10);
   v_nomination_count INT;
 BEGIN
+  -- Concurrency-Safe Locking: Serialize nominations per candidate per election
+  PERFORM pg_advisory_xact_lock(hashtext('candidate_nomination_limit:' || NEW.candidate_id || ':' || NEW.election_id));
+
   SELECT type, state_id INTO v_election_type, v_election_state_id 
   FROM elections WHERE id = NEW.election_id;
 
@@ -261,13 +400,36 @@ BEGIN
     END IF;
   END IF;
 
+  -- Invariant: Constituency MUST be explicitly mapped to this election in election_constituencies
+  IF NEW.constituency_type = 'PARLIAMENTARY' THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM election_constituencies 
+      WHERE election_id = NEW.election_id 
+        AND constituency_type = 'PARLIAMENTARY'
+        AND parliamentary_constituency_id = NEW.parliamentary_constituency_id
+    ) THEN
+      RAISE EXCEPTION 'Parliamentary constituency % is not mapped to election % in election_constituencies.',
+        NEW.parliamentary_constituency_id, NEW.election_id;
+    END IF;
+  ELSE
+    IF NOT EXISTS (
+      SELECT 1 FROM election_constituencies 
+      WHERE election_id = NEW.election_id 
+        AND constituency_type = 'ASSEMBLY'
+        AND assembly_constituency_id = NEW.assembly_constituency_id
+    ) THEN
+      RAISE EXCEPTION 'Assembly constituency % is not mapped to election % in election_constituencies.',
+        NEW.assembly_constituency_id, NEW.election_id;
+    END IF;
+  END IF;
+
   -- Statutory Limit: Section 33(7) RPA 1951 allows up to 2 active nominations per election
   SELECT COUNT(*) INTO v_nomination_count
   FROM candidate_nominations
   WHERE candidate_id = NEW.candidate_id 
     AND election_id = NEW.election_id
     AND id != COALESCE(NEW.id, '00000000-0000-0000-0000-000000000000'::uuid)
-    AND status NOT IN ('REJECTED', 'WITHDRAWN');
+    AND status NOT IN ('REJECTED', 'WITHDRAWN', 'ARCHIVED');
 
   IF v_nomination_count >= 2 THEN
     RAISE EXCEPTION 'Candidate % exceeds statutory limit of 2 nominations in election % (RPA 1951 s.33(7)).',
@@ -284,7 +446,7 @@ CREATE TRIGGER trg_verify_candidate_nomination_compatibility
   FOR EACH ROW
   EXECUTE FUNCTION verify_candidate_nomination_compatibility();
 
--- 4.3 Verify Counting Session Compatibility
+-- 4.4 Verify Counting Session Compatibility & Election Mapping
 CREATE OR REPLACE FUNCTION verify_counting_session_compatibility()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -319,6 +481,29 @@ BEGIN
     END IF;
   END IF;
 
+  -- Invariant: Constituency MUST be explicitly mapped to this election in election_constituencies
+  IF NEW.constituency_type = 'PARLIAMENTARY' THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM election_constituencies 
+      WHERE election_id = NEW.election_id 
+        AND constituency_type = 'PARLIAMENTARY'
+        AND parliamentary_constituency_id = NEW.parliamentary_constituency_id
+    ) THEN
+      RAISE EXCEPTION 'Counting session % references PC % which is not mapped to election %.',
+        NEW.id, NEW.parliamentary_constituency_id, NEW.election_id;
+    END IF;
+  ELSE
+    IF NOT EXISTS (
+      SELECT 1 FROM election_constituencies 
+      WHERE election_id = NEW.election_id 
+        AND constituency_type = 'ASSEMBLY'
+        AND assembly_constituency_id = NEW.assembly_constituency_id
+    ) THEN
+      RAISE EXCEPTION 'Counting session % references AC % which is not mapped to election %.',
+        NEW.id, NEW.assembly_constituency_id, NEW.election_id;
+    END IF;
+  END IF;
+
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
@@ -343,6 +528,7 @@ DECLARE
   v_ac_id VARCHAR(50);
   v_candidate_party_id VARCHAR(50);
   v_nomination_id UUID;
+  v_nom_status "CandidateNominationStatus";
 BEGIN
   -- Rejection of NOTA as an ordinary candidate (NOTA must use nota_votes column)
   IF UPPER(NEW.candidate_id) = 'NOTA' OR UPPER(NEW.candidate_id) LIKE '%NOTA%' THEN
@@ -373,7 +559,7 @@ BEGIN
 
   -- 3. Verify candidate has an APPROVED nomination in that election and exact constituency
   IF v_constituency_type = 'PARLIAMENTARY' THEN
-    SELECT id INTO v_nomination_id
+    SELECT id, status INTO v_nomination_id, v_nom_status
     FROM candidate_nominations
     WHERE candidate_id = NEW.candidate_id
       AND election_id = v_election_id
@@ -381,7 +567,7 @@ BEGIN
       AND parliamentary_constituency_id = v_pc_id
       AND status = 'APPROVED';
   ELSE
-    SELECT id INTO v_nomination_id
+    SELECT id, status INTO v_nomination_id, v_nom_status
     FROM candidate_nominations
     WHERE candidate_id = NEW.candidate_id
       AND election_id = v_election_id
@@ -390,9 +576,17 @@ BEGIN
       AND status = 'APPROVED';
   END IF;
 
-  IF NOT FOUND THEN
+  IF NOT FOUND OR v_nom_status != 'APPROVED' THEN
     RAISE EXCEPTION 'Candidate % does not hold an APPROVED nomination for election % in constituency %.',
       NEW.candidate_id, v_election_id, COALESCE(v_pc_id, v_ac_id);
+  END IF;
+
+  -- Synchronize nomination_id foreign key
+  IF NEW.nomination_id IS NULL THEN
+    NEW.nomination_id := v_nomination_id;
+  ELSIF NEW.nomination_id != v_nomination_id THEN
+    RAISE EXCEPTION 'Tally nomination_id (%) does not match verified constituency nomination (%).',
+      NEW.nomination_id, v_nomination_id;
   END IF;
 
   RETURN NEW;
@@ -405,7 +599,83 @@ CREATE TRIGGER trg_verify_candidate_tally_nomination
   FOR EACH ROW
   EXECUTE FUNCTION verify_candidate_tally_nomination();
 
--- 5.2 Verify Winner, Runner-Up, and Round Leader Nominations in Counting Sessions
+-- 5.2 Protect Nomination Lifecycle Against Post-Tally Invalidation
+CREATE OR REPLACE FUNCTION protect_nomination_lifecycle()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_dependent_tally_count INT;
+  v_winner_count INT;
+BEGIN
+  -- Prevent deletion of nomination if tallies exist
+  IF TG_OP = 'DELETE' THEN
+    SELECT COUNT(*) INTO v_dependent_tally_count
+    FROM candidate_tallies
+    WHERE nomination_id = OLD.id OR (candidate_id = OLD.candidate_id AND session_id IN (
+      SELECT id FROM counting_sessions 
+      WHERE election_id = OLD.election_id 
+        AND ((OLD.constituency_type = 'PARLIAMENTARY' AND parliamentary_constituency_id = OLD.parliamentary_constituency_id) OR
+             (OLD.constituency_type = 'ASSEMBLY' AND assembly_constituency_id = OLD.assembly_constituency_id))
+    ));
+
+    IF v_dependent_tally_count > 0 THEN
+      RAISE EXCEPTION 'Cannot delete candidate nomination %: % dependent counting tallies exist.',
+        OLD.id, v_dependent_tally_count;
+    END IF;
+    RETURN OLD;
+  END IF;
+
+  -- On UPDATE: Disallow changing election or constituency while dependent tallies exist
+  IF TG_OP = 'UPDATE' THEN
+    IF OLD.election_id != NEW.election_id OR 
+       OLD.constituency_type != NEW.constituency_type OR
+       OLD.parliamentary_constituency_id IS DISTINCT FROM NEW.parliamentary_constituency_id OR
+       OLD.assembly_constituency_id IS DISTINCT FROM NEW.assembly_constituency_id OR
+       OLD.candidate_id != NEW.candidate_id THEN
+      SELECT COUNT(*) INTO v_dependent_tally_count
+      FROM candidate_tallies WHERE nomination_id = OLD.id;
+
+      IF v_dependent_tally_count > 0 THEN
+        RAISE EXCEPTION 'Cannot modify election/constituency for nomination %: % dependent tallies exist.',
+          OLD.id, v_dependent_tally_count;
+      END IF;
+    END IF;
+
+    -- Disallow invalidating (REJECTED/WITHDRAWN) an approved nomination if active tallies or winners depend on it
+    IF OLD.status = 'APPROVED' AND NEW.status IN ('REJECTED', 'WITHDRAWN', 'SUSPENDED', 'ARCHIVED') THEN
+      SELECT COUNT(*) INTO v_dependent_tally_count
+      FROM candidate_tallies WHERE nomination_id = OLD.id;
+
+      IF v_dependent_tally_count > 0 THEN
+        RAISE EXCEPTION 'Cannot change nomination % status from APPROVED to %: active candidate tallies exist in counting session.',
+          OLD.id, NEW.status;
+      END IF;
+
+      -- Check if candidate is marked as winner or runner-up
+      SELECT COUNT(*) INTO v_winner_count
+      FROM counting_sessions
+      WHERE election_id = OLD.election_id 
+        AND ((OLD.constituency_type = 'PARLIAMENTARY' AND parliamentary_constituency_id = OLD.parliamentary_constituency_id) OR
+             (OLD.constituency_type = 'ASSEMBLY' AND assembly_constituency_id = OLD.assembly_constituency_id))
+        AND (winner_candidate_id = OLD.candidate_id OR runner_up_candidate_id = OLD.candidate_id);
+
+      IF v_winner_count > 0 THEN
+        RAISE EXCEPTION 'Cannot change nomination % status to %: candidate is declared winner/runner-up in counting session.',
+          OLD.id, NEW.status;
+      END IF;
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_protect_nomination_lifecycle ON candidate_nominations;
+CREATE TRIGGER trg_protect_nomination_lifecycle
+  BEFORE UPDATE OR DELETE ON candidate_nominations
+  FOR EACH ROW
+  EXECUTE FUNCTION protect_nomination_lifecycle();
+
+-- 5.3 Verify Winner, Runner-Up, and Round Leader Nominations in Counting Sessions
 CREATE OR REPLACE FUNCTION verify_counting_session_candidates()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -470,16 +740,15 @@ CREATE OR REPLACE FUNCTION verify_counting_session_publication()
 RETURNS TRIGGER AS $$
 DECLARE
   v_correction_count INT;
+  v_actual_rounds INT;
 BEGIN
   -- ==========================================================================
   -- 6.1 INSERT Path Protection: Sessions MUST be created in DRAFT
   -- ==========================================================================
   IF TG_OP = 'INSERT' THEN
-    IF NEW.is_published = TRUE OR NEW.status = 'PUBLISHED' THEN
-      RAISE EXCEPTION 'New counting sessions cannot be directly inserted as PUBLISHED. Must begin in DRAFT.';
-    END IF;
-    IF NEW.status NOT IN ('DRAFT', 'COUNTING_IN_PROGRESS') THEN
-      RAISE EXCEPTION 'Invalid initial state % for counting session. Must be DRAFT.', NEW.status;
+    IF NEW.is_published = TRUE OR NEW.status != 'DRAFT' THEN
+      RAISE EXCEPTION 'New counting sessions cannot be directly inserted as PUBLISHED. Must begin in DRAFT status with is_published = FALSE (received status: %, is_published: %).',
+        NEW.status, NEW.is_published;
     END IF;
     RETURN NEW;
   END IF;
@@ -545,19 +814,17 @@ BEGIN
   END IF;
 
   -- ==========================================================================
-  -- 6.3 Publication Invariant Enforcement (is_published = TRUE)
+  -- 6.3 Publication Invariant Enforcement (is_published = TRUE or status = PUBLISHED)
   -- ==========================================================================
-  IF NEW.is_published = TRUE AND (OLD.is_published = FALSE OR OLD.status != 'PUBLISHED') THEN
-    -- Rule 1: Cannot publish directly from DRAFT or COUNTING_COMPLETED.
-    -- Publication REQUIRES an approved review stage (previous status must be RESULT_READY_FOR_REVIEW).
+  IF NEW.is_published = TRUE OR NEW.status = 'PUBLISHED' THEN
+    -- Rule 1: Publication strictly requires an approved review stage (previous status = RESULT_READY_FOR_REVIEW)
     IF OLD.status != 'RESULT_READY_FOR_REVIEW' THEN
       RAISE EXCEPTION 'Cannot publish result from status %; must be reviewed in RESULT_READY_FOR_REVIEW stage first.', OLD.status;
     END IF;
 
-    -- Rule 2: Result status must be set to PUBLISHED
-    IF NEW.status != 'PUBLISHED' THEN
-      RAISE EXCEPTION 'Result flagged as is_published must have status = PUBLISHED (current: %).', NEW.status;
-    END IF;
+    -- Rule 2: Result status and flag equivalence
+    NEW.status := 'PUBLISHED';
+    NEW.is_published := TRUE;
 
     -- Rule 3: Incomplete counting session cannot be published
     IF NEW.current_round < NEW.total_configured_rounds THEN
@@ -565,12 +832,22 @@ BEGIN
         NEW.current_round, NEW.total_configured_rounds;
     END IF;
 
-    -- Rule 4: Tied results cannot be published without resolution
-    IF NEW.status = 'TIED' OR OLD.status = 'TIED' THEN
-      RAISE EXCEPTION 'Cannot publish result while in TIED status.';
+    -- Rule 4: All configured counting rounds must physically exist in database
+    SELECT COUNT(*) INTO v_actual_rounds 
+    FROM counting_rounds 
+    WHERE session_id = NEW.id;
+
+    IF v_actual_rounds < NEW.total_configured_rounds THEN
+      RAISE EXCEPTION 'Cannot publish result: only % of % configured counting round records exist.',
+        v_actual_rounds, NEW.total_configured_rounds;
     END IF;
 
-    -- Rule 5: Publication must record publishing administrator and timestamp
+    -- Rule 5: Tied results cannot be published without documented resolution
+    IF NEW.status = 'TIED' OR OLD.status = 'TIED' THEN
+      RAISE EXCEPTION 'Cannot publish result while in TIED status without documented resolution.';
+    END IF;
+
+    -- Rule 6: Publication must record publishing administrator and timestamp
     IF NEW.published_by_admin_id IS NULL THEN
       RAISE EXCEPTION 'Publication rejected: published_by_admin_id must be populated.';
     END IF;
@@ -579,10 +856,13 @@ BEGIN
       NEW.published_at := NOW();
     END IF;
 
-    -- Rule 6: Winner must be declared
+    -- Rule 7: Winner must be declared
     IF NEW.winner_candidate_id IS NULL AND NEW.total_counted_votes > 0 THEN
       RAISE EXCEPTION 'Cannot publish result without a declared winner.';
     END IF;
+  ELSE
+    -- Synchronization: If status is not PUBLISHED, is_published must be false
+    NEW.is_published := FALSE;
   END IF;
 
   -- ==========================================================================
@@ -596,11 +876,6 @@ BEGIN
     IF v_correction_count = 0 THEN
       RAISE EXCEPTION 'Cannot transition to CORRECTED without an immutable result_correction_history entry.';
     END IF;
-  END IF;
-
-  -- Synchronization: If status is not PUBLISHED, is_published must be false
-  IF NEW.status != 'PUBLISHED' AND NEW.is_published = TRUE THEN
-    NEW.is_published := FALSE;
   END IF;
 
   RETURN NEW;
@@ -617,7 +892,7 @@ CREATE TRIGGER trg_verify_counting_session_publication
 -- SECTION 7: COUNTING RECONCILIATION & NUMERICAL INTEGRITY
 -- ============================================================================
 
--- 7.1 Reconcile Counting Session Vote Sums
+-- 7.1 Reconcile Counting Session Vote Sums on CountingSession Updates
 -- Formula: total_counted_votes = SUM(candidate_tallies.votes) + nota_votes + rejected_votes
 CREATE OR REPLACE FUNCTION reconcile_counting_session_votes()
 RETURNS TRIGGER AS $$
@@ -625,7 +900,8 @@ DECLARE
   v_candidate_votes_sum INT;
   v_calculated_total INT;
 BEGIN
-  -- Only perform strict reconciliation once counting has commenced
+  -- Strict reconciliation runs whenever session status transitions to completed/reviewed/published,
+  -- or when vote total fields are modified.
   IF NEW.current_round > 0 OR NEW.status IN ('COUNTING_COMPLETED', 'RESULT_READY_FOR_REVIEW', 'PUBLISHED') THEN
     SELECT COALESCE(SUM(votes), 0) INTO v_candidate_votes_sum
     FROM candidate_tallies
@@ -633,8 +909,8 @@ BEGIN
 
     v_calculated_total := v_candidate_votes_sum + NEW.nota_votes + NEW.rejected_votes;
 
-    -- If tally records exist and total is populated, enforce equality
-    IF v_candidate_votes_sum > 0 AND NEW.total_counted_votes != v_calculated_total THEN
+    -- Zero-vote and non-zero-vote strict equality check (no bypass condition)
+    IF NEW.total_counted_votes != v_calculated_total THEN
       RAISE EXCEPTION 'Vote reconciliation error in session %: total_counted_votes (%) != sum of candidate votes (%) + NOTA (%) + rejected (%).',
         NEW.id, NEW.total_counted_votes, v_candidate_votes_sum, NEW.nota_votes, NEW.rejected_votes;
     END IF;
@@ -650,32 +926,138 @@ CREATE TRIGGER trg_reconcile_counting_session_votes
   FOR EACH ROW
   EXECUTE FUNCTION reconcile_counting_session_votes();
 
--- 7.2 Verify Sequential Counting Rounds Progression
+-- 7.2 Protect & Reconcile Candidate Tallies Against Completed Sessions (Bidirectional)
+CREATE OR REPLACE FUNCTION protect_and_reconcile_candidate_tallies()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_target_session_id VARCHAR(100);
+  v_session_status "ResultStatus";
+  v_total_counted INT;
+  v_nota INT;
+  v_rejected INT;
+  v_current_round INT;
+  v_configured_rounds INT;
+BEGIN
+  v_target_session_id := COALESCE(NEW.session_id, OLD.session_id);
+
+  -- Acquire row-level lock on counting_session for transaction safety
+  SELECT status, total_counted_votes, nota_votes, rejected_votes, current_round, total_configured_rounds
+  INTO v_session_status, v_total_counted, v_nota, v_rejected, v_current_round, v_configured_rounds
+  FROM counting_sessions 
+  WHERE id = v_target_session_id 
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Referenced counting session % not found.', v_target_session_id;
+  END IF;
+
+  -- Invariant: Do not permit changes to completed counting data without an explicit recount or correction workflow
+  IF v_session_status IN ('COUNTING_COMPLETED', 'RESULT_READY_FOR_REVIEW', 'PUBLISHED') THEN
+    RAISE EXCEPTION 'Cannot % candidate tallies: session % is in % status. Modifications require an explicit UNDER_REVIEW or recount state.',
+      TG_OP, v_target_session_id, v_session_status;
+  END IF;
+
+  RETURN COALESCE(NEW, OLD);
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_protect_and_reconcile_candidate_tallies ON candidate_tallies;
+CREATE TRIGGER trg_protect_and_reconcile_candidate_tallies
+  BEFORE INSERT OR UPDATE OR DELETE ON candidate_tallies
+  FOR EACH ROW
+  EXECUTE FUNCTION protect_and_reconcile_candidate_tallies();
+
+-- 7.3 Verify Sequential Counting Rounds Progression & Round Leader Integrity
 -- Invariants:
--- 1. Round numbers must be sequential (1, 2, ... N).
--- 2. Cumulative votes cannot decrease between rounds.
--- 3. Round votes cannot exceed cumulative votes.
+-- 1. Round numbers must begin at 1 and be strictly sequential.
+-- 2. Duplicate rounds are prohibited (enforced via unique constraint).
+-- 3. Round numbers cannot exceed total configured rounds.
+-- 4. Cumulative votes cannot decrease between rounds.
+-- 5. Round votes must equal delta between consecutive cumulative totals.
+-- 6. Round leader must possess an APPROVED nomination in this constituency.
+-- 7. Completed rounds cannot be modified while subsequent rounds exist.
 CREATE OR REPLACE FUNCTION verify_counting_round_progression()
 RETURNS TRIGGER AS $$
 DECLARE
   v_prev_cumulative INT;
   v_configured_rounds INT;
+  v_session_status "ResultStatus";
+  v_election_id VARCHAR(50);
+  v_constituency_type "ConstituencyType";
+  v_pc_id VARCHAR(50);
+  v_ac_id VARCHAR(50);
+  v_leader_nom_id UUID;
+  v_max_round INT;
 BEGIN
-  SELECT total_configured_rounds INTO v_configured_rounds
-  FROM counting_sessions WHERE id = NEW.session_id;
+  -- Acquire row-level lock on counting session for transaction-safe round progress
+  SELECT total_configured_rounds, status, election_id, constituency_type, parliamentary_constituency_id, assembly_constituency_id
+  INTO v_configured_rounds, v_session_status, v_election_id, v_constituency_type, v_pc_id, v_ac_id
+  FROM counting_sessions 
+  WHERE id = NEW.session_id 
+  FOR UPDATE;
 
-  IF NEW.round_number > v_configured_rounds THEN
-    RAISE EXCEPTION 'Round number % exceeds session configured rounds %.', 
+  IF v_session_status IN ('COUNTING_COMPLETED', 'RESULT_READY_FOR_REVIEW', 'PUBLISHED') THEN
+    RAISE EXCEPTION 'Cannot add or modify rounds: counting session % is in % status.', NEW.session_id, v_session_status;
+  END IF;
+
+  IF NEW.round_number < 1 OR NEW.round_number > v_configured_rounds THEN
+    RAISE EXCEPTION 'Round number % must be between 1 and configured rounds %.', 
       NEW.round_number, v_configured_rounds;
   END IF;
 
+  -- Validate declared round leader nomination
+  IF NEW.lead_candidate_id IS NOT NULL THEN
+    IF v_constituency_type = 'PARLIAMENTARY' THEN
+      SELECT id INTO v_leader_nom_id 
+      FROM candidate_nominations
+      WHERE candidate_id = NEW.lead_candidate_id 
+        AND election_id = v_election_id
+        AND parliamentary_constituency_id = v_pc_id 
+        AND status = 'APPROVED';
+    ELSE
+      SELECT id INTO v_leader_nom_id 
+      FROM candidate_nominations
+      WHERE candidate_id = NEW.lead_candidate_id 
+        AND election_id = v_election_id
+        AND assembly_constituency_id = v_ac_id 
+        AND status = 'APPROVED';
+    END IF;
+
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'Round % leader % lacks an APPROVED nomination in session constituency.',
+        NEW.round_number, NEW.lead_candidate_id;
+    END IF;
+  END IF;
+
+  -- Sequentiality check on INSERT
+  IF TG_OP = 'INSERT' THEN
+    SELECT COALESCE(MAX(round_number), 0) INTO v_max_round
+    FROM counting_rounds 
+    WHERE session_id = NEW.session_id;
+
+    IF NEW.round_number != v_max_round + 1 THEN
+      RAISE EXCEPTION 'Round number % is not sequential; expected %.', NEW.round_number, (v_max_round + 1);
+    END IF;
+  END IF;
+
+  -- Earlier round immutability check on UPDATE
+  IF TG_OP = 'UPDATE' THEN
+    IF EXISTS (SELECT 1 FROM counting_rounds WHERE session_id = NEW.session_id AND round_number > NEW.round_number) THEN
+      IF OLD.cumulative_votes != NEW.cumulative_votes OR OLD.round_votes != NEW.round_votes THEN
+        RAISE EXCEPTION 'Cannot modify vote totals for earlier round % when subsequent rounds exist. Modifications require rolling back subsequent rounds first.',
+          NEW.round_number;
+      END IF;
+    END IF;
+  END IF;
+
+  -- Cumulative progression check
   IF NEW.round_number > 1 THEN
     SELECT cumulative_votes INTO v_prev_cumulative
     FROM counting_rounds
     WHERE session_id = NEW.session_id AND round_number = NEW.round_number - 1;
 
     IF NOT FOUND THEN
-      RAISE EXCEPTION 'Cannot insert round % before round % is recorded.',
+      RAISE EXCEPTION 'Cannot record round % before round % exists.',
         NEW.round_number, NEW.round_number - 1;
     END IF;
 
@@ -704,3 +1086,68 @@ CREATE TRIGGER trg_verify_counting_round_progression
   BEFORE INSERT OR UPDATE ON counting_rounds
   FOR EACH ROW
   EXECUTE FUNCTION verify_counting_round_progression();
+
+-- 7.4 Protect Counting Round Deletion (Reverse-Order Rollback Only)
+CREATE OR REPLACE FUNCTION protect_counting_round_deletion()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_session_status "ResultStatus";
+  v_max_round INT;
+BEGIN
+  -- Acquire lock on parent session
+  SELECT status INTO v_session_status 
+  FROM counting_sessions 
+  WHERE id = OLD.session_id 
+  FOR UPDATE;
+
+  IF v_session_status IN ('COUNTING_COMPLETED', 'RESULT_READY_FOR_REVIEW', 'PUBLISHED') THEN
+    RAISE EXCEPTION 'Cannot delete round %: counting session % is in % status.',
+      OLD.round_number, OLD.session_id, v_session_status;
+  END IF;
+
+  -- Rounds must be rolled back in strict reverse order
+  SELECT MAX(round_number) INTO v_max_round 
+  FROM counting_rounds 
+  WHERE session_id = OLD.session_id;
+
+  IF OLD.round_number < v_max_round THEN
+    RAISE EXCEPTION 'Cannot delete round %: subsequent rounds exist up to %. Rounds must be deleted in strict reverse order.',
+      OLD.round_number, v_max_round;
+  END IF;
+
+  RETURN OLD;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_protect_counting_round_deletion ON counting_rounds;
+CREATE TRIGGER trg_protect_counting_round_deletion
+  BEFORE DELETE ON counting_rounds
+  FOR EACH ROW
+  EXECUTE FUNCTION protect_counting_round_deletion();
+
+-- 7.5 Synchronize Current Round Counter on Round Insert or Delete
+CREATE OR REPLACE FUNCTION synchronize_session_current_round()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_target_session_id VARCHAR(100);
+  v_max_round INT;
+BEGIN
+  v_target_session_id := COALESCE(NEW.session_id, OLD.session_id);
+
+  SELECT COALESCE(MAX(round_number), 0) INTO v_max_round
+  FROM counting_rounds 
+  WHERE session_id = v_target_session_id;
+
+  UPDATE counting_sessions 
+  SET current_round = v_max_round
+  WHERE id = v_target_session_id;
+
+  RETURN COALESCE(NEW, OLD);
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_synchronize_session_current_round ON counting_rounds;
+CREATE TRIGGER trg_synchronize_session_current_round
+  AFTER INSERT OR DELETE ON counting_rounds
+  FOR EACH ROW
+  EXECUTE FUNCTION synchronize_session_current_round();

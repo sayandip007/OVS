@@ -99,6 +99,23 @@ The OVS testing architecture guarantees that all electoral domain rules, constit
 - **Round Delta & Monotonicity**: Attempt to record round 2 where cumulative votes decrease.
   - *Assertion*: Rejected by trigger `trg_verify_counting_round_progression`.
 
+### 3.10 Suite 10: PostgreSQL Integrity & Transaction-Safety Suite (Phase 8.1.3)
+- **ElectionConstituency Membership**: Attempt to nominate a candidate or create a counting session in an unmapped constituency.
+  - *Assertion*: Aborted by `trg_verify_candidate_nomination_compatibility` or `trg_verify_counting_session_compatibility`.
+- **ElectionConstituency Mutation Guard**: Attempt to delete or alter constituency mappings with dependent nominations or sessions.
+  - *Assertion*: Rejected by `trg_prevent_election_constituency_mutation`.
+- **Candidate Nomination Lifecycle & Tally Protection**: Attempt to delete or invalidate a nomination with active tallies.
+  - *Assertion*: Rejected by `trg_protect_nomination_lifecycle` and foreign key `fk_tally_nomination`.
+- **Bidirectional Vote Reconciliation**: Attempt to modify candidate tallies on completed counting sessions, or record incorrect totals.
+  - *Assertion*: Rejected by `trg_protect_and_reconcile_candidate_tallies`. Zero-vote cases strictly reconciled without bypass.
+- **Publication Equivalence & Physical Round Completeness**: Direct SQL insertion or publication without all physical round records.
+  - *Assertion*: Rejected by `chk_counting_session_publication_equivalence` and `trg_verify_counting_session_publication`.
+- **Advisory Transaction Locking**: Concurrent nomination insertions for the same candidate and election.
+  - *Assertion*: Serialized via `pg_advisory_xact_lock(hashtext(...))`.
+- **Round Deletion & Immutability**: Attempt to delete earlier rounds out of reverse order or alter earlier round totals.
+  - *Assertion*: Rejected by `trg_protect_counting_round_deletion` and `trg_verify_counting_round_progression`.
+- **Disposable DB Integration Script**: Standalone test runner script `tests/postgresql-validation.sql` covering all 10 scenario suites.
+
 ---
 
 ## 4. CI/CD Pipeline Integration

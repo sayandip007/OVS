@@ -133,3 +133,54 @@
   $$\text{total\_counted\_votes} = \sum (\text{candidate\_tallies.votes}) + \text{nota\_votes} + \text{rejected\_votes}$$
   Enforce reconciliation on session completion via `trg_reconcile_counting_session_votes`. Enforce sequential, non-decreasing round progression via `trg_verify_counting_round_progression`.
 - **Consequences**: Guarantees numerical integrity and prevents corrupted tally states.
+
+---
+
+### ADR-018: Advisory Transaction Locking for Candidate Nomination Ceiling
+- **Status**: Accepted (Phase 8.1.3 Added)
+- **Context**: In high-concurrency environments, concurrent transactions attempting to insert nominations for the same candidate in the same election could both execute the `SELECT COUNT(*)` check before either commits, allowing more than 2 active nominations to bypass the limit.
+- **Decision**: Implement `PERFORM pg_advisory_xact_lock(hashtext('candidate_nomination_limit:' || candidate_id || ':' || election_id))` inside trigger `trg_verify_candidate_nomination_compatibility`.
+- **Consequences**: Serializes nomination limit verification on the exact `(candidate_id, election_id)` pair without locking the entire table or causing false deadlocks. Automatically released on transaction commit/abort.
+
+---
+
+### ADR-019: Bidirectional Vote Reconciliation & Completed Counting Immutability
+- **Status**: Accepted (Phase 8.1.3 Added)
+- **Context**: Previous reconciliation only fired on `counting_sessions` updates, leaving `candidate_tallies` vulnerable to post-completion mutation. Furthermore, zero-vote candidate tallies bypassed reconciliation.
+- **Decision**: Make vote reconciliation bidirectional:
+  1. Remove bypass conditions: `COALESCE(SUM(votes), 0)` reconciles zero-vote and empty tally states.
+  2. Protect candidate tallies with trigger `trg_protect_and_reconcile_candidate_tallies` on `INSERT`, `UPDATE`, and `DELETE`.
+  3. Lock the session row `FOR UPDATE` to obtain a consistent snapshot and forbid mutating tallies when session is `COUNTING_COMPLETED`, `RESULT_READY_FOR_REVIEW`, or `PUBLISHED`.
+- **Consequences**: Guarantees that neither session totals nor candidate tallies can drift out of mathematical sync.
+
+---
+
+### ADR-020: Publication State & Flag Structural Equivalence
+- **Status**: Accepted (Phase 8.1.3 Added)
+- **Context**: Potential state ambiguity where `status = 'PUBLISHED'` exists while `is_published = false`, or vice versa.
+- **Decision**: Add declarative engine-level CHECK constraint:
+  `CHECK ((status = 'PUBLISHED' AND is_published = TRUE) OR (status != 'PUBLISHED' AND is_published = FALSE))`
+  combined with initial state constraint:
+  `CHECK (NOT (current_round = 0 AND total_counted_votes = 0 AND is_published = TRUE))`
+  and trigger validation requiring all configured rounds to physically exist before publication.
+- **Consequences**: Impossible for status and flag to disagree even on raw SQL updates outside the application.
+
+---
+
+### ADR-021: Strict Reverse-Order Counting Round Rollback & Deletion Guard
+- **Status**: Accepted (Phase 8.1.3 Added)
+- **Context**: Arbitrary round deletion or modification of early rounds could corrupt cumulative totals and delta relationships.
+- **Decision**:
+  1. Trigger `trg_protect_counting_round_deletion` forbids deleting rounds in completed/published sessions and requires rollback in strict reverse chronological order ($N, N-1, \dots$).
+  2. Trigger `trg_verify_counting_round_progression` forbids modifying earlier rounds when later rounds exist.
+  3. Trigger `trg_synchronize_session_current_round` automatically keeps `counting_sessions.current_round` aligned with `MAX(round_number)`.
+- **Consequences**: Counting progression is tamper-evident and protected against out-of-order manipulation.
+
+---
+
+### ADR-022: Aggregate Counting Rounds with Round Leader Validation (Option B Selection)
+- **Status**: Accepted (Phase 8.1.3 Added)
+- **Context**: Evaluate whether to add an extra relational child model `RoundTally` (Option A) vs maintaining aggregate round progression with validated round leaders (Option B).
+- **Decision**: Adopt Option B. Counting rounds store aggregate statistics (`round_votes`, `cumulative_votes`, `lead_margin`) with `lead_candidate_id` strictly verified to hold an `APPROVED` nomination in the session. Detailed candidate breakdowns reside in `candidate_tallies`.
+- **Consequences**: Matches existing frontend simulation architecture, preserves the 24-model schema, avoids artificial table bloat, and provides verifiable data integrity.
+
