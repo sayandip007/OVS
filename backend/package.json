@@ -1,0 +1,49 @@
+{
+  "name": "ovs-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Online Voting System (OVS) — Backend Foundation (Phase 8.2 Modular Monolith)",
+  "type": "module",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/server.js",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "prisma:validate": "prisma validate --schema=prisma/schema.prisma",
+    "prisma:generate": "prisma generate --schema=prisma/schema.prisma",
+    "prisma:migrate:deploy": "prisma migrate deploy --schema=prisma/schema.prisma",
+    "prisma:seed": "tsx prisma/seed.ts",
+    "test:unit": "node --import tsx --test tests/unit/*.test.ts",
+    "test:integration": "node --import tsx --test tests/integration/*.test.ts",
+    "test": "npm run test:unit && npm run test:integration"
+  },
+  "prisma": {
+    "schema": "prisma/schema.prisma",
+    "seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "6.4.1",
+    "cors": "2.8.5",
+    "dotenv": "16.4.7",
+    "express": "5.1.0",
+    "express-rate-limit": "7.5.0",
+    "helmet": "8.1.0",
+    "pino": "9.6.0",
+    "pino-http": "10.5.0",
+    "zod": "3.24.2"
+  },
+  "devDependencies": {
+    "@types/cors": "2.8.17",
+    "@types/express": "5.0.0",
+    "@types/node": "22.13.9",
+    "@types/supertest": "6.0.2",
+    "prisma": "6.4.1",
+    "supertest": "7.0.0",
+    "tsx": "4.19.3",
+    "typescript": "5.8.2"
+  }
+}

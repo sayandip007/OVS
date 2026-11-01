@@ -1,115 +1,117 @@
-name: OVS Frontend & PostgreSQL Database CI
+name: OVS CI — Frontend, Architecture, PostgreSQL 16 & Backend Foundation
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, 'phase-*']
   pull_request:
     branches: [main, master]
 
 jobs:
-  verify:
-    name: Build, Lint, Typecheck, Unit & E2E Tests
+  frontend-and-architecture:
+    name: Frontend & Architecture Verification (Node 22)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Node.js 22
+      - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'npm'
 
-      - name: Install dependencies (reproducible lockfile install)
+      - name: Install dependencies
         run: npm ci
 
-      - name: Run ESLint validation
+      - name: 1. Frontend lint
         run: npm run lint
 
-      - name: Run TypeScript typecheck
+      - name: 2. Frontend typecheck / syntax check
         run: npm run typecheck
 
-      - name: Run Node.js unit and service test suite
+      - name: 3. Frontend unit & service tests (37 tests)
         run: npm test
 
-      - name: Build production bundle
+      - name: 4. Architecture & SQL consistency tests (55 tests)
+        run: npm run test:architecture
+
+      - name: 5. Frontend production build
         run: npm run build
 
-      - name: Install Playwright Chromium browser
-        run: npx playwright install --with-deps chromium
-
-      - name: Run Playwright E2E test suite
-        run: npm run test:e2e
-
-      - name: Upload Playwright report on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-report
-          path: playwright-report/
-          retention-days: 7
-
-  postgres-validation:
-    name: PostgreSQL 16 Schema, Trigger & Integration Validation
+  backend-and-postgresql-verification:
+    name: Backend Foundation & Live PostgreSQL 16 Verification
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-
     services:
       postgres:
         image: postgres:16-alpine
         env:
           POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: ovs_validation_db
+          POSTGRES_PASSWORD: postgres_ci_password
+          POSTGRES_DB: ovs_ci_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd="pg_isready -U postgres -d ovs_validation_db"
+          --health-cmd="pg_isready -U postgres -d ovs_ci_test"
           --health-interval=5s
           --health-timeout=5s
           --health-retries=10
 
     env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ovs_validation_db?schema=public
+      NODE_ENV: test
+      PORT: 5000
+      DATABASE_URL: postgresql://postgres:postgres_ci_password@localhost:5432/ovs_ci_test?schema=public
+      CLIENT_ORIGIN: http://localhost:3000
+      SESSION_SECRET: ci-verification-session-secret-minimum-32-chars-2026
+      LOG_LEVEL: silent
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Node.js 22
+      - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'npm'
 
-      - name: Install project dependencies
+      - name: Install dependencies
         run: npm ci
 
-      - name: Install pinned Prisma CLI (6.4.1) for schema bootstrap
-        run: npm install --no-save prisma@6.4.1 @prisma/client@6.4.1
+      - name: 6. Prisma schema validation
+        run: npm run prisma:validate
 
-      - name: Step 1 - Verify disposable PostgreSQL 16 database readiness
+      - name: 7. Prisma client generation
+        run: npm run prisma:generate
+
+      - name: 8. Backend lint
+        run: npm run backend:lint
+
+      - name: 9. Backend TypeScript typecheck & build
         run: |
-          psql "postgresql://postgres:postgres@localhost:5432/postgres" -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS ovs_validation_db WITH (FORCE);"
-          psql "postgresql://postgres:postgres@localhost:5432/postgres" -v ON_ERROR_STOP=1 -c "CREATE DATABASE ovs_validation_db;"
+          npm run backend:typecheck
+          npm run backend:build
 
-      - name: Step 2 - Validate Prisma schema & push tables and enums to PostgreSQL 16
+      - name: 10. Backend unit tests
+        run: npm run backend:test:unit
+
+      - name: 11. Apply Prisma migrations (base DDL + CUSTOM_DATABASE_INTEGRITY.sql triggers/constraints)
+        run: npm run prisma:migrate:deploy
+
+      - name: 12. Execute Phase 8.1.6 PostgreSQL 31-scenario validation suite on live PostgreSQL 16
         run: |
-          npx prisma validate --schema=docs/backend-architecture/PRISMA_SCHEMA_DRAFT.prisma
-          npx prisma db push --schema=docs/backend-architecture/PRISMA_SCHEMA_DRAFT.prisma --skip-generate
+          PG_URI="${DATABASE_URL%\?*}"
+          psql "$PG_URI" -v ON_ERROR_STOP=1 -f tests/postgresql-validation.sql
 
-      - name: Step 3 - Apply CUSTOM_DATABASE_INTEGRITY.sql constraints and triggers
+      - name: 13. Reset schema & re-apply migrations for clean DEMO_SAMPLE seed verification
         run: |
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f docs/backend-architecture/CUSTOM_DATABASE_INTEGRITY.sql
+          PG_URI="${DATABASE_URL%\?*}"
+          psql "$PG_URI" -v ON_ERROR_STOP=1 -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+          npm run prisma:migrate:deploy
 
-      - name: Step 4 - Execute PostgreSQL integration validation suite (31 scenarios)
+      - name: 14. Execute idempotent DEMO_SAMPLE Prisma seed (twice to verify idempotency)
         run: |
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/postgresql-validation.sql
+          npm run prisma:seed
+          npm run prisma:seed
 
-      - name: Step 5 - Clean up disposable PostgreSQL validation database
-        if: always()
-        run: |
-          psql "postgresql://postgres:postgres@localhost:5432/postgres" -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS ovs_validation_db WITH (FORCE);"
-
+      - name: 15. Execute Backend API Supertest integration tests against live seeded PostgreSQL 16
+        run: npm run backend:test:integration

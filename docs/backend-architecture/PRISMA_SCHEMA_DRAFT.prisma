@@ -1,6 +1,6 @@
 // ============================================================================
-// Online Voting System (OVS) — Corrected Production-Grade Prisma Schema
-// Architecture Phase 8.1.2: Database Integrity, Explicit Prisma Column Mapping & Publication Hardening
+// Online Voting System (OVS) — Production-Grade Prisma Schema
+// Authoritative Schema: backend/prisma/schema.prisma (Promoted in Phase 8.2)
 // ============================================================================
 
 datasource db {
@@ -592,7 +592,7 @@ model DemoParticipation {
 }
 
 // ============================================================================
-// COUNTING SIMULATION & RESULTS (INDEPENDENT DATASET) (Models 19–22)
+// COUNTING SIMULATION & RESULTS (INDEPENDENT DATASET) (Models 19–25)
 // ============================================================================
 
 model CountingSession {
@@ -715,7 +715,7 @@ model TieResolution {
 }
 
 // ============================================================================
-// ANNOUNCEMENTS & NOTIFICATIONS (Models 23–24)
+// ANNOUNCEMENTS & NOTIFICATIONS (Models 23–25)
 // ============================================================================
 
 model Announcement {

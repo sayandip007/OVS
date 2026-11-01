@@ -1,0 +1,15 @@
+node_modules
+backend/node_modules
+dist
+backend/dist
+.git
+.github
+.env
+.env.*
+!.env.example
+!backend/.env.example
+coverage
+playwright-report
+test-results
+*.log
+/tmp

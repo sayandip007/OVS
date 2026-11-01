@@ -939,7 +939,7 @@ BEGIN
 
       WHEN 'CORRECTED' THEN
         IF NEW.status NOT IN ('RESULT_READY_FOR_REVIEW', 'UNDER_REVIEW') THEN
-          RAISE EXCEPTION 'Corrected result must return to RESULT_READY_FOR_REVIEW before publication.', NEW.status;
+          RAISE EXCEPTION 'Corrected result must return to RESULT_READY_FOR_REVIEW before publication (attempted transition to %).', NEW.status;
         END IF;
 
       WHEN 'UNPUBLISHED' THEN

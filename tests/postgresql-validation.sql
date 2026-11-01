@@ -52,7 +52,7 @@ VALUES ('TEST_PC_1', 'TEST_ST', 1, 'Test PC 1', 'GENERAL', 50000, 'DEMO_SAMPLE',
 INSERT INTO assembly_constituencies (id, state_id, district_id, parent_parliamentary_constituency_id, constituency_number, name, reservation_type, total_voters, metadata_source, created_at, updated_at)
 VALUES ('TEST_AC_1', 'TEST_ST', 'TEST_DIST_1', 'TEST_PC_1', 1, 'Test AC 1', 'GENERAL', 25000, 'DEMO_SAMPLE', NOW(), NOW());
 
-RAISE NOTICE 'SUCCESS: Scenario 1 passed - Valid geographic hierarchy inserted.';
+DO $$ BEGIN RAISE NOTICE 'SUCCESS: Scenario 1 passed - Valid geographic hierarchy inserted.'; END $$;
 
 -- ============================================================================
 -- SCENARIO 2: Invalid Geographic Hierarchy Rejection (Cross-State AC)
@@ -229,7 +229,7 @@ VALUES ('TEST_CAND_IND', 'TEST_PARTY_1', 'Independent Citizen Candidate', 50, 'F
 INSERT INTO candidate_nominations (id, candidate_id, party_id, election_id, constituency_type, parliamentary_constituency_id, assembly_constituency_id, nomination_date, status, scrutiny_note, created_at, updated_at)
 VALUES ('55555555-aaaa-bbbb-cccc-555555555555', 'TEST_CAND_IND', NULL, 'TEST_ELEC_LS', 'PARLIAMENTARY', 'TEST_PC_UNMAPPED', NULL, NOW(), 'APPROVED', 'Independent nomination', NOW(), NOW());
 
-RAISE NOTICE 'SUCCESS: Scenario 6 passed - Independent candidate nomination with party_id NULL verified.';
+DO $$ BEGIN RAISE NOTICE 'SUCCESS: Scenario 6 passed - Independent candidate nomination with party_id NULL verified.'; END $$;
 
 -- ============================================================================
 -- SCENARIO 7: Section 33(7) Nomination Ceiling Enforcement (>2 Nominations)
@@ -340,7 +340,7 @@ $$;
 INSERT INTO counting_sessions (id, election_id, constituency_type, parliamentary_constituency_id, assembly_constituency_id, status, is_published, total_voters, total_configured_rounds, current_round, total_counted_votes, nota_votes, rejected_votes, victory_margin, created_at, updated_at)
 VALUES ('SESS_VALID_1', 'TEST_ELEC_LS', 'PARLIAMENTARY', 'TEST_PC_1', NULL, 'DRAFT', FALSE, 50000, 3, 0, 0, 0, 0, 0, NOW(), NOW());
 
-RAISE NOTICE 'SUCCESS: Scenario 8 passed - Valid DRAFT session initialized.';
+DO $$ BEGIN RAISE NOTICE 'SUCCESS: Scenario 8 passed - Valid DRAFT session initialized.'; END $$;
 
 -- ============================================================================
 -- SCENARIO 9: Candidate Tally Approved Nomination & NOTA Separation Check
@@ -379,7 +379,7 @@ $$;
 INSERT INTO candidate_tallies (id, session_id, candidate_id, nomination_id, party_id, votes, vote_share_percentage, created_at, updated_at)
 VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'SESS_VALID_1', 'TEST_CAND_1', '33333333-3333-3333-3333-333333333333', 'TEST_PARTY_1', 1000, 100.00, NOW(), NOW());
 
-RAISE NOTICE 'SUCCESS: Scenario 9 passed - Candidate tally bound to approved nomination.';
+DO $$ BEGIN RAISE NOTICE 'SUCCESS: Scenario 9 passed - Candidate tally bound to approved nomination.'; END $$;
 
 -- ============================================================================
 -- SCENARIO 10: Nomination Lifecycle Protection (Prevent Deletion with Tally)
@@ -527,7 +527,7 @@ UPDATE counting_sessions
 SET status = 'COUNTING_COMPLETED', total_counted_votes = 1910, nota_votes = 50, rejected_votes = 10, current_round = 3, winner_candidate_id = 'TEST_CAND_1', runner_up_candidate_id = 'TEST_CAND_2', victory_margin = 150
 WHERE id = 'SESS_VALID_1';
 
-RAISE NOTICE 'SUCCESS: Scenario 12 passed - Session completed with exact mathematical reconciliation (1910 votes).';
+DO $$ BEGIN RAISE NOTICE 'SUCCESS: Scenario 12 passed - Session completed with exact mathematical reconciliation (1910 votes).'; END $$;
 
 -- ============================================================================
 -- SCENARIO 13: Completed Session Tally Mutation Protection
@@ -596,7 +596,7 @@ $$;
 -- Transition to RESULT_READY_FOR_REVIEW (Valid)
 UPDATE counting_sessions SET status = 'RESULT_READY_FOR_REVIEW' WHERE id = 'SESS_VALID_1';
 
-RAISE NOTICE 'SUCCESS: Scenario 14 passed - Session transitioned to RESULT_READY_FOR_REVIEW.';
+DO $$ BEGIN RAISE NOTICE 'SUCCESS: Scenario 14 passed - Session transitioned to RESULT_READY_FOR_REVIEW.'; END $$;
 
 -- ============================================================================
 -- SCENARIO 15: Incomplete Rounds Publication Rejection
@@ -608,10 +608,10 @@ UPDATE counting_sessions SET current_round = 2 WHERE id = 'SESS_VALID_1';
 
 -- Insert Admin User for publication testing
 INSERT INTO users (id, user_type, identifier, password_hash, is_active, failed_login_attempts, created_at, updated_at)
-VALUES ('uuuuuuuu-uuuu-uuuu-uuuu-uuuuuuuuuuuu', 'ADMIN', 'ECI-OFF-001', 'argon2id$mockhash', TRUE, 0, NOW(), NOW());
+VALUES ('00000001-1111-1111-1111-111111111111', 'ADMIN', 'ECI-OFF-001', 'argon2id$mockhash', TRUE, 0, NOW(), NOW());
 
 INSERT INTO admin_users (id, user_id, officer_code, full_name, designation, role, assigned_state_id, is_active, created_at, updated_at)
-VALUES ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'uuuuuuuu-uuuu-uuuu-uuuu-uuuuuuuuuuuu', 'ECI-OFF-001', 'Returning Officer', 'Returning Officer', 'ELECTION_OFFICER', 'TEST_ST', TRUE, NOW(), NOW());
+VALUES ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', '00000001-1111-1111-1111-111111111111', 'ECI-OFF-001', 'Returning Officer', 'Returning Officer', 'ELECTION_OFFICER', 'TEST_ST', TRUE, NOW(), NOW());
 
 -- Attempt to publish when current_round < total_configured_rounds (Must Fail)
 DO $$
@@ -699,7 +699,7 @@ VALUES ('c2222222-2222-2222-2222-222222222222', 'SESS_VALID_1', 2, 650, 1250, 'T
 INSERT INTO counting_rounds (id, session_id, round_number, round_votes, cumulative_votes, leading_candidate_id, lead_margin, processed_at, processed_by_admin_id)
 VALUES ('c3333333-3333-3333-3333-333333333333', 'SESS_VALID_1', 3, 660, 1910, 'TEST_CAND_1', 150, NOW(), 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
 
-RAISE NOTICE 'SUCCESS: Scenario 17 passed - 3 sequential rounds inserted with verified delta progression.';
+DO $$ BEGIN RAISE NOTICE 'SUCCESS: Scenario 17 passed - 3 sequential rounds inserted with verified delta progression.'; END $$;
 
 -- ============================================================================
 -- SCENARIO 18: CountingRound UPDATE Integrity (Immutability of session & round)
@@ -952,7 +952,7 @@ UPDATE counting_sessions
 SET status = 'RESULT_READY_FOR_REVIEW', winner_candidate_id = 'TEST_CAND_1', runner_up_candidate_id = 'TEST_CAND_IND'
 WHERE id = 'SESS_TIED_1';
 
-RAISE NOTICE 'SUCCESS: Scenario 22 passed - TIED session resolved and transitioned with verified database evidence.';
+DO $$ BEGIN RAISE NOTICE 'SUCCESS: Scenario 22 passed - TIED session resolved and transitioned with verified database evidence.'; END $$;
 
 -- ============================================================================
 -- SCENARIO 23: Complete End-to-End Verified Publication Workflow
@@ -1141,7 +1141,7 @@ VALUES ('dddddddd-3333-3333-3333-333333333333', 'SESS_PC3_ACTIVE', 'TEST_CAND_2'
 INSERT INTO candidate_tallies (id, session_id, candidate_id, nomination_id, party_id, votes, vote_share_percentage, created_at, updated_at)
 VALUES ('dddddddd-4444-4444-4444-444444444444', 'SESS_PC3_ACTIVE', 'TEST_CAND_IND', '77777777-dddd-eeee-ffff-777777777777', NULL, 300, 37.50, NOW(), NOW());
 
-RAISE NOTICE 'SUCCESS: Scenario 25 passed - Exact nomination-party and independent NULL tally party verified.';
+DO $$ BEGIN RAISE NOTICE 'SUCCESS: Scenario 25 passed - Exact nomination-party and independent NULL tally party verified.'; END $$;
 
 -- ============================================================================
 -- SCENARIO 26: Global Candidate Party Switch Without Historical Tally Corruption
@@ -1195,7 +1195,7 @@ BEGIN
 END;
 $$;
 
-RAISE NOTICE 'SUCCESS: Scenario 26 passed - Global candidate party change preserved historical nomination party integrity.';
+DO $$ BEGIN RAISE NOTICE 'SUCCESS: Scenario 26 passed - Global candidate party change preserved historical nomination party integrity.'; END $$;
 
 -- ============================================================================
 -- SCENARIO 27: CandidateTally Session Ownership Immutability & Old Session Total Preservation
@@ -1660,16 +1660,16 @@ SAVEPOINT s29_tie_resolution_admin_scope;
 
 -- Create inactive admin user and out-of-scope admin user
 INSERT INTO users (id, user_type, identifier, password_hash, is_active, failed_login_attempts, created_at, updated_at)
-VALUES ('uuuuuuuu-2222-2222-2222-222222222222', 'ADMIN', 'ECI-INACTIVE-002', 'argon2id$mockhash', TRUE, 0, NOW(), NOW());
+VALUES ('00000002-2222-2222-2222-222222222222', 'ADMIN', 'ECI-INACTIVE-002', 'argon2id$mockhash', TRUE, 0, NOW(), NOW());
 
 INSERT INTO admin_users (id, user_id, officer_code, full_name, designation, role, assigned_state_id, is_active, created_at, updated_at)
-VALUES ('bbbbbbbb-2222-2222-2222-222222222222', 'uuuuuuuu-2222-2222-2222-222222222222', 'ECI-INACTIVE-002', 'Inactive Officer', 'Officer', 'SUPER_ADMIN', NULL, FALSE, NOW(), NOW());
+VALUES ('bbbbbbbb-2222-2222-2222-222222222222', '00000002-2222-2222-2222-222222222222', 'ECI-INACTIVE-002', 'Inactive Officer', 'Officer', 'SUPER_ADMIN', NULL, FALSE, NOW(), NOW());
 
 INSERT INTO users (id, user_type, identifier, password_hash, is_active, failed_login_attempts, created_at, updated_at)
-VALUES ('uuuuuuuu-3333-3333-3333-333333333333', 'ADMIN', 'ECI-OUTSTATE-003', 'argon2id$mockhash', TRUE, 0, NOW(), NOW());
+VALUES ('00000003-3333-3333-3333-333333333333', 'ADMIN', 'ECI-OUTSTATE-003', 'argon2id$mockhash', TRUE, 0, NOW(), NOW());
 
 INSERT INTO admin_users (id, user_id, officer_code, full_name, designation, role, assigned_state_id, is_active, created_at, updated_at)
-VALUES ('bbbbbbbb-3333-3333-3333-333333333333', 'uuuuuuuu-3333-3333-3333-333333333333', 'ECI-OUTSTATE-003', 'Other State Admin', 'State CEO', 'STATE_ADMIN', 'TEST_ST_2', TRUE, NOW(), NOW());
+VALUES ('bbbbbbbb-3333-3333-3333-333333333333', '00000003-3333-3333-3333-333333333333', 'ECI-OUTSTATE-003', 'Other State Admin', 'State CEO', 'STATE_ADMIN', 'TEST_ST_2', TRUE, NOW(), NOW());
 
 -- 29a: Attempt TieResolution with inactive administrator (Must Fail)
 DO $$
