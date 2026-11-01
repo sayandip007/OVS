@@ -115,6 +115,51 @@ ALTER TABLE candidate_tallies
   REFERENCES candidates(id)
   ON DELETE RESTRICT;
 
+-- 1.4 Candidate Nomination Party Foreign Key (Historical affiliation)
+ALTER TABLE candidate_nominations
+  DROP CONSTRAINT IF EXISTS fk_nomination_party;
+ALTER TABLE candidate_nominations
+  ADD CONSTRAINT fk_nomination_party
+  FOREIGN KEY (party_id)
+  REFERENCES political_parties(id)
+  ON DELETE RESTRICT;
+
+-- 1.5 Tie Resolution Evidence Table & Referential Integrity
+CREATE TABLE IF NOT EXISTS tie_resolutions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id VARCHAR(100) NOT NULL UNIQUE REFERENCES counting_sessions(id) ON DELETE CASCADE,
+  decision VARCHAR(100) NOT NULL,
+  selected_winner_id VARCHAR(50) NOT NULL REFERENCES candidates(id) ON DELETE RESTRICT,
+  resolution_method VARCHAR(100) NOT NULL,
+  justification_note TEXT NOT NULL,
+  approved_by_admin_id UUID NOT NULL REFERENCES admin_users(id) ON DELETE RESTRICT,
+  resolved_at TIMESTAMPTZ(6) NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE tie_resolutions
+  DROP CONSTRAINT IF EXISTS fk_tie_res_session;
+ALTER TABLE tie_resolutions
+  ADD CONSTRAINT fk_tie_res_session
+  FOREIGN KEY (session_id)
+  REFERENCES counting_sessions(id)
+  ON DELETE CASCADE;
+
+ALTER TABLE tie_resolutions
+  DROP CONSTRAINT IF EXISTS fk_tie_res_winner;
+ALTER TABLE tie_resolutions
+  ADD CONSTRAINT fk_tie_res_winner
+  FOREIGN KEY (selected_winner_id)
+  REFERENCES candidates(id)
+  ON DELETE RESTRICT;
+
+ALTER TABLE tie_resolutions
+  DROP CONSTRAINT IF EXISTS fk_tie_res_admin;
+ALTER TABLE tie_resolutions
+  ADD CONSTRAINT fk_tie_res_admin
+  FOREIGN KEY (approved_by_admin_id)
+  REFERENCES admin_users(id)
+  ON DELETE RESTRICT;
+
 -- ============================================================================
 -- SECTION 2: PARTIAL UNIQUE INDEXES (NULLABLE COMPOSITE UNIQUENESS)
 -- ============================================================================
@@ -528,6 +573,7 @@ DECLARE
   v_ac_id VARCHAR(50);
   v_candidate_party_id VARCHAR(50);
   v_nomination_id UUID;
+  v_nom_party_id VARCHAR(50);
   v_nom_status "CandidateNominationStatus";
 BEGIN
   -- Rejection of NOTA as an ordinary candidate (NOTA must use nota_votes column)
@@ -544,22 +590,9 @@ BEGIN
     RAISE EXCEPTION 'Parent counting session % not found.', NEW.session_id;
   END IF;
 
-  -- 2. Verify candidate's registered party matches tally
-  SELECT party_id INTO v_candidate_party_id 
-  FROM candidates WHERE id = NEW.candidate_id;
-
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'Candidate % not found.', NEW.candidate_id;
-  END IF;
-
-  IF v_candidate_party_id != NEW.party_id THEN
-    RAISE EXCEPTION 'Tally party (%) does not match registered party (%) for candidate %.',
-      NEW.party_id, v_candidate_party_id, NEW.candidate_id;
-  END IF;
-
-  -- 3. Verify candidate has an APPROVED nomination in that election and exact constituency
+  -- 2. Verify candidate has an APPROVED nomination in that election and exact constituency
   IF v_constituency_type = 'PARLIAMENTARY' THEN
-    SELECT id, status INTO v_nomination_id, v_nom_status
+    SELECT id, status, party_id INTO v_nomination_id, v_nom_status, v_nom_party_id
     FROM candidate_nominations
     WHERE candidate_id = NEW.candidate_id
       AND election_id = v_election_id
@@ -567,7 +600,7 @@ BEGIN
       AND parliamentary_constituency_id = v_pc_id
       AND status = 'APPROVED';
   ELSE
-    SELECT id, status INTO v_nomination_id, v_nom_status
+    SELECT id, status, party_id INTO v_nomination_id, v_nom_status, v_nom_party_id
     FROM candidate_nominations
     WHERE candidate_id = NEW.candidate_id
       AND election_id = v_election_id
@@ -579,6 +612,26 @@ BEGIN
   IF NOT FOUND OR v_nom_status != 'APPROVED' THEN
     RAISE EXCEPTION 'Candidate % does not hold an APPROVED nomination for election % in constituency %.',
       NEW.candidate_id, v_election_id, COALESCE(v_pc_id, v_ac_id);
+  END IF;
+
+  -- 2.1 Candidate registered party verification
+  SELECT party_id INTO v_candidate_party_id 
+  FROM candidates WHERE id = NEW.candidate_id;
+
+  -- 3. Verify and synchronize historical party affiliation from nomination
+  -- Supports independent candidates where nomination.party_id IS NULL
+  IF v_nom_party_id IS NULL THEN
+    IF NEW.party_id IS NOT NULL THEN
+      RAISE EXCEPTION 'Candidate % holds an INDEPENDENT nomination; tally party_id must be NULL.',
+        NEW.candidate_id;
+    END IF;
+  ELSE
+    IF NEW.party_id IS NULL THEN
+      NEW.party_id := v_nom_party_id;
+    ELSIF NEW.party_id != v_nom_party_id AND v_candidate_party_id != NEW.party_id THEN
+      RAISE EXCEPTION 'Tally party (%) does not match nomination party (%) for candidate %.',
+        NEW.party_id, v_nom_party_id, NEW.candidate_id;
+    END IF;
   END IF;
 
   -- Synchronize nomination_id foreign key
@@ -783,6 +836,17 @@ BEGIN
           RAISE EXCEPTION 'Tied result cannot transition to % without formal tie-break review.', NEW.status;
         END IF;
 
+        IF NEW.status = 'RESULT_READY_FOR_REVIEW' THEN
+          -- Enforce verified database evidence via dedicated TieResolution model
+          IF NOT EXISTS (
+            SELECT 1 FROM tie_resolutions 
+            WHERE session_id = NEW.id AND selected_winner_id = NEW.winner_candidate_id
+          ) THEN
+            RAISE EXCEPTION 'Transition from TIED to RESULT_READY_FOR_REVIEW requires verified database evidence in tie_resolutions matching declared winner %.',
+              NEW.winner_candidate_id;
+          END IF;
+        END IF;
+
       WHEN 'RESULT_READY_FOR_REVIEW' THEN
         IF NEW.status NOT IN ('PUBLISHED', 'UNDER_REVIEW', 'COUNTING_IN_PROGRESS') THEN
           RAISE EXCEPTION 'Illegal state transition from RESULT_READY_FOR_REVIEW to %.', NEW.status;
@@ -844,7 +908,16 @@ BEGIN
 
     -- Rule 5: Tied results cannot be published without documented resolution
     IF NEW.status = 'TIED' OR OLD.status = 'TIED' THEN
-      RAISE EXCEPTION 'Cannot publish result while in TIED status without documented resolution.';
+      IF NOT EXISTS (SELECT 1 FROM tie_resolutions WHERE session_id = NEW.id) THEN
+        RAISE EXCEPTION 'Cannot publish result while in TIED status without documented resolution.';
+      END IF;
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM tie_resolutions WHERE session_id = NEW.id) THEN
+      IF NEW.winner_candidate_id != (SELECT selected_winner_id FROM tie_resolutions WHERE session_id = NEW.id) THEN
+        RAISE EXCEPTION 'Published winner (%) does not match legally resolved winner (%) in tie_resolutions.',
+          NEW.winner_candidate_id, (SELECT selected_winner_id FROM tie_resolutions WHERE session_id = NEW.id);
+      END IF;
     END IF;
 
     -- Rule 6: Publication must record publishing administrator and timestamp
@@ -887,6 +960,20 @@ CREATE TRIGGER trg_verify_counting_session_publication
   BEFORE INSERT OR UPDATE ON counting_sessions
   FOR EACH ROW
   EXECUTE FUNCTION verify_counting_session_publication();
+
+-- 6.5 Protect Tie Resolution Immutability (Legal Record under RPA 1951)
+CREATE OR REPLACE FUNCTION protect_tie_resolution_immutability()
+RETURNS TRIGGER AS $$
+BEGIN
+  RAISE EXCEPTION 'Tie resolution records are immutable legal evidence under RPA 1951 and cannot be modified or deleted once approved.';
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_protect_tie_resolution_immutability ON tie_resolutions;
+CREATE TRIGGER trg_protect_tie_resolution_immutability
+  BEFORE UPDATE OR DELETE ON tie_resolutions
+  FOR EACH ROW
+  EXECUTE FUNCTION protect_tie_resolution_immutability();
 
 -- ============================================================================
 -- SECTION 7: COUNTING RECONCILIATION & NUMERICAL INTEGRITY
@@ -967,6 +1054,43 @@ CREATE TRIGGER trg_protect_and_reconcile_candidate_tallies
   FOR EACH ROW
   EXECUTE FUNCTION protect_and_reconcile_candidate_tallies();
 
+-- 7.2.1 Active Counting Automatic Tally Reconciliation (CandidateTallies as Granular Source of Truth)
+CREATE OR REPLACE FUNCTION auto_reconcile_session_votes_on_tally_change()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_target_session_id VARCHAR(100);
+  v_candidate_sum INT;
+  v_session_status "ResultStatus";
+BEGIN
+  v_target_session_id := COALESCE(NEW.session_id, OLD.session_id);
+
+  -- Acquire row-level lock on counting_session for transaction-safe auto-reconciliation
+  SELECT status INTO v_session_status
+  FROM counting_sessions
+  WHERE id = v_target_session_id
+  FOR UPDATE;
+
+  -- Active counting sessions auto-reconcile from candidate tallies as granular source of truth
+  IF v_session_status IN ('DRAFT', 'COUNTING_IN_PROGRESS', 'COUNTING_PAUSED', 'UNDER_REVIEW', 'CORRECTED') THEN
+    SELECT COALESCE(SUM(votes), 0) INTO v_candidate_sum
+    FROM candidate_tallies
+    WHERE session_id = v_target_session_id;
+
+    UPDATE counting_sessions
+    SET total_counted_votes = v_candidate_sum + nota_votes + rejected_votes
+    WHERE id = v_target_session_id;
+  END IF;
+
+  RETURN COALESCE(NEW, OLD);
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_auto_reconcile_session_votes_on_tally_change ON candidate_tallies;
+CREATE TRIGGER trg_auto_reconcile_session_votes_on_tally_change
+  AFTER INSERT OR UPDATE OR DELETE ON candidate_tallies
+  FOR EACH ROW
+  EXECUTE FUNCTION auto_reconcile_session_votes_on_tally_change();
+
 -- 7.3 Verify Sequential Counting Rounds Progression & Round Leader Integrity
 -- Invariants:
 -- 1. Round numbers must begin at 1 and be strictly sequential.
@@ -988,6 +1112,7 @@ DECLARE
   v_ac_id VARCHAR(50);
   v_leader_nom_id UUID;
   v_max_round INT;
+  v_target_leader_id VARCHAR(50);
 BEGIN
   -- Acquire row-level lock on counting session for transaction-safe round progress
   SELECT total_configured_rounds, status, election_id, constituency_type, parliamentary_constituency_id, assembly_constituency_id
@@ -1005,19 +1130,20 @@ BEGIN
       NEW.round_number, v_configured_rounds;
   END IF;
 
-  -- Validate declared round leader nomination
-  IF NEW.lead_candidate_id IS NOT NULL THEN
+  -- Validate declared round leader nomination (supports physical leading_candidate_id and legacy lead_candidate_id)
+  IF NEW.lead_candidate_id IS NOT NULL OR NEW.leading_candidate_id IS NOT NULL THEN
+    v_target_leader_id := COALESCE(NEW.leading_candidate_id, NEW.lead_candidate_id);
     IF v_constituency_type = 'PARLIAMENTARY' THEN
       SELECT id INTO v_leader_nom_id 
       FROM candidate_nominations
-      WHERE candidate_id = NEW.lead_candidate_id 
+      WHERE candidate_id = v_target_leader_id 
         AND election_id = v_election_id
         AND parliamentary_constituency_id = v_pc_id 
         AND status = 'APPROVED';
     ELSE
       SELECT id INTO v_leader_nom_id 
       FROM candidate_nominations
-      WHERE candidate_id = NEW.lead_candidate_id 
+      WHERE candidate_id = v_target_leader_id 
         AND election_id = v_election_id
         AND assembly_constituency_id = v_ac_id 
         AND status = 'APPROVED';
@@ -1025,7 +1151,7 @@ BEGIN
 
     IF NOT FOUND THEN
       RAISE EXCEPTION 'Round % leader % lacks an APPROVED nomination in session constituency.',
-        NEW.round_number, NEW.lead_candidate_id;
+        NEW.round_number, v_target_leader_id;
     END IF;
   END IF;
 
@@ -1040,8 +1166,21 @@ BEGIN
     END IF;
   END IF;
 
-  -- Earlier round immutability check on UPDATE
+  -- Immutability and earlier round checks on UPDATE
   IF TG_OP = 'UPDATE' THEN
+    -- Session reference is strictly immutable
+    IF OLD.session_id != NEW.session_id THEN
+      RAISE EXCEPTION 'Cannot transfer counting round % to different session (attempted: % -> %).',
+        OLD.id, OLD.session_id, NEW.session_id;
+    END IF;
+
+    -- Round number is strictly immutable on existing records
+    IF OLD.round_number != NEW.round_number THEN
+      RAISE EXCEPTION 'Cannot modify round_number (% to %) on existing round record. Rounds must be deleted in reverse order and re-inserted.',
+        OLD.round_number, NEW.round_number;
+    END IF;
+
+    -- Earlier round immutability check
     IF EXISTS (SELECT 1 FROM counting_rounds WHERE session_id = NEW.session_id AND round_number > NEW.round_number) THEN
       IF OLD.cumulative_votes != NEW.cumulative_votes OR OLD.round_votes != NEW.round_votes THEN
         RAISE EXCEPTION 'Cannot modify vote totals for earlier round % when subsequent rounds exist. Modifications require rolling back subsequent rounds first.',
@@ -1148,6 +1287,6 @@ $$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS trg_synchronize_session_current_round ON counting_rounds;
 CREATE TRIGGER trg_synchronize_session_current_round
-  AFTER INSERT OR DELETE ON counting_rounds
+  AFTER INSERT OR UPDATE OR DELETE ON counting_rounds
   FOR EACH ROW
   EXECUTE FUNCTION synchronize_session_current_round();

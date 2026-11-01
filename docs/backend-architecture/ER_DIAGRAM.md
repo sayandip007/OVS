@@ -152,9 +152,10 @@ erDiagram
     %% PARTIES & CANDIDATES
     %% =========================================================================
     PoliticalParty ||--o{ Candidate : "sponsors"
-    PoliticalParty ||--o{ CandidateTally : "referenced by composite FK"
+    PoliticalParty ||--o{ CandidateNomination : "party nomination"
+    PoliticalParty ||--o{ CandidateTally : "historical tally party"
     Candidate ||--o{ CandidateNomination : "files (max 2 per RPA 1951 s.33(7))"
-    Candidate ||--o{ CandidateTally : "receives votes (FK candidate_id, party_id)"
+    Candidate ||--o{ CandidateTally : "receives votes"
 
     PoliticalParty {
         string id PK "e.g. PARTY-BJP, PARTY-INC"
@@ -179,6 +180,7 @@ erDiagram
     CandidateNomination {
         uuid id PK
         string candidate_id FK
+        string party_id FK "Nullable for independent candidates"
         string election_id FK
         string constituency_type "PARLIAMENTARY | ASSEMBLY"
         string parliamentary_constituency_id FK "Partial UK (candidate, election, PC)"
@@ -193,6 +195,7 @@ erDiagram
     %% =========================================================================
     AdminUser ||--o{ AdminActionLog : "performs"
     AdminUser ||--o{ AdminElectionScope : "assigned scopes"
+    AdminUser ||--o{ TieResolution : "approves tie resolution"
     AdminUser }o--o| State : "assigned state scope"
 
     AdminUser {
@@ -241,8 +244,9 @@ erDiagram
     %% COUNTING SIMULATION & RESULTS (INDEPENDENT DATASET)
     %% =========================================================================
     CountingSession ||--o{ CountingRound : "advances"
-    CountingSession ||--o{ CandidateTally : "contains (trigger-bound to APPROVED nomination)"
+    CountingSession ||--o{ CandidateTally : "contains (auto-reconciled)"
     CountingSession ||--o{ ResultCorrectionHistory : "records"
+    CountingSession ||--o| TieResolution : "resolved by (mandatory for TIED)"
     CountingSession }o--o| Candidate : "winner (validated nomination)"
     CountingSession }o--o| Candidate : "runner-up (validated nomination)"
 
@@ -255,6 +259,7 @@ erDiagram
         string status "10-state machine (DRAFT to PUBLISHED)"
         int total_configured_rounds
         int current_round
+        int total_voters
         int total_counted_votes
         int nota_votes
         string winner_candidate_id FK
@@ -277,8 +282,9 @@ erDiagram
     CandidateTally {
         uuid id PK
         string session_id FK
-        string candidate_id FK "Composite FK (candidate_id, party_id)"
-        string party_id FK
+        string candidate_id FK
+        uuid nomination_id FK "Bound to approved nomination"
+        string party_id FK "Nullable for independent candidates"
         int votes
         decimal vote_share_percentage
     }
@@ -290,6 +296,17 @@ erDiagram
         jsonb corrected_state
         string reason
         datetime corrected_at
+    }
+
+    TieResolution {
+        uuid id PK
+        string session_id FK, UK "One resolution per tied session"
+        string decision "WINNER_SELECTED_BY_LOT"
+        string selected_winner_id FK
+        string resolution_method "DRAW_OF_LOTS_RO_SECTION_102_RPA_1951"
+        string justification_note
+        uuid approved_by_admin_id FK
+        datetime resolved_at
     }
 
     %% =========================================================================

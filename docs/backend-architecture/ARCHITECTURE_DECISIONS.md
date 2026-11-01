@@ -182,5 +182,56 @@
 - **Status**: Accepted (Phase 8.1.3 Added)
 - **Context**: Evaluate whether to add an extra relational child model `RoundTally` (Option A) vs maintaining aggregate round progression with validated round leaders (Option B).
 - **Decision**: Adopt Option B. Counting rounds store aggregate statistics (`round_votes`, `cumulative_votes`, `lead_margin`) with `lead_candidate_id` strictly verified to hold an `APPROVED` nomination in the session. Detailed candidate breakdowns reside in `candidate_tallies`.
-- **Consequences**: Matches existing frontend simulation architecture, preserves the 24-model schema, avoids artificial table bloat, and provides verifiable data integrity.
+- **Consequences**: Matches existing frontend simulation architecture, preserves normalized schema, avoids artificial table bloat, and provides verifiable data integrity.
+
+---
+
+### ADR-023: Subtransaction Assertion Pattern in Database Integration Tests
+- **Status**: Accepted (Phase 8.1.4 Added)
+- **Context**: Historical negative tests used the pattern `DO $$ BEGIN INSERT ... RAISE EXCEPTION 'succeeded'; EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'SUCCESS'; END $$;`. This caught its own internal exception, creating false-positive passes even if the invalid operation succeeded without constraint enforcement.
+- **Decision**: Adopt strict PL/pgSQL subtransaction assertion blocks:
+  ```sql
+  DO $$
+  DECLARE
+    v_caught_expected_error BOOLEAN := FALSE;
+  BEGIN
+    BEGIN
+      -- [Attempt invalid operation]
+    EXCEPTION
+      WHEN foreign_key_violation OR check_violation OR unique_violation OR SQLSTATE 'P0001' THEN
+        v_caught_expected_error := TRUE;
+      WHEN OTHERS THEN
+        RAISE EXCEPTION 'Unexpected error caught: % (%)', SQLERRM, SQLSTATE;
+    END;
+    IF NOT v_caught_expected_error THEN
+      RAISE EXCEPTION 'ASSERTION FAILED: Invalid operation succeeded!';
+    END IF;
+  END $$;
+  ```
+- **Consequences**: Guarantees zero false positives. An invalid operation that executes without raising a constraint or trigger error immediately causes the validation suite to fail.
+
+---
+
+### ADR-024: Mandatory Tie Resolution Evidence via Dedicated Model (Section 102 RPA 1951)
+- **Status**: Accepted (Phase 8.1.4 Added)
+- **Context**: When a constituency count results in a tie between top candidates, statutory election law (Section 102 of the *Representation of the People Act, 1951*) mandates a formal draw of lots by the Returning Officer. Allowing arbitrary status transitions out of `TIED` without legal evidence compromises auditability.
+- **Decision**: Implement a dedicated `TieResolution` model (`tie_resolutions` table) storing session, decision, method (`DRAW_OF_LOTS_RO_SECTION_102_RPA_1951`), selected winner, justification note, approving admin, and timestamp. Enforce via trigger that transitioning `TIED -> RESULT_READY_FOR_REVIEW` strictly requires an existing `tie_resolutions` record matching the declared winner. Make tie resolution records immutable upon creation.
+- **Consequences**: Satisfies constitutional and statutory election law requirements. Results cannot be declared from a tied count without verifiable administrative evidence.
+
+---
+
+### ADR-025: Historical Nomination-Bound Party Modeling & Independent Candidates
+- **Status**: Accepted (Phase 8.1.4 Added)
+- **Context**: Binding `CandidateTally` directly to `Candidate(id, party_id)` caused historical tallies to break if a candidate switched political party for a future election. Furthermore, independent candidates contesting without party affiliation could not be modeled without synthetic party rows.
+- **Decision**: Store election-specific party affiliation on `CandidateNomination (party_id)` with a foreign key to `PoliticalParty (id) ON DELETE RESTRICT`, allowing `party_id` to be `NULL` for independent candidates. Bind `CandidateTally` to the approved nomination, synchronizing `party_id` from the nomination rather than the mutable candidate profile.
+- **Consequences**: Protects historical election results against candidate party defection. Natively accommodates independent candidates while preserving referential integrity.
+
+---
+
+### ADR-026: Active Counting Automatic Bidirectional Tally Reconciliation
+- **Status**: Accepted (Phase 8.1.4 Added)
+- **Context**: During active counting (`COUNTING_IN_PROGRESS`), candidate tallies change progressively. If tally updates do not synchronize session totals in real time, session totals and candidate totals can drift.
+- **Decision**: Define `candidate_tallies` as the granular source of truth during active counting. Implement trigger `trg_auto_reconcile_session_votes_on_tally_change` (`AFTER INSERT OR UPDATE OR DELETE ON candidate_tallies`) which acquires a row-level `FOR UPDATE` lock on `counting_sessions` and automatically recomputes `total_counted_votes = SUM(candidate_tallies.votes) + nota_votes + rejected_votes`.
+- **Consequences**: Session totals and candidate tallies are continuously synchronized without manual intervention, while completion and publication stages maintain strict invariant checks.
+
 

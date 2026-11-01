@@ -429,6 +429,7 @@ model PoliticalParty {
   updatedAt       DateTime          @updatedAt @db.Timestamptz(6) @map("updated_at")
 
   candidates      Candidate[]
+  nominations     CandidateNomination[]
   candidateTallies CandidateTally[]
 
   @@map("political_parties")
@@ -457,6 +458,7 @@ model Candidate {
   winningSessions     CountingSession[]     @relation("WinnerCandidate")
   runnerUpSessions    CountingSession[]     @relation("RunnerUpCandidate")
   leadingRounds       CountingRound[]       @relation("LeadingCandidate")
+  tieResolutionsWon   TieResolution[]       @relation("TieResolutionWinner")
 
   @@unique([id, partyId]) // Composite key guaranteeing party consistency in tallies
   @@index([partyId])
@@ -466,6 +468,7 @@ model Candidate {
 model CandidateNomination {
   id                          String                    @id @default(uuid()) @db.Uuid
   candidateId                 String                    @db.VarChar(50) @map("candidate_id")
+  partyId                     String?                   @db.VarChar(50) @map("party_id") // Null for independent candidates
   electionId                  String                    @db.VarChar(50) @map("election_id")
   constituencyType            ConstituencyType          @map("constituency_type")
   parliamentaryConstituencyId String?                   @db.VarChar(50) @map("parliamentary_constituency_id")
@@ -479,6 +482,7 @@ model CandidateNomination {
   updatedAt                   DateTime                  @updatedAt @db.Timestamptz(6) @map("updated_at")
 
   candidate                   Candidate                 @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  party                       PoliticalParty?           @relation(fields: [partyId], references: [id], onDelete: Restrict)
   election                    Election                  @relation(fields: [electionId], references: [id], onDelete: Cascade)
   parliamentaryConstituency   ParliamentaryConstituency? @relation(fields: [parliamentaryConstituencyId], references: [id], onDelete: Cascade)
   assemblyConstituency        AssemblyConstituency?     @relation(fields: [assemblyConstituencyId], references: [id], onDelete: Cascade)
@@ -489,6 +493,7 @@ model CandidateNomination {
   // Per-constituency uniqueness is enforced via PostgreSQL partial unique indexes:
   // uq_nomination_candidate_pc and uq_nomination_candidate_ac.
   @@index([candidateId, electionId])
+  @@index([partyId])
   @@index([electionId, status])
   @@index([parliamentaryConstituencyId])
   @@index([assemblyConstituencyId])
@@ -521,6 +526,7 @@ model AdminUser {
   publishedSessions     CountingSession[]          @relation("SessionPublisher")
   processedRounds       CountingRound[]            @relation("RoundProcessor")
   correctedSessions     ResultCorrectionHistory[]  @relation("SessionCorrector")
+  approvedTieResolutions TieResolution[]           @relation("TieResolutionApprover")
   createdAnnouncements  Announcement[]             @relation("AnnouncementCreator")
 
   @@map("admin_users")
@@ -619,6 +625,7 @@ model CountingSession {
   rounds                      CountingRound[]
   tallies                     CandidateTally[]
   corrections                 ResultCorrectionHistory[]
+  tieResolution               TieResolution?
 
   // NOTE: Partial unique indexes uq_counting_session_pc and uq_counting_session_ac
   // are created via custom SQL migrations to prevent duplicates with NULLs.
@@ -648,20 +655,20 @@ model CountingRound {
 }
 
 model CandidateTally {
-  id                  String          @id @default(uuid()) @db.Uuid
+  id                  String               @id @default(uuid()) @db.Uuid
   sessionId           String               @db.VarChar(100) @map("session_id")
   candidateId         String               @db.VarChar(50) @map("candidate_id")
   nominationId        String?              @db.Uuid @map("nomination_id")
-  partyId             String               @db.VarChar(50) @map("party_id")
+  partyId             String?              @db.VarChar(50) @map("party_id") // Nullable for independent candidates
   votes               Int                  @default(0)
   voteSharePercentage Decimal              @default(0.00) @db.Decimal(5, 2) @map("vote_share_percentage")
   createdAt           DateTime             @default(now()) @db.Timestamptz(6) @map("created_at")
   updatedAt           DateTime             @updatedAt @db.Timestamptz(6) @map("updated_at")
 
   session             CountingSession      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  candidate           Candidate            @relation(fields: [candidateId, partyId], references: [id, partyId], onDelete: Cascade)
+  candidate           Candidate            @relation(fields: [candidateId], references: [id], onDelete: Cascade)
   nomination          CandidateNomination? @relation(fields: [nominationId], references: [id], onDelete: Restrict)
-  party               PoliticalParty       @relation(fields: [partyId], references: [id], onDelete: Restrict)
+  party               PoliticalParty?      @relation(fields: [partyId], references: [id], onDelete: Restrict)
 
   @@unique([sessionId, candidateId])
   @@index([sessionId])
@@ -683,6 +690,23 @@ model ResultCorrectionHistory {
 
   @@index([sessionId, correctedAt])
   @@map("result_correction_history")
+}
+
+model TieResolution {
+  id                String          @id @default(uuid()) @db.Uuid
+  sessionId         String          @unique @db.VarChar(100) @map("session_id")
+  decision          String          @db.VarChar(100)
+  selectedWinnerId  String          @db.VarChar(50) @map("selected_winner_id")
+  resolutionMethod  String          @db.VarChar(100) @map("resolution_method")
+  justificationNote String          @db.Text @map("justification_note")
+  approvedByAdminId String          @db.Uuid @map("approved_by_admin_id")
+  resolvedAt        DateTime        @default(now()) @db.Timestamptz(6) @map("resolved_at")
+
+  session           CountingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  selectedWinner    Candidate       @relation("TieResolutionWinner", fields: [selectedWinnerId], references: [id], onDelete: Restrict)
+  approvedByAdmin   AdminUser       @relation("TieResolutionApprover", fields: [approvedByAdminId], references: [id], onDelete: Restrict)
+
+  @@map("tie_resolutions")
 }
 
 // ============================================================================

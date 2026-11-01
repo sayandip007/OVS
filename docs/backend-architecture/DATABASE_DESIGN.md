@@ -14,7 +14,7 @@ The OVS database is structured as a **3NF-normalized relational schema** impleme
 
 ## 2. Prisma-to-PostgreSQL Mapping Verification Table
 
-The following verification table demonstrates the 1-to-1 mapping between Prisma models/fields and physical PostgreSQL tables/columns across all **24 models**:
+The following verification table demonstrates the 1-to-1 mapping between Prisma models/fields and physical PostgreSQL tables/columns across all **25 models**:
 
 | # | Prisma Model | Prisma Field | Physical Database Table | Physical Database Column | SQL Type / Constraint |
 | :- | :--- | :--- | :--- | :--- | :--- |
@@ -22,10 +22,13 @@ The following verification table demonstrates the 1-to-1 mapping between Prisma 
 | 1 | `State` | `totalLokSabhaSeats` | `states` | `total_lok_sabha_seats` | `INTEGER NOT NULL` |
 | 1 | `State` | `metadataSource` | `states` | `metadata_source` | `ENUM NOT NULL` |
 | 2 | `District` | `stateId` | `districts` | `state_id` | `VARCHAR(10) NOT NULL` |
+| 2 | `District` | `headquarters` | `districts` | `headquarters` | `VARCHAR(100) NOT NULL` |
 | 3 | `ParliamentaryConstituency` | `constituencyNumber` | `parliamentary_constituencies` | `constituency_number` | `INTEGER NOT NULL` |
+| 3 | `ParliamentaryConstituency` | `totalVoters` | `parliamentary_constituencies` | `total_voters` | `INTEGER NOT NULL` |
 | 3 | `ParliamentaryConstituency` | `reservationType` | `parliamentary_constituencies` | `reservation_type` | `ENUM NOT NULL` |
 | 4 | `AssemblyConstituency` | `parentParliamentaryConstituencyId` | `assembly_constituencies` | `parent_parliamentary_constituency_id` | `VARCHAR(50) NOT NULL` |
 | 4 | `AssemblyConstituency` | `districtId` | `assembly_constituencies` | `district_id` | `VARCHAR(50) NOT NULL` |
+| 4 | `AssemblyConstituency` | `totalVoters` | `assembly_constituencies` | `total_voters` | `INTEGER NOT NULL` |
 | 5 | `User` | `passwordHash` | `users` | `password_hash` | `VARCHAR(255) NOT NULL` |
 | 5 | `User` | `failedLoginAttempts` | `users` | `failed_login_attempts` | `INTEGER NOT NULL` |
 | 6 | `VoterProfile` | `epicNumber` | `voter_profiles` | `epic_number` | `VARCHAR(20) UNIQUE NOT NULL` |
@@ -35,16 +38,20 @@ The following verification table demonstrates the 1-to-1 mapping between Prisma 
 | 7 | `UserSession` | `expiresAt` | `user_sessions` | `expires_at` | `TIMESTAMPTZ(6) NOT NULL` |
 | 8 | `AuthChallenge` | `otpHash` | `auth_challenges` | `otp_hash` | `VARCHAR(255) NOT NULL` |
 | 8 | `AuthChallenge` | `maxAttempts` | `auth_challenges` | `max_attempts` | `INTEGER NOT NULL` |
+| 9 | `Election` | `name` | `elections` | `name` | `VARCHAR(200) NOT NULL` |
 | 9 | `Election` | `pollingStartDate` | `elections` | `polling_start_date` | `DATE NOT NULL` |
 | 9 | `Election` | `demoSandboxMode` | `elections` | `demo_sandbox_mode` | `VARCHAR(50) NOT NULL` |
 | 10 | `ElectionConstituency` | `electionId` | `election_constituencies` | `election_id` | `VARCHAR(50) NOT NULL` |
 | 10 | `ElectionConstituency` | `parliamentaryConstituencyId` | `election_constituencies` | `parliamentary_constituency_id` | `VARCHAR(50) NULL` |
 | 11 | `ElectionLifecycleHistory` | `changedByAdminId` | `election_lifecycle_history` | `changed_by_admin_id` | `UUID NULL` |
+| 12 | `PoliticalParty` | `abbreviation` | `political_parties` | `abbreviation` | `VARCHAR(20) NOT NULL` |
 | 12 | `PoliticalParty` | `symbolUrl` | `political_parties` | `symbol_url` | `VARCHAR(500) NOT NULL` |
 | 13 | `Candidate` | `partyId` | `candidates` | `party_id` | `VARCHAR(50) NOT NULL` |
 | 13 | `Candidate` | `assetsDeclared` | `candidates` | `assets_declared` | `BIGINT NOT NULL` |
 | 14 | `CandidateNomination` | `candidateId` | `candidate_nominations` | `candidate_id` | `VARCHAR(50) NOT NULL` |
+| 14 | `CandidateNomination` | `partyId` | `candidate_nominations` | `party_id` | `VARCHAR(50) NULL (Independent)` |
 | 14 | `CandidateNomination` | `scrutinyNote` | `candidate_nominations` | `scrutiny_note` | `TEXT NOT NULL` |
+| 15 | `AdminUser` | `userId` | `admin_users` | `user_id` | `UUID UNIQUE NOT NULL` |
 | 15 | `AdminUser` | `officerCode` | `admin_users` | `officer_code` | `VARCHAR(50) UNIQUE NOT NULL` |
 | 15 | `AdminUser` | `assignedStateId` | `admin_users` | `assigned_state_id` | `VARCHAR(10) NULL` |
 | 16 | `AdminElectionScope` | `adminUserId` | `admin_election_scopes` | `admin_user_id` | `UUID NOT NULL` |
@@ -52,15 +59,49 @@ The following verification table demonstrates the 1-to-1 mapping between Prisma 
 | 17 | `AdminActionLog` | `targetEntityId` | `admin_action_logs` | `target_entity_id` | `VARCHAR(100) NOT NULL` |
 | 18 | `DemoParticipation` | `voterId` | `demo_participations` | `voter_id` | `UUID NOT NULL` |
 | 18 | `DemoParticipation` | `demoReference` | `demo_participations` | `demo_reference` | `VARCHAR(30) NOT NULL` |
+| 19 | `CountingSession` | `totalVoters` | `counting_sessions` | `total_voters` | `INTEGER NOT NULL` |
 | 19 | `CountingSession` | `totalConfiguredRounds` | `counting_sessions` | `total_configured_rounds` | `INTEGER NOT NULL` |
 | 19 | `CountingSession` | `totalCountedVotes` | `counting_sessions` | `total_counted_votes` | `INTEGER NOT NULL` |
 | 19 | `CountingSession` | `publishedByAdminId` | `counting_sessions` | `published_by_admin_id` | `UUID NULL` |
 | 20 | `CountingRound` | `roundVotes` | `counting_rounds` | `round_votes` | `INTEGER NOT NULL` |
 | 20 | `CountingRound` | `cumulativeVotes` | `counting_rounds` | `cumulative_votes` | `INTEGER NOT NULL` |
+| 20 | `CountingRound` | `leadingCandidateId` | `counting_rounds` | `leading_candidate_id` | `VARCHAR(50) NULL` |
+| 20 | `CountingRound` | `processedAt` | `counting_rounds` | `processed_at` | `TIMESTAMPTZ(6) NOT NULL` |
+| 21 | `CandidateTally` | `nominationId` | `candidate_tallies` | `nomination_id` | `UUID NOT NULL` |
+| 21 | `CandidateTally` | `partyId` | `candidate_tallies` | `party_id` | `VARCHAR(50) NULL (Independent)` |
 | 21 | `CandidateTally` | `voteSharePercentage` | `candidate_tallies` | `vote_share_percentage` | `DECIMAL(5, 2) NOT NULL` |
 | 22 | `ResultCorrectionHistory` | `correctedByAdminId` | `result_correction_history` | `corrected_by_admin_id` | `UUID NOT NULL` |
 | 23 | `Announcement` | `targetConstituencyType` | `announcements` | `target_constituency_type` | `ENUM NULL` |
 | 24 | `VoterNotification` | `isRead` | `voter_notifications` | `is_read` | `BOOLEAN NOT NULL` |
+| 25 | `TieResolution` | `sessionId` | `tie_resolutions` | `session_id` | `VARCHAR(100) UNIQUE NOT NULL` |
+| 25 | `TieResolution` | `selectedWinnerId` | `tie_resolutions` | `selected_winner_id` | `VARCHAR(50) NOT NULL` |
+| 25 | `TieResolution` | `resolutionMethod` | `tie_resolutions` | `resolution_method` | `VARCHAR(100) NOT NULL` |
+| 25 | `TieResolution` | `justificationNote` | `tie_resolutions` | `justification_note` | `TEXT NOT NULL` |
+| 25 | `TieResolution` | `approvedByAdminId` | `tie_resolutions` | `approved_by_admin_id` | `UUID NOT NULL` |
+| 25 | `TieResolution` | `resolvedAt` | `tie_resolutions` | `resolved_at` | `TIMESTAMPTZ(6) NOT NULL` |
+
+### 2.1 Schema-to-Test Mapping Table (Phase 8.1.4 Verified)
+
+The following table documents the resolution of historical test fixture naming inconsistencies, certifying that all integration tests in `tests/postgresql-validation.sql` execute against genuine physical column names:
+
+| Target Table | Erroneous / Legacy Name in Early Tests | Correct Physical Column Name | Prisma Field Mapping | Resolution Status |
+| :--- | :--- | :--- | :--- | :--- |
+| `states` | `code` | *Does not exist* (`id` is the ISO state code, e.g. `'WB'`, `'DL'`) | `State.id` | **Eliminated**; using `id` |
+| `states` | `jurisdiction_type` | `type` | `State.type` | **Corrected** to `type` (`"JurisdictionType"`) |
+| `districts` | `district_code` | *Does not exist* (`id` is district identifier) | `District.id` | **Eliminated**; using `id` |
+| `districts` | `headquarters_city` | `headquarters` | `District.headquarters` | **Corrected** to `headquarters` |
+| `parliamentary_constituencies` | `total_electors` | `total_voters` | `ParliamentaryConstituency.totalVoters` | **Corrected** to `total_voters` |
+| `assembly_constituencies` | `total_electors` | `total_voters` | `AssemblyConstituency.totalVoters` | **Corrected** to `total_voters` |
+| `elections` | `title` | `name` | `Election.name` | **Corrected** to `name` |
+| `elections` | `election_type` | `type` | `Election.type` | **Corrected** to `type` (`"ElectionType"`) |
+| `elections` | `results_declaration_date` | `result_date` | `Election.resultDate` | **Corrected** to `result_date` |
+| `election_constituencies` | `elector_count`, `is_counting_completed` | *Do not exist* (junction only) | N/A | **Eliminated** from fixture |
+| `political_parties` | `party_code` | `abbreviation` | `PoliticalParty.abbreviation` | **Corrected** to `abbreviation` |
+| `political_parties` | `founded_year` | `established_year` | `PoliticalParty.establishedYear` | **Corrected** to `established_year` |
+| `counting_sessions` | *Missing `total_voters`* | `total_voters` | `CountingSession.totalVoters` | **Populated** in test fixtures |
+| `counting_rounds` | `lead_candidate_id` | `leading_candidate_id` | `CountingRound.leadingCandidateId` | **Corrected** to `leading_candidate_id` |
+| `counting_rounds` | `created_at`, `updated_at` | `processed_at`, `processed_by_admin_id` | `CountingRound.processedAt` | **Corrected** to `processed_at` |
+| `admin_users` | Direct user fields (`email`, `password_hash`) | Foreign key `user_id REFERENCES users(id)` | `AdminUser.userId` | **Corrected**; `User` row inserted first |
 
 ---
 

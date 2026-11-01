@@ -205,20 +205,40 @@ Auxiliary states: `TIED`, `UNDER_REVIEW`, `CORRECTED`, `UNPUBLISHED`.
   5. Automatically sets `isPublished = true`, `status = 'PUBLISHED'`, `publishedAt = NOW()`, and `publishedByAdminId = admin.id`.
 - **Responses**:
   - `200 OK`: `{ "success": true, "data": { "isPublished": true, "status": "PUBLISHED" } }`
-  - `400 Bad Request`: Precondition failed (RFC 9457 Problem Details).
+### 7.5 Statutory Tie Resolution (Section 102 RPA 1951)
+- **Method & Path**: `POST /api/v1/admin/counting-sessions/:sessionId/resolve-tie`
+- **Purpose**: Records legal tie resolution evidence (draw of lots / coin toss by Returning Officer) when a session is in `TIED` state.
+- **Auth / Role**: Authorized Returning Officer / ECI Admin (`SUPER_ADMIN`, `NATIONAL_ADMIN`, `STATE_ADMIN`).
+- **Request Body**:
+  ```json
+  {
+    "resolutionMethod": "DRAW_OF_LOTS",
+    "selectedCandidateId": "CAND-01",
+    "notes": "Tie broken by draw of lots conducted in presence of candidate election agents pursuant to RPA 1951 Section 102.",
+    "documentRef": "ECI/ELEC/2029/RO-LOTS-001"
+  }
+  ```
+- **Behavior**:
+  1. Verifies that counting session is in status `TIED`.
+  2. Verifies that `selectedCandidateId` is one of the tied contesting candidates.
+  3. Inserts an immutable row into `tie_resolutions`.
+  4. Updates `counting_sessions`: sets `winner_candidate_id = selectedCandidateId`, `lead_margin = 1`, and advances status to `RESULT_READY_FOR_REVIEW`.
+- **Responses**:
+  - `200 OK`: Returns created tie resolution record and updated session.
+  - `400 Bad Request`: Session is not tied, or candidate is not eligible.
 
-### 7.5 Result Correction & Recount
+### 7.6 Result Correction & Recount
 - **Method & Path**: `POST /api/v1/admin/results/:sessionId/review` (Places session `UNDER_REVIEW`).
 - **Method & Path**: `POST /api/v1/admin/results/:sessionId/correct`
   - **Body**: `{ "reason": "Administrative recounting audit adjustment.", "correctedTallies": [...] }`
   - **Behavior**: Records previous state and amended state into `result_correction_history`, sets status to `CORRECTED`, and requires returning to `RESULT_READY_FOR_REVIEW` before re-publishing.
 
-### 7.6 Unpublish Result
+### 7.7 Unpublish Result
 - **Method & Path**: `POST /api/v1/admin/results/:sessionId/unpublish`
   - **Auth / Role**: `SUPER_ADMIN`.
   - **Behavior**: Sets `isPublished = false` and status to `UNPUBLISHED`.
 
-### 7.7 Public Results Listing & Analytics
+### 7.8 Public Results Listing & Analytics
 - `GET /api/v1/results` (Public results, implicitly filtering `isPublished = true`).
 - `GET /api/v1/results/analytics/lok-sabha`
 - `GET /api/v1/results/analytics/assembly/:stateId`
