@@ -1,4 +1,4 @@
-# OVS Backend System Architecture (Phase 8.1.1 Corrected)
+# OVS Backend System Architecture (Phase 8.1.2 Hardened)
 
 ## 1. Executive Summary & Vision
 
@@ -21,10 +21,10 @@ The backend transition transitions this frontend from client-side `localStorage`
    - Built as a single deployable Node.js / TypeScript application with strictly enforced internal module boundaries.
    - High cohesion within domains (e.g., `geography`, `elections`, `candidates`, `counting`) and loose coupling via explicit service interfaces.
    - Avoids distributed transaction overhead, network latency, and operational complexity.
-2. **Relational Source of Truth (24 Models, 17 Enums)**:
+2. **Relational Source of Truth (24 Models, 17 Enums, 100% Explicit Column Mappings)**:
    - PostgreSQL 16+ as the primary transactional database.
    - Foreign-key constraints, composite unique keys, partial unique indexes, check constraints, and transactional isolation (`READ COMMITTED` / `SERIALIZABLE` where appropriate).
-   - Managed through Prisma ORM with versioned, reproducible migrations and custom SQL scripts for constraints beyond standard Prisma DSL.
+   - Managed through Prisma ORM with explicit `@map("column_name")` declarations across all 24 models and custom SQL triggers in `CUSTOM_DATABASE_INTEGRITY.sql` enforcing Section 33(7) nomination limits, publication review gates, and mathematical counting reconciliation.
 3. **Strict Ballot Secrecy & Decoupling**:
    - The backend **must never** expose an endpoint that accepts a voter identity linked to a candidate choice.
    - The voter demo participation table (`DemoParticipation`) records only `{ voterId, electionId, status: 'VOTED', referenceId, demoReference, participatedAt, recordedAt }`.

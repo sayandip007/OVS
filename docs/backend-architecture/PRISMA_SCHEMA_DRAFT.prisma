@@ -1,6 +1,6 @@
 // ============================================================================
 // Online Voting System (OVS) — Corrected Production-Grade Prisma Schema
-// Architecture Phase 8.1.1: Consistency, Relational Integrity & Schema Hardening
+// Architecture Phase 8.1.2: Database Integrity, Explicit Prisma Column Mapping & Publication Hardening
 // ============================================================================
 
 datasource db {
@@ -155,12 +155,12 @@ model State {
   name                 String           @db.VarChar(100)
   type                 JurisdictionType @default(STATE)
   capital              String           @db.VarChar(100)
-  officialLanguages    String[]
-  totalLokSabhaSeats   Int
-  totalAssemblySeats   Int
-  metadataSource       MetadataSource   @default(VERIFIED_OFFICIAL)
-  createdAt            DateTime         @default(now()) @db.Timestamptz(6)
-  updatedAt            DateTime         @updatedAt @db.Timestamptz(6)
+  officialLanguages    String[]         @map("official_languages")
+  totalLokSabhaSeats   Int              @map("total_lok_sabha_seats")
+  totalAssemblySeats   Int              @map("total_assembly_seats")
+  metadataSource       MetadataSource   @default(VERIFIED_OFFICIAL) @map("metadata_source")
+  createdAt            DateTime         @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt            DateTime         @updatedAt @db.Timestamptz(6) @map("updated_at")
 
   districts            District[]
   parliamentarySeats   ParliamentaryConstituency[]
@@ -175,12 +175,12 @@ model State {
 
 model District {
   id              String         @id @db.VarChar(50) // e.g. "DIST-WB-KOL"
-  stateId         String         @db.VarChar(10)
+  stateId         String         @db.VarChar(10) @map("state_id")
   name            String         @db.VarChar(100)
   headquarters    String         @db.VarChar(100)
-  metadataSource  MetadataSource @default(VERIFIED_OFFICIAL)
-  createdAt       DateTime       @default(now()) @db.Timestamptz(6)
-  updatedAt       DateTime       @updatedAt @db.Timestamptz(6)
+  metadataSource  MetadataSource @default(VERIFIED_OFFICIAL) @map("metadata_source")
+  createdAt       DateTime       @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt       DateTime       @updatedAt @db.Timestamptz(6) @map("updated_at")
 
   state           State          @relation(fields: [stateId], references: [id], onDelete: Restrict)
   assemblySeats   AssemblyConstituency[]
@@ -193,14 +193,14 @@ model District {
 
 model ParliamentaryConstituency {
   id                 String           @id @db.VarChar(50) // e.g. "PC-WB-KOLKATA-SOUTH"
-  stateId            String           @db.VarChar(10)
-  constituencyNumber Int
+  stateId            String           @db.VarChar(10) @map("state_id")
+  constituencyNumber Int              @map("constituency_number")
   name               String           @db.VarChar(150)
-  reservationType    ReservationType  @default(GENERAL)
-  totalVoters        Int              @default(0)
-  metadataSource     MetadataSource   @default(VERIFIED_OFFICIAL)
-  createdAt          DateTime         @default(now()) @db.Timestamptz(6)
-  updatedAt          DateTime         @updatedAt @db.Timestamptz(6)
+  reservationType    ReservationType  @default(GENERAL) @map("reservation_type")
+  totalVoters        Int              @default(0) @map("total_voters")
+  metadataSource     MetadataSource   @default(VERIFIED_OFFICIAL) @map("metadata_source")
+  createdAt          DateTime         @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt          DateTime         @updatedAt @db.Timestamptz(6) @map("updated_at")
 
   state              State            @relation(fields: [stateId], references: [id], onDelete: Restrict)
   childAssemblySeats AssemblyConstituency[]
@@ -218,16 +218,16 @@ model ParliamentaryConstituency {
 
 model AssemblyConstituency {
   id                                String                    @id @db.VarChar(50) // e.g. "AC-WB-BHABANIPUR"
-  stateId                           String                    @db.VarChar(10)
-  districtId                        String                    @db.VarChar(50)
-  parentParliamentaryConstituencyId String                    @db.VarChar(50)
-  constituencyNumber                Int
+  stateId                           String                    @db.VarChar(10) @map("state_id")
+  districtId                        String                    @db.VarChar(50) @map("district_id")
+  parentParliamentaryConstituencyId String                    @db.VarChar(50) @map("parent_parliamentary_constituency_id")
+  constituencyNumber                Int                       @map("constituency_number")
   name                              String                    @db.VarChar(150)
-  reservationType                   ReservationType           @default(GENERAL)
-  totalVoters                       Int                       @default(0)
-  metadataSource                    MetadataSource            @default(VERIFIED_OFFICIAL)
-  createdAt                         DateTime                  @default(now()) @db.Timestamptz(6)
-  updatedAt                         DateTime                  @updatedAt @db.Timestamptz(6)
+  reservationType                   ReservationType           @default(GENERAL) @map("reservation_type")
+  totalVoters                       Int                       @default(0) @map("total_voters")
+  metadataSource                    MetadataSource            @default(VERIFIED_OFFICIAL) @map("metadata_source")
+  createdAt                         DateTime                  @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt                         DateTime                  @updatedAt @db.Timestamptz(6) @map("updated_at")
 
   state                             State                     @relation(fields: [stateId], references: [id], onDelete: Restrict)
   district                          District                  @relation(fields: [districtId, stateId], references: [id, stateId], onDelete: Restrict)
@@ -253,15 +253,15 @@ model AssemblyConstituency {
 
 model User {
   id                  String        @id @default(uuid()) @db.Uuid
-  userType            UserType      @default(VOTER)
+  userType            UserType      @default(VOTER) @map("user_type")
   identifier          String        @unique @db.VarChar(100) // EPIC or Officer Code
-  passwordHash        String        @db.VarChar(255) // Argon2id hash
-  isActive            Boolean       @default(true)
-  failedLoginAttempts Int           @default(0)
-  lockoutUntil        DateTime?     @db.Timestamptz(6)
-  lastLoginAt         DateTime?     @db.Timestamptz(6)
-  createdAt           DateTime      @default(now()) @db.Timestamptz(6)
-  updatedAt           DateTime      @updatedAt @db.Timestamptz(6)
+  passwordHash        String        @db.VarChar(255) @map("password_hash") // Argon2id hash
+  isActive            Boolean       @default(true) @map("is_active")
+  failedLoginAttempts Int           @default(0) @map("failed_login_attempts")
+  lockoutUntil        DateTime?     @db.Timestamptz(6) @map("lockout_until")
+  lastLoginAt         DateTime?     @db.Timestamptz(6) @map("last_login_at")
+  createdAt           DateTime      @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt           DateTime      @updatedAt @db.Timestamptz(6) @map("updated_at")
 
   voterProfile        VoterProfile?
   adminUser           AdminUser?
@@ -272,24 +272,24 @@ model User {
 
 model VoterProfile {
   id                          String                    @id @default(uuid()) @db.Uuid
-  userId                      String                    @unique @db.Uuid
-  epicNumber                  String                    @unique @db.VarChar(20)
-  fullName                    String                    @db.VarChar(150)
-  dateOfBirth                 DateTime                  @db.Date
+  userId                      String                    @unique @db.Uuid @map("user_id")
+  epicNumber                  String                    @unique @db.VarChar(20) @map("epic_number")
+  fullName                    String                    @db.VarChar(150) @map("full_name")
+  dateOfBirth                 DateTime                  @db.Date @map("date_of_birth")
   gender                      String                    @db.VarChar(20)
   mobile                      String                    @db.VarChar(15)
   email                       String                    @db.VarChar(255)
   address                     String                    @db.Text
-  pinCode                     String                    @db.VarChar(10)
-  stateId                     String                    @db.VarChar(10)
-  districtId                  String                    @db.VarChar(50)
-  parliamentaryConstituencyId String                    @db.VarChar(50)
-  assemblyConstituencyId      String                    @db.VarChar(50)
-  registrationDate            DateTime                  @default(now()) @db.Timestamptz(6)
-  isVerified                  Boolean                   @default(true)
-  metadataSource              MetadataSource            @default(DEMO_SAMPLE)
-  createdAt                   DateTime                  @default(now()) @db.Timestamptz(6)
-  updatedAt                   DateTime                  @updatedAt @db.Timestamptz(6)
+  pinCode                     String                    @db.VarChar(10) @map("pin_code")
+  stateId                     String                    @db.VarChar(10) @map("state_id")
+  districtId                  String                    @db.VarChar(50) @map("district_id")
+  parliamentaryConstituencyId String                    @db.VarChar(50) @map("parliamentary_constituency_id")
+  assemblyConstituencyId      String                    @db.VarChar(50) @map("assembly_constituency_id")
+  registrationDate            DateTime                  @default(now()) @db.Timestamptz(6) @map("registration_date")
+  isVerified                  Boolean                   @default(true) @map("is_verified")
+  metadataSource              MetadataSource            @default(DEMO_SAMPLE) @map("metadata_source")
+  createdAt                   DateTime                  @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt                   DateTime                  @updatedAt @db.Timestamptz(6) @map("updated_at")
 
   user                        User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
   state                       State                     @relation(fields: [stateId], references: [id], onDelete: Restrict)
@@ -305,11 +305,11 @@ model VoterProfile {
 
 model UserSession {
   id        String   @id @db.VarChar(128)
-  userId    String   @db.Uuid
-  userAgent String?  @db.Text
-  ipAddress String?  @db.VarChar(45)
-  expiresAt DateTime @db.Timestamptz(6)
-  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  userId    String   @db.Uuid @map("user_id")
+  userAgent String?  @db.Text @map("user_agent")
+  ipAddress String?  @db.VarChar(45) @map("ip_address")
+  expiresAt DateTime @db.Timestamptz(6) @map("expires_at")
+  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
 
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -320,12 +320,12 @@ model UserSession {
 model AuthChallenge {
   id          String    @id @default(uuid()) @db.Uuid
   identifier  String    @db.VarChar(100) // Target EPIC or Officer Code
-  otpHash     String    @db.VarChar(255)
+  otpHash     String    @db.VarChar(255) @map("otp_hash")
   attempts    Int       @default(0)
-  maxAttempts Int       @default(3)
-  expiresAt   DateTime  @db.Timestamptz(6)
-  consumedAt  DateTime? @db.Timestamptz(6)
-  createdAt   DateTime  @default(now()) @db.Timestamptz(6)
+  maxAttempts Int       @default(3) @map("max_attempts")
+  expiresAt   DateTime  @db.Timestamptz(6) @map("expires_at")
+  consumedAt  DateTime? @db.Timestamptz(6) @map("consumed_at")
+  createdAt   DateTime  @default(now()) @db.Timestamptz(6) @map("created_at")
 
   @@index([identifier, consumedAt, expiresAt])
   @@map("auth_challenges")
@@ -340,25 +340,25 @@ model Election {
   name                 String                    @db.VarChar(200)
   type                 ElectionType
   year                 Int
-  stateId              String?                   @db.VarChar(10) // Null for Lok Sabha; Required for State Assembly
+  stateId              String?                   @db.VarChar(10) @map("state_id") // Null for Lok Sabha; Required for State Assembly
   status               ElectionStatus            @default(UPCOMING)
-  registrationDeadline DateTime?                 @db.Date
-  nominationStartDate  DateTime?                 @db.Date
-  nominationEndDate    DateTime?                 @db.Date
-  scrutinyDate         DateTime?                 @db.Date
-  withdrawalDeadline   DateTime?                 @db.Date
-  campaignStartDate    DateTime?                 @db.Date
-  campaignEndDate      DateTime?                 @db.Date
-  pollingStartDate     DateTime                  @db.Date
-  pollingEndDate       DateTime                  @db.Date
-  countingDate         DateTime                  @db.Date
-  resultDate           DateTime                  @db.Date
-  simulationClockDate  DateTime?                 @db.Date
-  demoSandboxMode      String                    @default("CONCURRENT_SIMULATION_SANDBOX") @db.VarChar(50)
+  registrationDeadline DateTime?                 @db.Date @map("registration_deadline")
+  nominationStartDate  DateTime?                 @db.Date @map("nomination_start_date")
+  nominationEndDate    DateTime?                 @db.Date @map("nomination_end_date")
+  scrutinyDate         DateTime?                 @db.Date @map("scrutiny_date")
+  withdrawalDeadline   DateTime?                 @db.Date @map("withdrawal_deadline")
+  campaignStartDate    DateTime?                 @db.Date @map("campaign_start_date")
+  campaignEndDate      DateTime?                 @db.Date @map("campaign_end_date")
+  pollingStartDate     DateTime                  @db.Date @map("polling_start_date")
+  pollingEndDate       DateTime                  @db.Date @map("polling_end_date")
+  countingDate         DateTime                  @db.Date @map("counting_date")
+  resultDate           DateTime                  @db.Date @map("result_date")
+  simulationClockDate  DateTime?                 @db.Date @map("simulation_clock_date")
+  demoSandboxMode      String                    @default("CONCURRENT_SIMULATION_SANDBOX") @db.VarChar(50) @map("demo_sandbox_mode")
   description          String                    @default("") @db.Text
-  metadataSource       MetadataSource            @default(DEMO_SAMPLE)
-  createdAt            DateTime                  @default(now()) @db.Timestamptz(6)
-  updatedAt            DateTime                  @updatedAt @db.Timestamptz(6)
+  metadataSource       MetadataSource            @default(DEMO_SAMPLE) @map("metadata_source")
+  createdAt            DateTime                  @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt            DateTime                  @updatedAt @db.Timestamptz(6) @map("updated_at")
 
   state                State?                    @relation(fields: [stateId], references: [id], onDelete: Restrict)
   constituencyMappings ElectionConstituency[]
@@ -375,11 +375,11 @@ model Election {
 
 model ElectionConstituency {
   id                          String                     @id @default(uuid()) @db.Uuid
-  electionId                  String                     @db.VarChar(50)
-  constituencyType            ConstituencyType
-  parliamentaryConstituencyId String?                    @db.VarChar(50)
-  assemblyConstituencyId      String?                    @db.VarChar(50)
-  createdAt                   DateTime                   @default(now()) @db.Timestamptz(6)
+  electionId                  String                     @db.VarChar(50) @map("election_id")
+  constituencyType            ConstituencyType           @map("constituency_type")
+  parliamentaryConstituencyId String?                    @db.VarChar(50) @map("parliamentary_constituency_id")
+  assemblyConstituencyId      String?                    @db.VarChar(50) @map("assembly_constituency_id")
+  createdAt                   DateTime                   @default(now()) @db.Timestamptz(6) @map("created_at")
 
   election                    Election                   @relation(fields: [electionId], references: [id], onDelete: Cascade)
   parliamentaryConstituency   ParliamentaryConstituency? @relation(fields: [parliamentaryConstituencyId], references: [id], onDelete: Cascade)
@@ -395,11 +395,11 @@ model ElectionConstituency {
 
 model ElectionLifecycleHistory {
   id                String         @id @default(uuid()) @db.Uuid
-  electionId        String         @db.VarChar(50)
-  fromStatus        ElectionStatus
-  toStatus          ElectionStatus
-  changedByAdminId  String?        @db.Uuid
-  changedAt         DateTime       @default(now()) @db.Timestamptz(6)
+  electionId        String         @db.VarChar(50) @map("election_id")
+  fromStatus        ElectionStatus @map("from_status")
+  toStatus          ElectionStatus @map("to_status")
+  changedByAdminId  String?        @db.Uuid @map("changed_by_admin_id")
+  changedAt         DateTime       @default(now()) @db.Timestamptz(6) @map("changed_at")
   note              String         @default("") @db.Text
   metadata          Json           @default("{}")
 
@@ -418,15 +418,15 @@ model PoliticalParty {
   id              String            @id @db.VarChar(50) // e.g. "PARTY-BJP"
   name            String            @db.VarChar(150)
   abbreviation    String            @db.VarChar(20)
-  partyType       PartyType         @default(NATIONAL)
-  symbolName      String            @db.VarChar(100)
-  symbolUrl       String            @db.VarChar(500)
-  establishedYear Int?
+  partyType       PartyType         @default(NATIONAL) @map("party_type")
+  symbolName      String            @db.VarChar(100) @map("symbol_name")
+  symbolUrl       String            @db.VarChar(500) @map("symbol_url")
+  establishedYear Int?              @map("established_year")
   headquarters    String?           @db.VarChar(150)
   status          PartyStatus       @default(ACTIVE)
-  metadataSource  MetadataSource    @default(DEMO_SAMPLE)
-  createdAt       DateTime          @default(now()) @db.Timestamptz(6)
-  updatedAt       DateTime          @updatedAt @db.Timestamptz(6)
+  metadataSource  MetadataSource    @default(DEMO_SAMPLE) @map("metadata_source")
+  createdAt       DateTime          @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt       DateTime          @updatedAt @db.Timestamptz(6) @map("updated_at")
 
   candidates      Candidate[]
   candidateTallies CandidateTally[]
@@ -436,20 +436,20 @@ model PoliticalParty {
 
 model Candidate {
   id                  String                @id @db.VarChar(50) // e.g. "CAND-LS29-KRN-1"
-  partyId             String                @db.VarChar(50)
-  fullName            String                @db.VarChar(150)
+  partyId             String                @db.VarChar(50) @map("party_id")
+  fullName            String                @db.VarChar(150) @map("full_name")
   age                 Int
   gender              String                @db.VarChar(20)
   education           String                @db.VarChar(150)
   profession          String                @db.VarChar(150)
-  criminalCases       Int                   @default(0)
-  assetsDeclared      BigInt                @default(0)
-  liabilitiesDeclared BigInt                @default(0)
-  photoUrl            String?               @db.VarChar(500)
+  criminalCases       Int                   @default(0) @map("criminal_cases")
+  assetsDeclared      BigInt                @default(0) @map("assets_declared")
+  liabilitiesDeclared BigInt                @default(0) @map("liabilities_declared")
+  photoUrl            String?               @db.VarChar(500) @map("photo_url")
   bio                 String                @default("") @db.Text
-  metadataSource      MetadataSource        @default(DEMO_SAMPLE)
-  createdAt           DateTime              @default(now()) @db.Timestamptz(6)
-  updatedAt           DateTime              @updatedAt @db.Timestamptz(6)
+  metadataSource      MetadataSource        @default(DEMO_SAMPLE) @map("metadata_source")
+  createdAt           DateTime              @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt           DateTime              @updatedAt @db.Timestamptz(6) @map("updated_at")
 
   party               PoliticalParty        @relation(fields: [partyId], references: [id], onDelete: Restrict)
   nominations         CandidateNomination[]
@@ -465,18 +465,18 @@ model Candidate {
 
 model CandidateNomination {
   id                          String                    @id @default(uuid()) @db.Uuid
-  candidateId                 String                    @db.VarChar(50)
-  electionId                  String                    @db.VarChar(50)
-  constituencyType            ConstituencyType
-  parliamentaryConstituencyId String?                   @db.VarChar(50)
-  assemblyConstituencyId      String?                   @db.VarChar(50)
-  nominationDate              DateTime                  @default(now()) @db.Timestamptz(6)
+  candidateId                 String                    @db.VarChar(50) @map("candidate_id")
+  electionId                  String                    @db.VarChar(50) @map("election_id")
+  constituencyType            ConstituencyType          @map("constituency_type")
+  parliamentaryConstituencyId String?                   @db.VarChar(50) @map("parliamentary_constituency_id")
+  assemblyConstituencyId      String?                   @db.VarChar(50) @map("assembly_constituency_id")
+  nominationDate              DateTime                  @default(now()) @db.Timestamptz(6) @map("nomination_date")
   status                      CandidateNominationStatus @default(APPROVED)
-  scrutinyNote                String                    @default("") @db.Text
-  scrutinyDate                DateTime?                 @db.Timestamptz(6)
-  scrutinizedByAdminId        String?                   @db.Uuid
-  createdAt                   DateTime                  @default(now()) @db.Timestamptz(6)
-  updatedAt                   DateTime                  @updatedAt @db.Timestamptz(6)
+  scrutinyNote                String                    @default("") @db.Text @map("scrutiny_note")
+  scrutinyDate                DateTime?                 @db.Timestamptz(6) @map("scrutiny_date")
+  scrutinizedByAdminId        String?                   @db.Uuid @map("scrutinized_by_admin_id")
+  createdAt                   DateTime                  @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt                   DateTime                  @updatedAt @db.Timestamptz(6) @map("updated_at")
 
   candidate                   Candidate                 @relation(fields: [candidateId], references: [id], onDelete: Cascade)
   election                    Election                  @relation(fields: [electionId], references: [id], onDelete: Cascade)
@@ -484,7 +484,10 @@ model CandidateNomination {
   assemblyConstituency        AssemblyConstituency?     @relation(fields: [assemblyConstituencyId], references: [id], onDelete: Cascade)
   scrutinizedByAdmin          AdminUser?                @relation(fields: [scrutinizedByAdminId], references: [id], onDelete: SetNull)
 
-  @@unique([candidateId, electionId])
+  // NOTE: Candidates may contest multiple constituencies in an election (RPA 1951 s.33(7) allows up to 2).
+  // Per-constituency uniqueness is enforced via PostgreSQL partial unique indexes:
+  // uq_nomination_candidate_pc and uq_nomination_candidate_ac.
+  @@index([candidateId, electionId])
   @@index([electionId, status])
   @@index([parliamentaryConstituencyId])
   @@index([assemblyConstituencyId])
@@ -497,15 +500,15 @@ model CandidateNomination {
 
 model AdminUser {
   id                    String                     @id @default(uuid()) @db.Uuid
-  userId                String                     @unique @db.Uuid
-  officerCode           String                     @unique @db.VarChar(50) // e.g. "ECI-SUPER-001"
-  fullName              String                     @db.VarChar(150)
+  userId                String                     @unique @db.Uuid @map("user_id")
+  officerCode           String                     @unique @db.VarChar(50) @map("officer_code") // e.g. "ECI-SUPER-001"
+  fullName              String                     @db.VarChar(150) @map("full_name")
   designation           String                     @db.VarChar(150)
   role                  AdminRole                  @default(READ_ONLY_AUDITOR)
-  assignedStateId       String?                    @db.VarChar(10)
-  isActive              Boolean                    @default(true)
-  createdAt             DateTime                   @default(now()) @db.Timestamptz(6)
-  updatedAt             DateTime                   @updatedAt @db.Timestamptz(6)
+  assignedStateId       String?                    @db.VarChar(10) @map("assigned_state_id")
+  isActive              Boolean                    @default(true) @map("is_active")
+  createdAt             DateTime                   @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt             DateTime                   @updatedAt @db.Timestamptz(6) @map("updated_at")
 
   user                  User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
   assignedState         State?                     @relation(fields: [assignedStateId], references: [id], onDelete: Restrict)
@@ -524,10 +527,10 @@ model AdminUser {
 
 model AdminElectionScope {
   id                 String     @id @default(uuid()) @db.Uuid
-  adminUserId        String     @db.Uuid
-  electionId         String     @db.VarChar(50)
-  assignedAt         DateTime   @default(now()) @db.Timestamptz(6)
-  assignedByAdminId  String?    @db.Uuid
+  adminUserId        String     @db.Uuid @map("admin_user_id")
+  electionId         String     @db.VarChar(50) @map("election_id")
+  assignedAt         DateTime   @default(now()) @db.Timestamptz(6) @map("assigned_at")
+  assignedByAdminId  String?    @db.Uuid @map("assigned_by_admin_id")
 
   adminUser          AdminUser  @relation("ScopedAdmin", fields: [adminUserId], references: [id], onDelete: Cascade)
   election           Election   @relation(fields: [electionId], references: [id], onDelete: Cascade)
@@ -541,12 +544,12 @@ model AdminElectionScope {
 
 model AdminActionLog {
   id             String    @id @default(uuid()) @db.Uuid
-  adminUserId    String?   @db.Uuid
-  actionType     String    @db.VarChar(50)
+  adminUserId    String?   @db.Uuid @map("admin_user_id")
+  actionType     String    @db.VarChar(50) @map("action_type")
   domain         String    @db.VarChar(50)
-  targetEntityId String    @db.VarChar(100)
+  targetEntityId String    @db.VarChar(100) @map("target_entity_id")
   details        Json      @default("{}")
-  ipAddress      String?   @db.VarChar(45)
+  ipAddress      String?   @db.VarChar(45) @map("ip_address")
   timestamp      DateTime  @default(now()) @db.Timestamptz(6)
 
   adminUser      AdminUser? @relation(fields: [adminUserId], references: [id], onDelete: SetNull)
@@ -561,13 +564,13 @@ model AdminActionLog {
 
 model DemoParticipation {
   id            String              @id @default(uuid()) @db.Uuid
-  voterId       String              @db.Uuid
-  electionId    String              @db.VarChar(50)
+  voterId       String              @db.Uuid @map("voter_id")
+  electionId    String              @db.VarChar(50) @map("election_id")
   status        ParticipationStatus @default(VOTED)
-  demoReference String              @db.VarChar(30) // e.g. "DEMO-LS-000001"
-  referenceId   String              @db.VarChar(60) // e.g. "DEMO-REF-LS2029-VOTER001"
-  participatedAt DateTime           @db.Timestamptz(6) // Centralized demo clock timestamp
-  recordedAt    DateTime            @default(now()) @db.Timestamptz(6) // Host wall-clock timestamp
+  demoReference String              @db.VarChar(30) @map("demo_reference") // e.g. "DEMO-LS-000001"
+  referenceId   String              @db.VarChar(60) @map("reference_id") // e.g. "DEMO-REF-LS2029-VOTER001"
+  participatedAt DateTime           @db.Timestamptz(6) @map("participated_at") // Centralized demo clock timestamp
+  recordedAt    DateTime            @default(now()) @db.Timestamptz(6) @map("recorded_at") // Host wall-clock timestamp
   metadata      Json                @default("{}")
 
   voter         VoterProfile        @relation(fields: [voterId], references: [id], onDelete: Cascade)
@@ -586,25 +589,25 @@ model DemoParticipation {
 
 model CountingSession {
   id                          String                     @id @db.VarChar(100) // e.g. "RESULT-LS-2029-WB-PC-KOLKATA-SOUTH"
-  electionId                  String                     @db.VarChar(50)
-  constituencyType            ConstituencyType
-  parliamentaryConstituencyId String?                    @db.VarChar(50)
-  assemblyConstituencyId      String?                    @db.VarChar(50)
-  totalConfiguredRounds       Int                        @default(5)
-  currentRound                Int                        @default(0)
+  electionId                  String                     @db.VarChar(50) @map("election_id")
+  constituencyType            ConstituencyType           @map("constituency_type")
+  parliamentaryConstituencyId String?                    @db.VarChar(50) @map("parliamentary_constituency_id")
+  assemblyConstituencyId      String?                    @db.VarChar(50) @map("assembly_constituency_id")
+  totalConfiguredRounds       Int                        @default(5) @map("total_configured_rounds")
+  currentRound                Int                        @default(0) @map("current_round")
   status                      ResultStatus               @default(DRAFT)
-  totalVoters                 Int
-  totalCountedVotes           Int                        @default(0)
-  notaVotes                   Int                        @default(0)
-  rejectedVotes               Int                        @default(0)
-  winnerCandidateId           String?                    @db.VarChar(50)
-  runnerUpCandidateId         String?                    @db.VarChar(50)
-  victoryMargin               Int                        @default(0)
-  isPublished                 Boolean                    @default(false)
-  publishedAt                 DateTime?                  @db.Timestamptz(6)
-  publishedByAdminId          String?                    @db.Uuid
-  createdAt                   DateTime                   @default(now()) @db.Timestamptz(6)
-  updatedAt                   DateTime                   @updatedAt @db.Timestamptz(6)
+  totalVoters                 Int                        @map("total_voters")
+  totalCountedVotes           Int                        @default(0) @map("total_counted_votes")
+  notaVotes                   Int                        @default(0) @map("nota_votes")
+  rejectedVotes               Int                        @default(0) @map("rejected_votes")
+  winnerCandidateId           String?                    @db.VarChar(50) @map("winner_candidate_id")
+  runnerUpCandidateId         String?                    @db.VarChar(50) @map("runner_up_candidate_id")
+  victoryMargin               Int                        @default(0) @map("victory_margin")
+  isPublished                 Boolean                    @default(false) @map("is_published")
+  publishedAt                 DateTime?                  @db.Timestamptz(6) @map("published_at")
+  publishedByAdminId          String?                    @db.Uuid @map("published_by_admin_id")
+  createdAt                   DateTime                   @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt                   DateTime                   @updatedAt @db.Timestamptz(6) @map("updated_at")
 
   election                    Election                   @relation(fields: [electionId], references: [id], onDelete: Cascade)
   parliamentaryConstituency   ParliamentaryConstituency? @relation(fields: [parliamentaryConstituencyId], references: [id], onDelete: Cascade)
@@ -625,14 +628,14 @@ model CountingSession {
 
 model CountingRound {
   id                 String          @id @default(uuid()) @db.Uuid
-  sessionId          String          @db.VarChar(100)
-  roundNumber        Int
-  roundVotes         Int             @default(0)
-  cumulativeVotes    Int             @default(0)
-  leadingCandidateId String?         @db.VarChar(50)
-  leadMargin         Int             @default(0)
-  processedAt        DateTime        @default(now()) @db.Timestamptz(6)
-  processedByAdminId String?         @db.Uuid
+  sessionId          String          @db.VarChar(100) @map("session_id")
+  roundNumber        Int             @map("round_number")
+  roundVotes         Int             @default(0) @map("round_votes")
+  cumulativeVotes    Int             @default(0) @map("cumulative_votes")
+  leadingCandidateId String?         @db.VarChar(50) @map("leading_candidate_id")
+  leadMargin         Int             @default(0) @map("lead_margin")
+  processedAt        DateTime        @default(now()) @db.Timestamptz(6) @map("processed_at")
+  processedByAdminId String?         @db.Uuid @map("processed_by_admin_id")
 
   session            CountingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   leadingCandidate   Candidate?      @relation("LeadingCandidate", fields: [leadingCandidateId], references: [id], onDelete: SetNull)
@@ -645,13 +648,13 @@ model CountingRound {
 
 model CandidateTally {
   id                  String          @id @default(uuid()) @db.Uuid
-  sessionId           String          @db.VarChar(100)
-  candidateId         String          @db.VarChar(50)
-  partyId             String          @db.VarChar(50)
+  sessionId           String          @db.VarChar(100) @map("session_id")
+  candidateId         String          @db.VarChar(50) @map("candidate_id")
+  partyId             String          @db.VarChar(50) @map("party_id")
   votes               Int             @default(0)
-  voteSharePercentage Decimal         @default(0.00) @db.Decimal(5, 2)
-  createdAt           DateTime        @default(now()) @db.Timestamptz(6)
-  updatedAt           DateTime        @updatedAt @db.Timestamptz(6)
+  voteSharePercentage Decimal         @default(0.00) @db.Decimal(5, 2) @map("vote_share_percentage")
+  createdAt           DateTime        @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt           DateTime        @updatedAt @db.Timestamptz(6) @map("updated_at")
 
   session             CountingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   candidate           Candidate       @relation(fields: [candidateId, partyId], references: [id, partyId], onDelete: Cascade)
@@ -664,12 +667,12 @@ model CandidateTally {
 
 model ResultCorrectionHistory {
   id                 String          @id @default(uuid()) @db.Uuid
-  sessionId          String          @db.VarChar(100)
-  previousState      Json
-  correctedState     Json
+  sessionId          String          @db.VarChar(100) @map("session_id")
+  previousState      Json            @map("previous_state")
+  correctedState     Json            @map("corrected_state")
   reason             String          @db.Text
-  correctedByAdminId String          @db.Uuid
-  correctedAt        DateTime        @default(now()) @db.Timestamptz(6)
+  correctedByAdminId String          @db.Uuid @map("corrected_by_admin_id")
+  correctedAt        DateTime        @default(now()) @db.Timestamptz(6) @map("corrected_at")
 
   session            CountingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   correctedByAdmin   AdminUser       @relation("SessionCorrector", fields: [correctedByAdminId], references: [id], onDelete: Restrict)
@@ -688,18 +691,18 @@ model Announcement {
   summary                          String                     @db.Text
   message                          String                     @db.Text
   category                         AnnouncementCategory       @default(GENERAL_INFO)
-  targetAudience                   AnnouncementAudience       @default(ALL_VOTERS)
-  targetStateId                    String?                    @db.VarChar(10)
-  targetElectionId                 String?                    @db.VarChar(50)
-  targetConstituencyType           ConstituencyType?
-  targetParliamentaryConstituencyId String?                   @db.VarChar(50)
-  targetAssemblyConstituencyId     String?                    @db.VarChar(50)
-  publicationDate                  DateTime                   @db.Date
-  expiryDate                       DateTime                   @db.Date
+  targetAudience                   AnnouncementAudience       @default(ALL_VOTERS) @map("target_audience")
+  targetStateId                    String?                    @db.VarChar(10) @map("target_state_id")
+  targetElectionId                 String?                    @db.VarChar(50) @map("target_election_id")
+  targetConstituencyType           ConstituencyType?          @map("target_constituency_type")
+  targetParliamentaryConstituencyId String?                   @db.VarChar(50) @map("target_parliamentary_constituency_id")
+  targetAssemblyConstituencyId     String?                    @db.VarChar(50) @map("target_assembly_constituency_id")
+  publicationDate                  DateTime                   @db.Date @map("publication_date")
+  expiryDate                       DateTime                   @db.Date @map("expiry_date")
   status                           AnnouncementStatus         @default(PUBLISHED)
-  createdByAdminId                 String?                    @db.Uuid
-  createdAt                        DateTime                   @default(now()) @db.Timestamptz(6)
-  updatedAt                        DateTime                   @updatedAt @db.Timestamptz(6)
+  createdByAdminId                 String?                    @db.Uuid @map("created_by_admin_id")
+  createdAt                        DateTime                   @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt                        DateTime                   @updatedAt @db.Timestamptz(6) @map("updated_at")
 
   targetState                      State?                     @relation(fields: [targetStateId], references: [id], onDelete: SetNull)
   targetElection                   Election?                  @relation(fields: [targetElectionId], references: [id], onDelete: SetNull)
@@ -713,13 +716,13 @@ model Announcement {
 
 model VoterNotification {
   id        String           @id @db.VarChar(50) // e.g. "NOTIF-001"
-  voterId   String           @db.Uuid
+  voterId   String           @db.Uuid @map("voter_id")
   type      NotificationType @default(GENERAL_ANNOUNCEMENT)
   title     String           @db.VarChar(200)
   message   String           @db.Text
   timestamp DateTime         @default(now()) @db.Timestamptz(6)
-  isRead    Boolean          @default(false)
-  readAt    DateTime?        @db.Timestamptz(6)
+  isRead    Boolean          @default(false) @map("is_read")
+  readAt    DateTime?        @db.Timestamptz(6) @map("read_at")
 
   voter     VoterProfile     @relation(fields: [voterId], references: [id], onDelete: Cascade)
 

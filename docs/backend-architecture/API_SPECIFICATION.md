@@ -1,4 +1,4 @@
-# OVS REST API Specification (v1 - Phase 8.1.1 Corrected)
+# OVS REST API Specification (v1 - Phase 8.1.2 Hardened)
 
 ## 1. Global API Standards & Conventions
 
@@ -119,122 +119,38 @@
   - `400 Bad Request`: Expired or consumed challenge.
   - `401 Unauthorized`: Invalid OTP / Exceeded maximum 3 attempts.
 
-### 2.4 Resend OTP
-- **Method & Path**: `POST /api/v1/auth/otp/resend`
-- **Purpose**: Generates a secondary simulated OTP with cooldown enforcement.
-- **Auth / Role**: Public.
-- **Request Body**: `{ "challengeId": "uuid" }`
-- **Responses**:
-  - `200 OK`: `{ "success": true, "data": { "cooldownSeconds": 30 } }`
-  - `429 Too Many Requests`: Cooldown active.
-
-### 2.5 User Logout
-- **Method & Path**: `POST /api/v1/auth/logout`
-- **Purpose**: Revokes current session and clears session cookie.
-- **Auth / Role**: Authenticated (`VOTER` or `ADMIN`).
-- **Responses**:
-  - `200 OK`: Clears `ovs_session` cookie; returns `{ "success": true, "message": "Logged out successfully." }`
-
-### 2.6 Get Current Session Profile
-- **Method & Path**: `GET /api/v1/auth/me`
-- **Purpose**: Returns current user profile, role, and permission scopes.
-- **Auth / Role**: Authenticated (via `ovs_session` cookie).
-- **Responses**:
-  - `200 OK`: `{ "success": true, "data": { "userType": "VOTER", "profile": { ... } } }`
-  - `401 Unauthorized`: Unauthenticated.
+### 2.4 Resend OTP & Logout
+- `POST /api/v1/auth/otp/resend`
+- `POST /api/v1/auth/logout`
+- `GET /api/v1/auth/me`
 
 ---
 
 ## 3. Voter Profile & Elections Endpoints (`/api/v1/voters`)
 
-### 3.1 Get Voter Profile
-- **Method & Path**: `GET /api/v1/voters/me`
-- **Purpose**: Retrieves authenticated voter's personal details, dual-constituency assignment, and completion percentage.
-- **Auth / Role**: Authenticated (`VOTER`).
-- **Responses**:
-  - `200 OK`: Returns full `VoterProfile` with state, district, PC, and AC records.
-
-### 3.2 Update Voter Personal Information
-- **Method & Path**: `PATCH /api/v1/voters/me`
-- **Purpose**: Updates non-electoral personal details (email, mobile, address).
-- **Auth / Role**: Authenticated (`VOTER`).
-- **Request Body**: `{ "email": "new.email@example.in", "mobile": "9830099999", "address": "..." }`
-- **Validation**: Constituencies are locked; cannot be modified by voters.
-- **Responses**:
-  - `200 OK`: Updated profile.
-
-### 3.3 Get Voter Eligible Elections
-- **Method & Path**: `GET /api/v1/voters/me/elections`
-- **Purpose**: Computes voter's eligible elections (Lok Sabha and State Assembly) based on voter's state and constituencies.
-- **Auth / Role**: Authenticated (`VOTER`).
-- **Responses**:
-  - `200 OK`: Eligible elections with assigned PC and AC and participation statuses.
-
-### 3.4 Get Voter Participation History
-- **Method & Path**: `GET /api/v1/voters/me/participation`
-- **Purpose**: Returns non-sensitive demo participation receipts.
-- **Auth / Role**: Authenticated (`VOTER`).
-- **Responses**:
-  - `200 OK`: List of participation records (zero candidate choice fields).
+- `GET /api/v1/voters/me`: Retrieves authenticated voter's personal details and dual-constituency assignment.
+- `PATCH /api/v1/voters/me`: Updates non-electoral personal details (email, mobile, address).
+- `GET /api/v1/voters/me/elections`: Computes eligible elections based on voter's dual PC/AC mapping.
+- `GET /api/v1/voters/me/participation`: Returns non-sensitive demo participation receipts.
 
 ---
 
 ## 4. Geography Endpoints (`/api/v1/geography`)
 
-### 4.1 List All States and Union Territories
-- **Method & Path**: `GET /api/v1/geography/states`
-- **Purpose**: Retrieves all 36 Indian jurisdictions with sanctioned Lok Sabha and Assembly seat tallies.
-- **Auth / Role**: Public.
-- **Query Parameters**: `type` (`STATE` | `UNION_TERRITORY`), `search`.
-- **Responses**: `200 OK`.
-
-### 4.2 List Districts for a State
-- **Method & Path**: `GET /api/v1/geography/states/:stateId/districts`
-- **Purpose**: Retrieves administrative districts within a jurisdiction.
-- **Auth / Role**: Public.
-- **Responses**: `200 OK`.
-
-### 4.3 List Parliamentary Constituencies (PCs)
-- **Method & Path**: `GET /api/v1/geography/parliamentary-constituencies`
-- **Purpose**: Retrieves Lok Sabha seats, filterable by `stateId`.
-- **Auth / Role**: Public.
-- **Responses**: `200 OK`.
-
-### 4.4 List Assembly Constituencies (ACs)
-- **Method & Path**: `GET /api/v1/geography/assembly-constituencies`
-- **Purpose**: Retrieves Assembly seats, filterable by `stateId`, `districtId`, and `parentParliamentaryConstituencyId`.
-- **Auth / Role**: Public.
-- **Responses**: `200 OK`.
+- `GET /api/v1/geography/states`
+- `GET /api/v1/geography/states/:stateId/districts`
+- `GET /api/v1/geography/parliamentary-constituencies`
+- `GET /api/v1/geography/assembly-constituencies`
 
 ---
 
 ## 5. Elections, Parties & Candidates (`/api/v1/...`)
 
-### 5.1 List Elections
-- **Method & Path**: `GET /api/v1/elections`
-- **Purpose**: Retrieves active, upcoming, and past elections.
-- **Auth / Role**: Public.
-- **Query Parameters**: `status`, `type`, `year`, `stateId`.
-- **Responses**: `200 OK`.
-
-### 5.2 Get Election Detail & Schedule
-- **Method & Path**: `GET /api/v1/elections/:electionId`
-- **Purpose**: Retrieves full election record with chronological milestones.
-- **Auth / Role**: Public.
-- **Responses**: `200 OK`.
-
-### 5.3 List Political Parties
-- **Method & Path**: `GET /api/v1/parties`
-- **Purpose**: Retrieves registered parties and independent designations.
-- **Auth / Role**: Public.
-- **Responses**: `200 OK`.
-
-### 5.4 List Contesting Candidates for an Election and Constituency
-- **Method & Path**: `GET /api/v1/elections/:electionId/candidates`
-- **Purpose**: Returns approved contesting candidates matching the election and constituency filter.
-- **Auth / Role**: Public.
-- **Query Parameters**: `constituencyId` (required), `status` (defaults to `'APPROVED'`), `search`, `partyId`, `sortBy` (`name` | `party`).
-- **Responses**: `200 OK` (includes NOTA option metadata).
+- `GET /api/v1/elections`
+- `GET /api/v1/elections/:electionId`
+- `GET /api/v1/parties`
+- `GET /api/v1/elections/:electionId/candidates`: Returns approved contesting candidates matching election and constituency.
+- `POST /api/v1/admin/candidates/:candidateId/nominations`: Files candidate nomination, validating Section 33(7) RPA 1951 (maximum 2 active nominations per candidate per election across constituencies).
 
 ---
 
@@ -251,11 +167,6 @@
   }
   ```
   *(Note: Request body contains NO candidateId, partyId, or ballot choice parameter! Any submitted candidate field is rejected with 400 Bad Request).*
-- **Validation**:
-  1. Voter must be authenticated via valid session cookie.
-  2. Election must exist and be in `POLLING_ACTIVE` status.
-  3. Voter must be registered in an eligible constituency for this election.
-  4. Duplicate check: Voter must not have already participated in this election (`status !== 'VOTED'`).
 - **Responses**:
   - `201 Created`: Non-sensitive receipt (`demoReference`, `referenceId`, `participatedAt`).
   - `400 Bad Request`: Election not active, state mismatch, or prohibited candidate choice field supplied.
@@ -267,29 +178,18 @@
 
 ### 7.1 Unified Result State Machine Statuses
 The counting engine enforces a deterministic 10-state lifecycle:
-1. `DRAFT`: Initial uncounted state.
-2. `COUNTING_IN_PROGRESS`: Rounds are actively progressing.
-3. `COUNTING_PAUSED`: Counting temporarily halted by Election Officer.
-4. `COUNTING_COMPLETED`: All configured rounds have completed vote tallying.
-5. `RESULT_READY_FOR_REVIEW`: Tabulations finalized and pending Returning Officer certification.
-6. `PUBLISHED`: Verified results made publicly visible on portal dashboards.
-7. `TIED`: Two or more candidates share identical leading votes; publication blocked.
-8. `UNDER_REVIEW`: Result challenged or undergoing formal recount/scrutiny.
-9. `CORRECTED`: Result amended following audit, with historical diff captured.
-10. `UNPUBLISHED`: Result rescinded from public view by Super Admin.
+`DRAFT` → `COUNTING_IN_PROGRESS` → `COUNTING_PAUSED` / `COUNTING_COMPLETED` → `RESULT_READY_FOR_REVIEW` → `PUBLISHED`
+Auxiliary states: `TIED`, `UNDER_REVIEW`, `CORRECTED`, `UNPUBLISHED`.
 
-### 7.2 Advance Counting Round (ECI Officer Action)
+### 7.2 Advance Counting Round
 - **Method & Path**: `POST /api/v1/admin/counting-sessions/:sessionId/rounds`
 - **Purpose**: Advances the constituency counting simulation by one round.
 - **Auth / Role**: Authenticated ECI Admin (`SUPER_ADMIN`, `NATIONAL_ADMIN`, `STATE_ADMIN`, `ELECTION_OFFICER`).
-- **Scope Restriction**: `STATE_ADMIN` restricted to their state; `ELECTION_OFFICER` restricted to elections in `admin_election_scopes`.
-- **Responses**:
-  - `200 OK`: Returns updated round metrics, cumulative votes, and leading candidate margin.
+- **Responses**: `200 OK` (returns updated round metrics, cumulative votes, and leading candidate margin).
 
 ### 7.3 Complete Counting Session
 - **Method & Path**: `POST /api/v1/admin/counting-sessions/:sessionId/complete`
-- **Purpose**: Concludes rounds, checks for ties, and sets status to `RESULT_READY_FOR_REVIEW`.
-- **Auth / Role**: Authorized ECI Admin.
+- **Purpose**: Concludes rounds, executes vote reconciliation (`total_counted_votes = SUM(tallies) + nota + rejected`), checks for ties, and sets status to `RESULT_READY_FOR_REVIEW` (or `TIED` if equal votes).
 - **Validation**: All configured rounds must be processed (`currentRound >= totalConfiguredRounds`).
 - **Responses**: `200 OK`.
 
@@ -297,62 +197,41 @@ The counting engine enforces a deterministic 10-state lifecycle:
 - **Method & Path**: `POST /api/v1/admin/results/:sessionId/publish`
 - **Purpose**: Publishes verified result, making it publicly visible on `/results`.
 - **Auth / Role**: Authorized ECI Admin (`SUPER_ADMIN`, `NATIONAL_ADMIN`, `STATE_ADMIN`).
-- **Validation Preconditions**:
-  1. Session status must be `RESULT_READY_FOR_REVIEW`.
+- **Mandatory Preconditions**:
+  1. Current session status MUST be `RESULT_READY_FOR_REVIEW` (cannot publish directly from `DRAFT` or `COUNTING_COMPLETED`).
   2. All configured rounds must be complete (`currentRound >= totalConfiguredRounds`).
   3. Status cannot be `TIED`.
+  4. Winner must be declared.
+  5. Automatically sets `isPublished = true`, `status = 'PUBLISHED'`, `publishedAt = NOW()`, and `publishedByAdminId = admin.id`.
 - **Responses**:
   - `200 OK`: `{ "success": true, "data": { "isPublished": true, "status": "PUBLISHED" } }`
-  - `400 Bad Request`: Precondition failed (incomplete counting session or tied result).
+  - `400 Bad Request`: Precondition failed (RFC 9457 Problem Details).
 
-### 7.5 Public Results Listing & Analytics
-- **Method & Path**: `GET /api/v1/results` (Public results, implicitly filtering `isPublished = true`).
-- **Method & Path**: `GET /api/v1/results/analytics/lok-sabha`
-- **Method & Path**: `GET /api/v1/results/analytics/assembly/:stateId`
-- **Responses**: `200 OK`.
+### 7.5 Result Correction & Recount
+- **Method & Path**: `POST /api/v1/admin/results/:sessionId/review` (Places session `UNDER_REVIEW`).
+- **Method & Path**: `POST /api/v1/admin/results/:sessionId/correct`
+  - **Body**: `{ "reason": "Administrative recounting audit adjustment.", "correctedTallies": [...] }`
+  - **Behavior**: Records previous state and amended state into `result_correction_history`, sets status to `CORRECTED`, and requires returning to `RESULT_READY_FOR_REVIEW` before re-publishing.
+
+### 7.6 Unpublish Result
+- **Method & Path**: `POST /api/v1/admin/results/:sessionId/unpublish`
+  - **Auth / Role**: `SUPER_ADMIN`.
+  - **Behavior**: Sets `isPublished = false` and status to `UNPUBLISHED`.
+
+### 7.7 Public Results Listing & Analytics
+- `GET /api/v1/results` (Public results, implicitly filtering `isPublished = true`).
+- `GET /api/v1/results/analytics/lok-sabha`
+- `GET /api/v1/results/analytics/assembly/:stateId`
+- `GET /api/v1/results/:sessionId/export/csv`
 
 ---
 
 ## 8. Administration Endpoints (`/api/v1/admin/...`)
 
-### 8.1 ECI Officer Login
-- **Method & Path**: `POST /api/v1/admin/auth/login`
-- **Purpose**: Authenticates administrative officer with Officer Code and Passcode.
-- **Request Body**: `{ "officerCode": "ECI-SUPER-001", "passcode": "admin123" }`
-- **Responses**: `200 OK` (issues 2FA challenge).
-
-### 8.2 Officer Election Scopes Management
-- **Method & Path**: `GET /api/v1/admin/officers/:id/scopes`
-- **Method & Path**: `POST /api/v1/admin/officers/:id/scopes`
-  - **Body**: `{ "electionId": "LS-2029" }`
-- **Method & Path**: `DELETE /api/v1/admin/officers/:id/scopes/:electionId`
-- **Purpose**: Assigns or revokes specific election jurisdictions for `ELECTION_OFFICER` admins in the normalized `admin_election_scopes` table.
-- **Auth / Role**: `SUPER_ADMIN` or `NATIONAL_ADMIN`.
-
-### 8.3 Portal Announcements Management
-- **Method & Path**: `POST /api/v1/admin/announcements`
-- **Purpose**: Publishes portal announcements with strictly typed audience and constituency targeting.
-- **Auth / Role**: `SUPER_ADMIN`, `NATIONAL_ADMIN`, or scoped `STATE_ADMIN`.
-- **Request Body**:
-  ```json
-  {
-    "title": "Polling Date Notification",
-    "summary": "Official polling schedule for Kolkata South.",
-    "message": "...",
-    "category": "ELECTION_SCHEDULE",
-    "targetAudience": "SPECIFIC_CONSTITUENCY",
-    "targetStateId": "WB",
-    "targetElectionId": "LS-2029",
-    "targetConstituencyType": "PARLIAMENTARY",
-    "targetParliamentaryConstituencyId": "PC-WB-KOLKATA-SOUTH",
-    "targetAssemblyConstituencyId": null,
-    "publicationDate": "2029-04-01",
-    "expiryDate": "2029-04-30"
-  }
-  ```
-- **Responses**: `201 Created`.
-
-### 8.4 Audit Logs & 17-Rule Data Integrity
-- **Method & Path**: `GET /api/v1/admin/audit-logs`
-- **Method & Path**: `GET /api/v1/admin/integrity-audit`
-- **Responses**: `200 OK`.
+- `POST /api/v1/admin/auth/login`
+- `GET /api/v1/admin/officers/:id/scopes`
+- `POST /api/v1/admin/officers/:id/scopes`
+- `DELETE /api/v1/admin/officers/:id/scopes/:electionId`
+- `POST /api/v1/admin/announcements`
+- `GET /api/v1/admin/audit-logs`
+- `GET /api/v1/admin/integrity-audit`

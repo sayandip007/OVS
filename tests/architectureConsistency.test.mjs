@@ -185,3 +185,223 @@ describe('OVS Phase 8.1.1 — Architecture Consistency & Database Integrity Veri
     assert.ok(secContent.includes('ZERO PERSISTENCE'), 'Security doc must reiterate zero choice persistence');
   });
 });
+
+describe('OVS Phase 8.1.2 — Final Database Integrity, Prisma Mapping & Result Publication Hardening', () => {
+  const prismaSchemaPath = path.join(rootDir, 'docs/backend-architecture/PRISMA_SCHEMA_DRAFT.prisma');
+  const customSqlPath = path.join(rootDir, 'docs/backend-architecture/CUSTOM_DATABASE_INTEGRITY.sql');
+  const dbDesignPath = path.join(rootDir, 'docs/backend-architecture/DATABASE_DESIGN.md');
+  const erDiagramPath = path.join(rootDir, 'docs/backend-architecture/ER_DIAGRAM.md');
+  const apiSpecPath = path.join(rootDir, 'docs/backend-architecture/API_SPECIFICATION.md');
+  const adrDocPath = path.join(rootDir, 'docs/backend-architecture/ARCHITECTURE_DECISIONS.md');
+  const testingStrategyPath = path.join(rootDir, 'docs/backend-architecture/TESTING_STRATEGY.md');
+
+  test('Test 1: Column mapping: 100% of camelCase fields in Prisma have explicit @map and match documentation', () => {
+    const prismaContent = fs.readFileSync(prismaSchemaPath, 'utf8');
+    const dbDesignContent = fs.readFileSync(dbDesignPath, 'utf8');
+
+    // Extract all models and verify camelCase fields have @map
+    const modelBlocks = [...prismaContent.matchAll(/model\s+([A-Za-z0-9_]+)\s+\{([\s\S]*?)\n\}/g)];
+    assert.equal(modelBlocks.length, 24, 'All 24 models must exist in Prisma schema');
+
+    let totalCamelCaseFields = 0;
+    let mappedCamelCaseFields = 0;
+
+    for (const [, modelName, body] of modelBlocks) {
+      const lines = body.split('\n');
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('@@')) continue;
+        const parts = trimmed.split(/\s+/);
+        const fieldName = parts[0];
+        const fieldType = parts[1];
+        if (!fieldName || !fieldType) continue;
+
+        // Skip relation fields (where type is a model or array of models)
+        const isRelation = /^[A-Z]/.test(fieldType) && !['String', 'Int', 'BigInt', 'Float', 'Decimal', 'Boolean', 'DateTime', 'Json', 'Bytes'].includes(fieldType.replace('[]', '').replace('?', ''));
+        // If the type is an enum, it's a scalar column
+        const isEnum = /^(ElectionType|ElectionStatus|ConstituencyType|JurisdictionType|PartyType|PartyRecognitionStatus|NominationStatus|VoterStatus|Gender|VoterActionType|AuthChannel|AuditSeverity|CountingStatus|ResultStatus|MetadataSource|DisputeType|AdminRole)(\?|\[\])?$/.test(fieldType);
+
+        if (isRelation && !isEnum) {
+          continue; // Relation attribute, not physical column
+        }
+
+        // Check if fieldName has uppercase characters (camelCase)
+        if (/[A-Z]/.test(fieldName)) {
+          totalCamelCaseFields++;
+          if (trimmed.includes('@map("')) {
+            mappedCamelCaseFields++;
+          } else {
+            assert.fail(`Model ${modelName} field "${fieldName}" is camelCase but lacks an explicit @map("snake_case") declaration.`);
+          }
+        }
+      }
+    }
+
+    assert.ok(totalCamelCaseFields > 50, `Expected over 50 camelCase fields, found ${totalCamelCaseFields}`);
+    assert.equal(mappedCamelCaseFields, totalCamelCaseFields, '100% of camelCase scalar fields must have explicit @map declarations');
+    assert.ok(dbDesignContent.includes('Prisma-to-PostgreSQL Mapping Verification Table'), 'DATABASE_DESIGN.md must include the mapping verification table');
+  });
+
+  test('Test 2: No accidental camelCase column names in CUSTOM_DATABASE_INTEGRITY.sql', () => {
+    const sqlContent = fs.readFileSync(customSqlPath, 'utf8');
+
+    const forbiddenCamelCaseIdentifiers = [
+      'electionId',
+      'voterId',
+      'candidateId',
+      'partyId',
+      'countingSessionId',
+      'currentRound',
+      'totalConfiguredRounds',
+      'isPublished',
+      'publishedByAdminId',
+      'parliamentaryConstituencyId',
+      'assemblyConstituencyId',
+      'adminUserId',
+      'roundNumber',
+      'roundVotes',
+      'cumulativeVotes',
+      'leadMargin',
+      'leadCandidateId',
+      'totalCountedVotes',
+      'notaVotes',
+      'rejectedVotes',
+      'victoryMargin',
+      'winnerCandidateId',
+      'runnerUpCandidateId',
+    ];
+
+    for (const id of forbiddenCamelCaseIdentifiers) {
+      const regex = new RegExp(`\\b${id}\\b`);
+      assert.ok(!regex.test(sqlContent), `CUSTOM_DATABASE_INTEGRITY.sql must not contain camelCase identifier "${id}". Must be snake_case.`);
+    }
+  });
+
+  test('Test 3: Candidate tally is constrained to an approved nomination and NOTA is separated', () => {
+    const sqlContent = fs.readFileSync(customSqlPath, 'utf8');
+
+    assert.ok(sqlContent.includes('verify_candidate_tally_nomination'), 'verify_candidate_tally_nomination trigger function must exist');
+    assert.ok(sqlContent.includes("status = 'APPROVED'"), 'Tally trigger must enforce status = APPROVED on candidate nomination');
+    assert.ok(sqlContent.includes("v_candidate_party_id != NEW.party_id"), 'Tally trigger must enforce candidate party matches registered party');
+    assert.ok(sqlContent.includes("UPPER(NEW.candidate_id) = 'NOTA'") || sqlContent.includes("LIKE '%NOTA%'"), 'Tally trigger must explicitly forbid NOTA as candidate tally');
+    assert.ok(sqlContent.includes('trg_verify_candidate_tally_nomination'), 'Trigger trg_verify_candidate_tally_nomination must be attached to candidate_tallies');
+  });
+
+  test('Test 4: Counting session and nomination constituencies match', () => {
+    const sqlContent = fs.readFileSync(customSqlPath, 'utf8');
+
+    assert.ok(sqlContent.includes('parliamentary_constituency_id = v_pc_id'), 'Tally must check parliamentary_constituency_id matches session PC');
+    assert.ok(sqlContent.includes('assembly_constituency_id = v_ac_id'), 'Tally must check assembly_constituency_id matches session AC');
+
+    // Also check winner and runner-up validation
+    assert.ok(sqlContent.includes('verify_counting_session_candidates'), 'verify_counting_session_candidates function must exist');
+    assert.ok(sqlContent.includes('Declared winner % lacks an APPROVED nomination'), 'Winner candidate must have APPROVED nomination in exact constituency');
+    assert.ok(sqlContent.includes('Winner candidate (%) and runner-up candidate cannot be identical'), 'Winner and runner up cannot be identical');
+  });
+
+  test('Test 5: Election type strictly matches constituency type and state scope', () => {
+    const sqlContent = fs.readFileSync(customSqlPath, 'utf8');
+
+    // Election-constituency trigger
+    assert.ok(sqlContent.includes('verify_election_constituency_compatibility'), 'verify_election_constituency_compatibility must exist');
+    assert.ok(sqlContent.includes("v_election_type = 'LOK_SABHA'"), 'Trigger must inspect LOK_SABHA election type');
+    assert.ok(sqlContent.includes("NEW.constituency_type != 'PARLIAMENTARY' OR NEW.parliamentary_constituency_id IS NULL"), 'Lok Sabha must be PARLIAMENTARY');
+    assert.ok(sqlContent.includes("v_election_type = 'STATE_ASSEMBLY'"), 'Trigger must inspect STATE_ASSEMBLY election type');
+    assert.ok(sqlContent.includes("NEW.constituency_type != 'ASSEMBLY' OR NEW.assembly_constituency_id IS NULL"), 'State Assembly must be ASSEMBLY');
+    assert.ok(sqlContent.includes('v_ac_state_id != v_election_state_id'), 'AC state must match election state');
+
+    // Counting session trigger
+    assert.ok(sqlContent.includes('verify_counting_session_compatibility'), 'verify_counting_session_compatibility must exist');
+  });
+
+  test('Test 6: Result publication cannot bypass review stage (RESULT_READY_FOR_REVIEW required)', () => {
+    const sqlContent = fs.readFileSync(customSqlPath, 'utf8');
+
+    assert.ok(sqlContent.includes("OLD.status != 'RESULT_READY_FOR_REVIEW'"), 'Trigger must require previous status to be RESULT_READY_FOR_REVIEW for publication');
+    assert.ok(sqlContent.includes("Cannot publish result from status %; must be reviewed in RESULT_READY_FOR_REVIEW stage first"), 'Clear error message on unreviewed publication attempt');
+    assert.ok(sqlContent.includes("NEW.current_round < NEW.total_configured_rounds"), 'Incomplete counting session publication must be rejected');
+    assert.ok(sqlContent.includes("NEW.status = 'TIED' OR OLD.status = 'TIED'"), 'Publication must block while in TIED status');
+    assert.ok(sqlContent.includes("NEW.published_by_admin_id IS NULL"), 'Publication requires recording published_by_admin_id');
+  });
+
+  test('Test 7: INSERT and UPDATE publication paths are protected against direct unreviewed publication', () => {
+    const sqlContent = fs.readFileSync(customSqlPath, 'utf8');
+
+    // INSERT protection
+    assert.ok(sqlContent.includes("IF TG_OP = 'INSERT' THEN"), 'Trigger must explicitly branch on TG_OP = INSERT');
+    assert.ok(sqlContent.includes("NEW.is_published = TRUE OR NEW.status = 'PUBLISHED'"), 'Direct insertion as PUBLISHED must be checked');
+    assert.ok(sqlContent.includes("New counting sessions cannot be directly inserted as PUBLISHED. Must begin in DRAFT"), 'Clear exception on direct published insertion');
+
+    // UPDATE state machine validation
+    assert.ok(sqlContent.includes("IF TG_OP = 'UPDATE' AND OLD.status != NEW.status THEN"), 'Trigger must inspect state transitions on UPDATE');
+    assert.ok(sqlContent.includes("WHEN 'COUNTING_COMPLETED' THEN"), 'State machine must validate transitions from COUNTING_COMPLETED');
+    assert.ok(sqlContent.includes("WHEN 'RESULT_READY_FOR_REVIEW' THEN"), 'State machine must validate transitions from RESULT_READY_FOR_REVIEW');
+    assert.ok(sqlContent.includes("WHEN 'UNDER_REVIEW' THEN"), 'State machine must validate transitions from UNDER_REVIEW');
+  });
+
+  test('Test 8: Counting totals reconcile mathematically with monotonic round progression', () => {
+    const sqlContent = fs.readFileSync(customSqlPath, 'utf8');
+
+    // Vote reconciliation
+    assert.ok(sqlContent.includes('reconcile_counting_session_votes'), 'reconcile_counting_session_votes function must exist');
+    assert.ok(sqlContent.includes('v_calculated_total := v_candidate_votes_sum + NEW.nota_votes + NEW.rejected_votes'), 'Total calculated formula must equal tallies + NOTA + rejected');
+    assert.ok(sqlContent.includes('NEW.total_counted_votes != v_calculated_total'), 'Session total votes must be compared against calculated total');
+
+    // Round progression
+    assert.ok(sqlContent.includes('verify_counting_round_progression'), 'verify_counting_round_progression function must exist');
+    assert.ok(sqlContent.includes('NEW.cumulative_votes < v_prev_cumulative'), 'Cumulative votes must never decrease between rounds');
+    assert.ok(sqlContent.includes('NEW.round_votes != (NEW.cumulative_votes - v_prev_cumulative)'), 'Round votes must equal delta between consecutive cumulative totals');
+  });
+
+  test('Test 9: Multiple nominations follow Section 33(7) RPA 1951 rule (max 2 constituencies per candidate)', () => {
+    const prismaContent = fs.readFileSync(prismaSchemaPath, 'utf8');
+    const sqlContent = fs.readFileSync(customSqlPath, 'utf8');
+
+    // Prisma schema must NOT contain overly restrictive @@unique([candidateId, electionId])
+    const nominationBlockMatch = prismaContent.match(/model CandidateNomination\s+\{[\s\S]*?\n\}/);
+    assert.ok(nominationBlockMatch, 'CandidateNomination model must exist');
+    const nominationBlock = nominationBlockMatch[0];
+    assert.ok(!nominationBlock.includes('@@unique([candidateId, electionId])'), 'CandidateNomination must not restrict candidate to 1 constituency via @@unique([candidateId, electionId])');
+    assert.ok(nominationBlock.includes('@@index([candidateId, electionId])'), 'CandidateNomination must have index on [candidateId, electionId]');
+
+    // Custom SQL must enforce partial unique indexes per constituency
+    assert.ok(sqlContent.includes('uq_nomination_candidate_election_pc'), 'uq_nomination_candidate_election_pc partial unique index must exist');
+    assert.ok(sqlContent.includes('uq_nomination_candidate_election_ac'), 'uq_nomination_candidate_election_ac partial unique index must exist');
+
+    // Custom SQL trigger enforces max 2 active nominations
+    assert.ok(sqlContent.includes('v_nomination_count >= 2'), 'Trigger must check nomination count >= 2');
+    assert.ok(sqlContent.includes('RPA 1951 s.33(7)'), 'Trigger must cite Section 33(7) RPA 1951');
+  });
+
+  test('Test 10: Standalone custom SQL draft and Prisma schema remain synchronized', () => {
+    const prismaContent = fs.readFileSync(prismaSchemaPath, 'utf8');
+    const sqlContent = fs.readFileSync(customSqlPath, 'utf8');
+
+    // Check that custom SQL file is substantial (> 20KB)
+    const sqlStats = fs.statSync(customSqlPath);
+    assert.ok(sqlStats.size > 20000, `CUSTOM_DATABASE_INTEGRITY.sql should be comprehensive, size is ${sqlStats.size} bytes`);
+
+    // All tables modified in custom SQL must exist in Prisma @@map declarations
+    const tableAlterMatches = [...sqlContent.matchAll(/ALTER TABLE\s+([a-z_]+)/g)].map(m => m[1]);
+    const uniqueTables = [...new Set(tableAlterMatches)];
+
+    for (const table of uniqueTables) {
+      const mapPattern = new RegExp(`@@map\\("${table}"\\)`);
+      assert.ok(mapPattern.test(prismaContent), `Table "${table}" altered in custom SQL must have matching @@map("${table}") in PRISMA_SCHEMA_DRAFT.prisma`);
+    }
+
+    // Architecture documentation references
+    const erDiagram = fs.readFileSync(erDiagramPath, 'utf8');
+    const apiSpec = fs.readFileSync(apiSpecPath, 'utf8');
+    const adrDoc = fs.readFileSync(adrDocPath, 'utf8');
+    const testingDoc = fs.readFileSync(testingStrategyPath, 'utf8');
+
+    assert.ok(erDiagram.includes('snake_case') || erDiagram.includes('counting_sessions'), 'ER diagram must reference physical snake_case schema');
+    assert.ok(apiSpec.includes('RESULT_READY_FOR_REVIEW'), 'API spec must reference RESULT_READY_FOR_REVIEW lifecycle state');
+    assert.ok(adrDoc.includes('ADR-014'), 'ADR document must contain ADR-014');
+    assert.ok(adrDoc.includes('ADR-015'), 'ADR document must contain ADR-015');
+    assert.ok(adrDoc.includes('ADR-016'), 'ADR document must contain ADR-016');
+    assert.ok(adrDoc.includes('ADR-017'), 'ADR document must contain ADR-017');
+    assert.ok(testingDoc.includes('Suite 7') && testingDoc.includes('Suite 8') && testingDoc.includes('Suite 9'), 'Testing strategy must detail Suites 7, 8, and 9');
+  });
+});

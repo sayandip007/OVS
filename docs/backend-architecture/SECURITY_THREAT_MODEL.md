@@ -1,4 +1,4 @@
-# OVS Security Threat Model & Risk Assessment (Phase 8.1.1 Corrected)
+# OVS Security Threat Model & Risk Assessment (Phase 8.1.2 Hardened)
 
 ## 1. Executive Summary & Legal Boundaries
 

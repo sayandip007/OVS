@@ -1,4 +1,4 @@
-# OVS Data Migration & Seed Architecture (Phase 8.1.1 Corrected)
+# OVS Data Migration & Seed Architecture (Phase 8.1.2 Hardened)
 
 ## 1. Migration Overview & Seed Strategy
 
@@ -12,7 +12,7 @@ The frontend application currently relies on a structured, normalized set of Jav
 - `voters.js`: 6 multi-state demo voters, 5 ECI administrative officers, voter notifications, and audit logs.
 - `results.js`: Seeded constituency counting sessions and published result records.
 
-The migration strategy translates these static definitions into an **idempotent, relational PostgreSQL seed script** (`prisma/seed.ts`) covering all **24 models and 17 enums** using Prisma `upsert` queries.
+The migration strategy translates these static definitions into an **idempotent, relational PostgreSQL seed script** (`prisma/seed.ts`) covering all **24 models and 17 enums** using Prisma `upsert` queries aligned with explicit `snake_case` column mappings and `CUSTOM_DATABASE_INTEGRITY.sql`.
 
 ---
 

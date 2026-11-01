@@ -1,4 +1,4 @@
-# OVS Docker & Local Development Architecture (Phase 8.1.1 Corrected)
+# OVS Docker & Local Development Architecture (Phase 8.1.2 Hardened)
 
 ## 1. Local Containerized Topology Overview
 
@@ -158,7 +158,7 @@ docker compose up -d postgres-db redis-cache
 # 3. Apply Prisma migrations and custom SQL integrity constraints
 cd backend
 npx prisma migrate dev --name init
-psql $DATABASE_URL -f prisma/migrations/custom_integrity_constraints.sql
+psql $DATABASE_URL -f ../docs/backend-architecture/CUSTOM_DATABASE_INTEGRITY.sql
 npx prisma db seed
 
 # 4. Start backend API service
