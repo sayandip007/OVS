@@ -219,16 +219,21 @@ Auxiliary states: `TIED`, `UNDER_REVIEW`, `CORRECTED`, `UNPUBLISHED`.
   }
   ```
 - **Database & Trigger Validation (`trg_verify_tie_resolution_insert`)**:
-  1. Verifies that the counting session exists (`FOR UPDATE` lock) and is currently in status `TIED`.
+  1. Verifies that the counting session exists (`FOR UPDATE` lock) and is currently in status `TIED` (`status = 'TIED'` alone never proves a tie exists).
   2. Verifies that no prior `tie_resolutions` row exists for the session.
   3. Verifies that `selectedWinnerId` holds an `APPROVED` nomination in the session's exact election and constituency.
-  4. Verifies that `selectedWinnerId` is tied for the highest vote count (`MAX(votes) > 0` shared by at least 2 candidates in `candidate_tallies`).
+  4. Verifies genuine tie proof from `candidate_tallies` joined with `candidate_nominations` (`status = 'APPROVED'`):
+     - Candidate tallies must exist (`v_total_tally_count > 0`).
+     - Maximum vote count among eligible `APPROVED` candidates must exceed zero (`v_max_votes > 0`).
+     - At least two eligible `APPROVED` candidates must share that exact highest vote total (`v_top_tied_count >= 2`). Unapproved candidates cannot contribute to a tie.
+     - `selectedWinnerId` must be one of the tied top candidates (`v_winner_votes = v_max_votes`).
   5. Verifies that the approving admin is active and holds valid role, state jurisdiction, and election scope.
   6. Inserts an immutable row into `tie_resolutions` (`ON DELETE RESTRICT`).
-  7. Updates `counting_sessions`: sets `winner_candidate_id = selectedWinnerId`, `lead_margin = 0`, and transitions status to `RESULT_READY_FOR_REVIEW`. Both `RESULT_READY_FOR_REVIEW` and `PUBLISHED` states enforce `winner_candidate_id = tie_resolutions.selected_winner_id`.
+  7. Updates `counting_sessions`: sets `winner_candidate_id = selectedWinnerId`, `victory_margin = 0`, and transitions status from `TIED` to `RESULT_READY_FOR_REVIEW`. Subsequent publication transitions `RESULT_READY_FOR_REVIEW` to `PUBLISHED` (`TIED → RESULT_READY_FOR_REVIEW → PUBLISHED`). Both `RESULT_READY_FOR_REVIEW` and `PUBLISHED` states enforce `winner_candidate_id = tie_resolutions.selected_winner_id`.
 - **Responses**:
-  - `200 OK`: Returns created tie resolution record and updated session.
-  - `400 Bad Request` / `403 Forbidden`: Session is not tied, candidate is not tied for top votes, or officer lacks jurisdiction/scope.
+  - `200 OK`: Returns created tie resolution record and updated session in `RESULT_READY_FOR_REVIEW`.
+  - `400 Bad Request` / `403 Forbidden`: Session is not tied, fewer than 2 eligible `APPROVED` candidates are tied at `MAX(votes) > 0`, candidate is not tied for top votes, or officer lacks jurisdiction/scope.
+
 
 ### 7.6 Result Correction & Recount
 - **Method & Path**: `POST /api/v1/admin/results/:sessionId/review` (Places session `UNDER_REVIEW`).

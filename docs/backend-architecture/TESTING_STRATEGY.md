@@ -140,29 +140,54 @@ The OVS testing architecture guarantees that all electoral domain rules, constit
   - `npm test` runs Node.js domain unit tests and static SQL/Prisma/trigger architecture consistency checks (`tests/architectureConsistency.test.mjs`).
   - `tests/postgresql-validation.sql` (31 scenarios) requires a live PostgreSQL 16+ server (`psql -v ON_ERROR_STOP=1 -f tests/postgresql-validation.sql`) and is never claimed as executed when only static Node.js tests have run.
 
+### 3.13 Suite 13: Phase 8.1.6 Final Tie Integrity, Publication Workflow & PostgreSQL 16 CI Verification Suite
+- **Genuine Tie Proof From `candidate_tallies` Joined With `candidate_nominations` (Scenario 28a–28i)**:
+  1. Genuine two-candidate tie (`500` vs `500`) — accepted (`Scenario 28i`).
+  2. Genuine three-way tie (`500` vs `500` vs `500`) — accepted (`Scenario 28h`).
+  3. Single candidate with highest votes — rejected (`v_top_tied_count < 2`, `Scenario 28f`).
+  4. Unique highest candidate (`600` vs `400`) — rejected (`v_top_tied_count < 2`, `Scenario 28e`).
+  5. Zero votes for all candidates (`0` vs `0`) — rejected (`v_max_votes <= 0`, `Scenario 28d`).
+  6. Missing candidate tallies (`0` rows in `candidate_tallies`) — rejected (`v_total_tally_count = 0`, `Scenario 28c`).
+  7. Selected winner not among tied top candidates (`500` vs `500` vs `250`) — rejected (`v_winner_votes != v_max_votes`, `Scenario 28b`).
+  8. Unapproved candidate (`status = 'UNDER_REVIEW'`) excluded from highest-vote comparison so remaining single `APPROVED` candidate cannot form a tie — rejected (`v_top_tied_count < 2`, `Scenario 28g`).
+- **Two-Step Post-Tie Publication Workflow (`TIED → RESULT_READY_FOR_REVIEW → PUBLISHED`, Scenario 31)**:
+  - Creates a valid tied session (`SESS_PC3_ACTIVE`), inserts valid `tie_resolutions` evidence (`selected_winner_id = 'TEST_CAND_2'`), transitions `TIED → RESULT_READY_FOR_REVIEW`, attempts `RESULT_READY_FOR_REVIEW → PUBLISHED` with a different winner (`TEST_CAND_IND`) and verifies rejection specifically with `does not match resolved winner (%) in tie_resolutions`, verifies the session remains in `RESULT_READY_FOR_REVIEW` with `is_published = FALSE`, then publishes with `winner_candidate_id = 'TEST_CAND_2'` and verifies `status = 'PUBLISHED'`, `is_published = TRUE`, `published_by_admin_id`, and `published_at`.
+- **Specific Error Message & Constraint Verification Across All Negative SQL Tests**:
+  - Every negative subtransaction block in `tests/postgresql-validation.sql` asserts both the expected `SQLSTATE` and the specific expected constraint name or trigger error message (`v_err_msg LIKE '%...%'`).
+- **Programmatic Prisma Model & Enum Inventory Synchronization (`tests/prismaInventory.mjs`)**:
+  - Extracts all 25 models and 17 enums directly from `docs/backend-architecture/PRISMA_SCHEMA_DRAFT.prisma` and verifies that all architecture documents and audit reports match the schema 100%.
+
 ---
 
-## 4. CI/CD Pipeline Integration
+## 4. CI/CD Pipeline Integration & Reproducible 5-Step PostgreSQL 16 Bootstrap
 
-The automated GitHub Actions workflow (`.github/workflows/ci.yml`) executes the entire verification pipeline on every pull request:
+The automated GitHub Actions workflow (`.github/workflows/ci.yml`) executes two parallel jobs (`verify` for Frontend Build/Lint/Typecheck/Unit/Playwright E2E, and `postgres-validation` for PostgreSQL 16 Schema, Trigger & Integration Validation):
 ```bash
-# 1. Static Analysis & Type Safety
+# Job 1: Frontend & Static Architecture Verification (verify)
+npm ci
 npm run lint          # ESLint across all JS/TS files
 npm run typecheck     # TypeScript compiler validation (tsc --noEmit)
+npm test              # node:test suites (37 frontend + 55 static architecture tests = 92 tests)
+npm run build         # Vite production bundle compilation
+npm run test:e2e      # 12 Playwright Chromium browser specs
 
-# 2. Domain, Architecture & Unit Tests (Static Architecture + Domain Logic)
-npm test              # node:test suites (electionArchitecture.test.mjs + architectureConsistency.test.mjs)
+# Job 2: Disposable PostgreSQL 16 Integration Validation (postgres-validation)
+# Step 1: Create disposable PostgreSQL 16 database
+psql "postgresql://postgres:postgres@localhost:5432/postgres" -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS ovs_validation_db WITH (FORCE);"
+psql "postgresql://postgres:postgres@localhost:5432/postgres" -v ON_ERROR_STOP=1 -c "CREATE DATABASE ovs_validation_db;"
 
-# 3. Live PostgreSQL 16+ Trigger & Constraint Integration Suite (31 Scenarios)
+# Step 2: Validate & push Prisma schema (creates all 25 tables and 17 enums using pinned prisma@6.4.1)
+npx prisma validate --schema=docs/backend-architecture/PRISMA_SCHEMA_DRAFT.prisma
+npx prisma db push --schema=docs/backend-architecture/PRISMA_SCHEMA_DRAFT.prisma --skip-generate
+
+# Step 3: Apply CUSTOM_DATABASE_INTEGRITY.sql constraints and triggers
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f docs/backend-architecture/CUSTOM_DATABASE_INTEGRITY.sql
+
+# Step 4: Execute PostgreSQL integration validation suite (31 scenarios)
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/postgresql-validation.sql
 
-# 4. Backend API & Database Tests (PostgreSQL service container)
-npm run test:backend  # Supertest integration test suite
-
-# 5. Production Build Verification
-npm run build         # Vite production bundle compilation
-
-# 6. Real Browser E2E Test Suite
-npm run test:e2e      # 12 Playwright Chromium browser specs
+# Step 5: Clean up disposable database
+psql "postgresql://postgres:postgres@localhost:5432/postgres" -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS ovs_validation_db WITH (FORCE);"
 ```
+
 

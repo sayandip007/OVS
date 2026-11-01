@@ -1,18 +1,34 @@
 -- ============================================================================
 -- Online Voting System (OVS) — PostgreSQL 16+ Integration Validation Suite
--- Phase 8.1.4: Real Database Test Scenarios for Disposable Validation DB
+-- Phase 8.1.6: Final Tie Integrity, Publication Workflow & PostgreSQL CI Verification
 -- ============================================================================
--- INSTRUCTIONS FOR EXECUTION:
--- Run these scenarios against a disposable local PostgreSQL 16+ instance:
---   createdb ovs_validation_db
---   psql -d ovs_validation_db -f docs/backend-architecture/CUSTOM_DATABASE_INTEGRITY.sql
---   psql -d ovs_validation_db -f tests/postgresql-validation.sql
+-- COMPLETE REPRODUCIBLE 5-STEP EXECUTION SEQUENCE (DISPOSABLE POSTGRESQL 16 DB):
+-- Do NOT execute this script before creating the Prisma base schema and applying
+-- CUSTOM_DATABASE_INTEGRITY.sql. Run in exact order:
+--
+--   1. Create disposable PostgreSQL 16 database:
+--      export DATABASE_URL="postgresql://postgres:postgres@localhost:5432/ovs_validation_db?schema=public"
+--      psql "postgresql://postgres:postgres@localhost:5432/postgres" -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS ovs_validation_db;"
+--      psql "postgresql://postgres:postgres@localhost:5432/postgres" -v ON_ERROR_STOP=1 -c "CREATE DATABASE ovs_validation_db;"
+--
+--   2. Validate & apply Prisma schema (creates all 25 tables and 17 enums using pinned Prisma CLI):
+--      npx --yes prisma@6.4.1 validate --schema=docs/backend-architecture/PRISMA_SCHEMA_DRAFT.prisma
+--      npx --yes prisma@6.4.1 db push --schema=docs/backend-architecture/PRISMA_SCHEMA_DRAFT.prisma --skip-generate
+--
+--   3. Apply custom SQL integrity constraints and triggers:
+--      psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f docs/backend-architecture/CUSTOM_DATABASE_INTEGRITY.sql
+--
+--   4. Execute this PostgreSQL integration validation suite:
+--      psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/postgresql-validation.sql
+--
+--   5. Clean up disposable database:
+--      psql "postgresql://postgres:postgres@localhost:5432/postgres" -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS ovs_validation_db WITH (FORCE);"
 -- ============================================================================
--- SCHEMA ALIGNMENT NOTE:
--- All table names, column names, and enum values strictly match the physical 
+-- SCHEMA ALIGNMENT & ASSERTION QUALITY NOTE:
+-- All table names, column names, and enum values strictly match the physical
 -- PostgreSQL mappings defined in docs/backend-architecture/PRISMA_SCHEMA_DRAFT.prisma.
 -- All negative tests use subtransaction assertion blocks catching specific SQLSTATEs
--- to eliminate false-positive catches.
+-- AND verifying the specific expected constraint name or trigger message.
 -- ============================================================================
 
 \set ON_ERROR_STOP on
@@ -52,15 +68,20 @@ DECLARE
   v_caught_expected_error BOOLEAN := FALSE;
   v_err_sqlstate TEXT;
   v_err_msg TEXT;
+  v_err_constraint TEXT;
 BEGIN
   BEGIN
     INSERT INTO assembly_constituencies (id, state_id, district_id, parent_parliamentary_constituency_id, constituency_number, name, reservation_type, total_voters, metadata_source, created_at, updated_at)
     VALUES ('TEST_AC_INVALID', 'TEST_ST_2', 'TEST_DIST_1', 'TEST_PC_1', 99, 'Invalid AC', 'GENERAL', 10000, 'DEMO_SAMPLE', NOW(), NOW());
   EXCEPTION
     WHEN foreign_key_violation THEN
+      GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT, v_err_constraint = CONSTRAINT_NAME;
+      IF v_err_constraint NOT IN ('fk_ac_district_state', 'fk_ac_parent_pc_state', 'assembly_constituencies_district_id_state_id_fkey', 'assembly_constituencies_parent_parliamentary_constituency__fkey')
+         AND v_err_msg NOT LIKE '%fk_ac_%' AND v_err_msg NOT LIKE '%foreign key constraint%' THEN
+        RAISE EXCEPTION 'Scenario 2 caught unexpected FK error: constraint=%, msg=%', v_err_constraint, v_err_msg;
+      END IF;
       v_caught_expected_error := TRUE;
-      GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
-      RAISE NOTICE 'SUCCESS: Cross-state AC rejected by composite foreign key fk_ac_district_state [%]: %', v_err_sqlstate, v_err_msg;
+      RAISE NOTICE 'SUCCESS: Cross-state AC rejected by composite foreign key (%) [%]: %', v_err_constraint, v_err_sqlstate, v_err_msg;
     WHEN OTHERS THEN
       RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 2: Caught % (%)', SQLERRM, SQLSTATE;
   END;
@@ -96,8 +117,11 @@ BEGIN
     VALUES ('22222222-2222-2222-2222-222222222222', 'TEST_ELEC_LS', 'ASSEMBLY', NULL, 'TEST_AC_1', NOW());
   EXCEPTION
     WHEN check_violation OR SQLSTATE 'P0001' THEN
-      v_caught_expected_error := TRUE;
       GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      IF v_err_msg NOT LIKE '%Lok Sabha election%cannot map to non-parliamentary%' AND v_err_msg NOT LIKE '%chk_election_constituency_type_exclusivity%' THEN
+        RAISE EXCEPTION 'Scenario 3 caught unexpected error message: %', v_err_msg;
+      END IF;
+      v_caught_expected_error := TRUE;
       RAISE NOTICE 'SUCCESS: Lok Sabha to AC mapping rejected [%]: %', v_err_sqlstate, v_err_msg;
     WHEN OTHERS THEN
       RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 3: Caught % (%)', SQLERRM, SQLSTATE;
@@ -138,6 +162,9 @@ BEGIN
     WHEN SQLSTATE 'P0001' OR foreign_key_violation THEN
       v_caught_expected_error := TRUE;
       GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      IF v_err_msg NOT LIKE '%dependent candidate nominations exist%' THEN
+        RAISE EXCEPTION 'UNEXPECTED TRIGGER MESSAGE in Scenario 4: %', v_err_msg;
+      END IF;
       RAISE NOTICE 'SUCCESS: Election constituency deletion blocked by dependency trigger [%]: %', v_err_sqlstate, v_err_msg;
     WHEN OTHERS THEN
       RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 4: Caught % (%)', SQLERRM, SQLSTATE;
@@ -171,6 +198,9 @@ BEGIN
     WHEN SQLSTATE 'P0001' THEN
       v_caught_expected_error := TRUE;
       GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      IF v_err_msg NOT LIKE '%is not mapped to election%' THEN
+        RAISE EXCEPTION 'UNEXPECTED TRIGGER MESSAGE in Scenario 5: %', v_err_msg;
+      END IF;
       RAISE NOTICE 'SUCCESS: Nomination in unmapped constituency rejected [%]: %', v_err_sqlstate, v_err_msg;
     WHEN OTHERS THEN
       RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 5: Caught % (%)', SQLERRM, SQLSTATE;
@@ -231,6 +261,9 @@ BEGIN
     WHEN SQLSTATE 'P0001' THEN
       v_caught_expected_error := TRUE;
       GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      IF v_err_msg NOT LIKE '%exceeds statutory limit of 2 nominations%' THEN
+        RAISE EXCEPTION 'UNEXPECTED TRIGGER MESSAGE in Scenario 7: %', v_err_msg;
+      END IF;
       RAISE NOTICE 'SUCCESS: Third nomination rejected by s.33(7) trigger [%]: %', v_err_sqlstate, v_err_msg;
     WHEN OTHERS THEN
       RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 7: Caught % (%)', SQLERRM, SQLSTATE;
@@ -261,6 +294,9 @@ BEGIN
     WHEN SQLSTATE 'P0001' OR check_violation THEN
       v_caught_expected_error := TRUE;
       GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      IF v_err_msg NOT LIKE '%cannot be directly inserted as PUBLISHED%' AND v_err_msg NOT LIKE '%chk_counting_session_initial_draft%' THEN
+        RAISE EXCEPTION 'UNEXPECTED ERROR MESSAGE in Scenario 8a: %', v_err_msg;
+      END IF;
       RAISE NOTICE 'SUCCESS: Direct insertion as PUBLISHED rejected [%]: %', v_err_sqlstate, v_err_msg;
     WHEN OTHERS THEN
       RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 8a: Caught % (%)', SQLERRM, SQLSTATE;
@@ -286,6 +322,9 @@ BEGIN
     WHEN check_violation OR SQLSTATE 'P0001' THEN
       v_caught_expected_error := TRUE;
       GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      IF v_err_msg NOT LIKE '%chk_counting_session_publication_equivalence%' AND v_err_msg NOT LIKE '%cannot be directly inserted as PUBLISHED%' THEN
+        RAISE EXCEPTION 'UNEXPECTED ERROR MESSAGE in Scenario 8b: %', v_err_msg;
+      END IF;
       RAISE NOTICE 'SUCCESS: Conflicting status and is_published rejected by CHECK constraint [%]: %', v_err_sqlstate, v_err_msg;
     WHEN OTHERS THEN
       RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 8b: Caught % (%)', SQLERRM, SQLSTATE;
@@ -322,6 +361,9 @@ BEGIN
     WHEN SQLSTATE 'P0001' OR check_violation THEN
       v_caught_expected_error := TRUE;
       GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      IF v_err_msg NOT LIKE '%NOTA must not be tallied as a candidate%' THEN
+        RAISE EXCEPTION 'UNEXPECTED TRIGGER MESSAGE in Scenario 9a: %', v_err_msg;
+      END IF;
       RAISE NOTICE 'SUCCESS: NOTA as candidate tally rejected [%]: %', v_err_sqlstate, v_err_msg;
     WHEN OTHERS THEN
       RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 9a: Caught % (%)', SQLERRM, SQLSTATE;
@@ -357,6 +399,9 @@ BEGIN
     WHEN SQLSTATE 'P0001' OR foreign_key_violation THEN
       v_caught_expected_error := TRUE;
       GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      IF v_err_msg NOT LIKE '%dependent counting tallies exist%' AND v_err_msg NOT LIKE '%fk_tally_nomination%' THEN
+        RAISE EXCEPTION 'UNEXPECTED TRIGGER MESSAGE in Scenario 10a: %', v_err_msg;
+      END IF;
       RAISE NOTICE 'SUCCESS: Nomination deletion blocked by active tally [%]: %', v_err_sqlstate, v_err_msg;
     WHEN OTHERS THEN
       RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 10a: Caught % (%)', SQLERRM, SQLSTATE;
@@ -381,6 +426,9 @@ BEGIN
     WHEN SQLSTATE 'P0001' THEN
       v_caught_expected_error := TRUE;
       GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      IF v_err_msg NOT LIKE '%active candidate tallies exist in counting session%' THEN
+        RAISE EXCEPTION 'UNEXPECTED TRIGGER MESSAGE in Scenario 10b: %', v_err_msg;
+      END IF;
       RAISE NOTICE 'SUCCESS: Nomination status invalidation blocked by active tally [%]: %', v_err_sqlstate, v_err_msg;
     WHEN OTHERS THEN
       RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 10b: Caught % (%)', SQLERRM, SQLSTATE;
@@ -460,6 +508,9 @@ BEGIN
     WHEN SQLSTATE 'P0001' THEN
       v_caught_expected_error := TRUE;
       GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      IF v_err_msg NOT LIKE '%Vote reconciliation error%' THEN
+        RAISE EXCEPTION 'UNEXPECTED TRIGGER MESSAGE in Scenario 12: %', v_err_msg;
+      END IF;
       RAISE NOTICE 'SUCCESS: Unreconciled vote total rejected upon completion [%]: %', v_err_sqlstate, v_err_msg;
     WHEN OTHERS THEN
       RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 12: Caught % (%)', SQLERRM, SQLSTATE;
@@ -496,6 +547,9 @@ BEGIN
     WHEN SQLSTATE 'P0001' THEN
       v_caught_expected_error := TRUE;
       GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      IF v_err_msg NOT LIKE '%Cannot UPDATE candidate tallies: session%' THEN
+        RAISE EXCEPTION 'UNEXPECTED TRIGGER MESSAGE in Scenario 13: %', v_err_msg;
+      END IF;
       RAISE NOTICE 'SUCCESS: Completed session tallies protected from mutation [%]: %', v_err_sqlstate, v_err_msg;
     WHEN OTHERS THEN
       RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 13: Caught % (%)', SQLERRM, SQLSTATE;
@@ -525,6 +579,9 @@ BEGIN
     WHEN SQLSTATE 'P0001' OR check_violation THEN
       v_caught_expected_error := TRUE;
       GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      IF v_err_msg NOT LIKE '%Must proceed to RESULT_READY_FOR_REVIEW%' AND v_err_msg NOT LIKE '%must be reviewed in RESULT_READY_FOR_REVIEW%' THEN
+        RAISE EXCEPTION 'UNEXPECTED TRIGGER MESSAGE in Scenario 14: %', v_err_msg;
+      END IF;
       RAISE NOTICE 'SUCCESS: Direct publication without review rejected [%]: %', v_err_sqlstate, v_err_msg;
     WHEN OTHERS THEN
       RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 14: Caught % (%)', SQLERRM, SQLSTATE;
@@ -571,6 +628,9 @@ BEGIN
     WHEN SQLSTATE 'P0001' THEN
       v_caught_expected_error := TRUE;
       GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      IF v_err_msg NOT LIKE '%counting is incomplete%' THEN
+        RAISE EXCEPTION 'UNEXPECTED TRIGGER MESSAGE in Scenario 15: %', v_err_msg;
+      END IF;
       RAISE NOTICE 'SUCCESS: Incomplete round count publication rejected [%]: %', v_err_sqlstate, v_err_msg;
     WHEN OTHERS THEN
       RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 15: Caught % (%)', SQLERRM, SQLSTATE;
@@ -605,6 +665,9 @@ BEGIN
     WHEN SQLSTATE 'P0001' THEN
       v_caught_expected_error := TRUE;
       GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      IF v_err_msg NOT LIKE '%configured counting round records exist%' THEN
+        RAISE EXCEPTION 'UNEXPECTED TRIGGER MESSAGE in Scenario 16: %', v_err_msg;
+      END IF;
       RAISE NOTICE 'SUCCESS: Missing physical round records publication rejected [%]: %', v_err_sqlstate, v_err_msg;
     WHEN OTHERS THEN
       RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 16: Caught % (%)', SQLERRM, SQLSTATE;
@@ -658,6 +721,9 @@ BEGIN
     WHEN SQLSTATE 'P0001' OR foreign_key_violation THEN
       v_caught_expected_error := TRUE;
       GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      IF v_err_msg NOT LIKE '%Cannot transfer counting round%' THEN
+        RAISE EXCEPTION 'UNEXPECTED TRIGGER MESSAGE in Scenario 18a: %', v_err_msg;
+      END IF;
       RAISE NOTICE 'SUCCESS: Round session_id transfer rejected [%]: %', v_err_sqlstate, v_err_msg;
     WHEN OTHERS THEN
       RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 18a: Caught % (%)', SQLERRM, SQLSTATE;
@@ -684,6 +750,9 @@ BEGIN
     WHEN SQLSTATE 'P0001' THEN
       v_caught_expected_error := TRUE;
       GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      IF v_err_msg NOT LIKE '%Cannot modify round_number%' THEN
+        RAISE EXCEPTION 'UNEXPECTED TRIGGER MESSAGE in Scenario 18b: %', v_err_msg;
+      END IF;
       RAISE NOTICE 'SUCCESS: Round round_number modification rejected [%]: %', v_err_sqlstate, v_err_msg;
     WHEN OTHERS THEN
       RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 18b: Caught % (%)', SQLERRM, SQLSTATE;
@@ -715,6 +784,9 @@ BEGIN
     WHEN SQLSTATE 'P0001' THEN
       v_caught_expected_error := TRUE;
       GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      IF v_err_msg NOT LIKE '%Cannot modify vote totals for earlier round%' THEN
+        RAISE EXCEPTION 'UNEXPECTED TRIGGER MESSAGE in Scenario 19: %', v_err_msg;
+      END IF;
       RAISE NOTICE 'SUCCESS: Earlier round modification blocked [%]: %', v_err_sqlstate, v_err_msg;
     WHEN OTHERS THEN
       RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 19: Caught % (%)', SQLERRM, SQLSTATE;
@@ -744,6 +816,9 @@ BEGIN
     WHEN SQLSTATE 'P0001' THEN
       v_caught_expected_error := TRUE;
       GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      IF v_err_msg NOT LIKE '%Rounds must be deleted in strict reverse order%' THEN
+        RAISE EXCEPTION 'UNEXPECTED TRIGGER MESSAGE in Scenario 20: %', v_err_msg;
+      END IF;
       RAISE NOTICE 'SUCCESS: Non-reverse round deletion blocked [%]: %', v_err_sqlstate, v_err_msg;
     WHEN OTHERS THEN
       RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 20: Caught % (%)', SQLERRM, SQLSTATE;
@@ -816,6 +891,9 @@ BEGIN
     WHEN SQLSTATE 'P0001' THEN
       v_caught_expected_error := TRUE;
       GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      IF v_err_msg NOT LIKE '%requires verified database evidence in tie_resolutions%' THEN
+        RAISE EXCEPTION 'UNEXPECTED TRIGGER MESSAGE in Scenario 22a: %', v_err_msg;
+      END IF;
       RAISE NOTICE 'SUCCESS: Transition from TIED without tie_resolutions evidence rejected [%]: %', v_err_sqlstate, v_err_msg;
     WHEN OTHERS THEN
       RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 22a: Caught % (%)', SQLERRM, SQLSTATE;
@@ -855,6 +933,9 @@ BEGIN
     WHEN SQLSTATE 'P0001' THEN
       v_caught_expected_error := TRUE;
       GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      IF v_err_msg NOT LIKE '%Tie resolution records are immutable audit evidence%' THEN
+        RAISE EXCEPTION 'UNEXPECTED TRIGGER MESSAGE in Scenario 22b: %', v_err_msg;
+      END IF;
       RAISE NOTICE 'SUCCESS: Modification of tie_resolutions rejected by immutability trigger [%]: %', v_err_sqlstate, v_err_msg;
     WHEN OTHERS THEN
       RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 22b: Caught % (%)', SQLERRM, SQLSTATE;
@@ -966,6 +1047,9 @@ BEGIN
     WHEN SQLSTATE 'P0001' THEN
       v_caught_expected_error := TRUE;
       GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      IF v_err_msg NOT LIKE '%lacks an APPROVED nomination in session constituency%' THEN
+        RAISE EXCEPTION 'UNEXPECTED TRIGGER MESSAGE in Scenario 24b: %', v_err_msg;
+      END IF;
       RAISE NOTICE 'SUCCESS: Unapproved round leader on leading_candidate_id rejected [%]: %', v_err_sqlstate, v_err_msg;
     WHEN OTHERS THEN
       RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 24b: Caught % (%)', SQLERRM, SQLSTATE;
@@ -1008,6 +1092,9 @@ BEGIN
     WHEN SQLSTATE 'P0001' OR foreign_key_violation THEN
       v_caught_expected_error := TRUE;
       GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      IF v_err_msg NOT LIKE '%does not match nomination party%' AND v_err_msg NOT LIKE '%fk_tally_nomination_candidate_party%' THEN
+        RAISE EXCEPTION 'UNEXPECTED TRIGGER MESSAGE in Scenario 25a: %', v_err_msg;
+      END IF;
       RAISE NOTICE 'SUCCESS: Historical nomination party A with tally party B rejected [%]: %', v_err_sqlstate, v_err_msg;
     WHEN OTHERS THEN
       RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 25a: Caught % (%)', SQLERRM, SQLSTATE;
@@ -1033,6 +1120,9 @@ BEGIN
     WHEN SQLSTATE 'P0001' THEN
       v_caught_expected_error := TRUE;
       GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      IF v_err_msg NOT LIKE '%holds an INDEPENDENT nomination; tally party_id must be NULL%' THEN
+        RAISE EXCEPTION 'UNEXPECTED TRIGGER MESSAGE in Scenario 25b: %', v_err_msg;
+      END IF;
       RAISE NOTICE 'SUCCESS: Independent nomination with non-NULL tally party rejected [%]: %', v_err_sqlstate, v_err_msg;
     WHEN OTHERS THEN
       RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 25b: Caught % (%)', SQLERRM, SQLSTATE;
@@ -1091,6 +1181,9 @@ BEGIN
     WHEN SQLSTATE 'P0001' OR foreign_key_violation THEN
       v_caught_expected_error := TRUE;
       GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      IF v_err_msg NOT LIKE '%Global candidate party changes cannot override historical nomination affiliation%' AND v_err_msg NOT LIKE '%fk_tally_nomination_candidate_party%' THEN
+        RAISE EXCEPTION 'UNEXPECTED TRIGGER MESSAGE in Scenario 26: %', v_err_msg;
+      END IF;
       RAISE NOTICE 'SUCCESS: Override of historical nomination party by new global party rejected [%]: %', v_err_sqlstate, v_err_msg;
     WHEN OTHERS THEN
       RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 26: Caught % (%)', SQLERRM, SQLSTATE;
@@ -1136,6 +1229,9 @@ BEGIN
     WHEN SQLSTATE 'P0001' THEN
       v_caught_expected_error := TRUE;
       GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      IF v_err_msg NOT LIKE '%CandidateTally session_id is immutable after INSERT%' THEN
+        RAISE EXCEPTION 'UNEXPECTED TRIGGER MESSAGE in Scenario 27: %', v_err_msg;
+      END IF;
       RAISE NOTICE 'SUCCESS: CandidateTally session transfer rejected [%]: %', v_err_sqlstate, v_err_msg;
     WHEN OTHERS THEN
       RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 27: Caught % (%)', SQLERRM, SQLSTATE;
@@ -1165,9 +1261,16 @@ END;
 $$;
 
 -- ============================================================================
--- SCENARIO 28: TieResolution Insertion Validation (Non-TIED Session & Unapproved Winner)
+-- SCENARIO 28: Genuine Tie Validation (8 Required Tie-Integrity Test Cases)
 -- ============================================================================
 SAVEPOINT s28_tie_resolution_validation;
+
+-- Add a third candidate TEST_CAND_3 and nominate in TEST_PC_THIRD for multi-candidate tie tests
+INSERT INTO candidates (id, party_id, full_name, age, gender, education, profession, criminal_cases, assets_declared, liabilities_declared, photo_url, bio, metadata_source, created_at, updated_at)
+VALUES ('TEST_CAND_3', 'TEST_PARTY_1', 'Third Contesting Candidate', 39, 'MALE', 'Postgraduate', 'Economist', 0, 1500000, 20000, NULL, 'Bio', 'DEMO_SAMPLE', NOW(), NOW());
+
+INSERT INTO candidate_nominations (id, candidate_id, party_id, election_id, constituency_type, parliamentary_constituency_id, assembly_constituency_id, nomination_date, status, scrutiny_note, created_at, updated_at)
+VALUES ('77777777-3333-3333-3333-777777777777', 'TEST_CAND_3', 'TEST_PARTY_1', 'TEST_ELEC_LS', 'PARLIAMENTARY', 'TEST_PC_THIRD', NULL, NOW(), 'APPROVED', 'Third candidate approved in PC 3', NOW(), NOW());
 
 -- 28a: Attempt TieResolution insertion into non-TIED session SESS_PC3_ACTIVE (status = COUNTING_IN_PROGRESS) (Must Fail)
 DO $$
@@ -1190,8 +1293,11 @@ BEGIN
     );
   EXCEPTION
     WHEN SQLSTATE 'P0001' THEN
-      v_caught_expected_error := TRUE;
       GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      IF v_err_msg NOT LIKE '%must be in TIED status%' THEN
+        RAISE EXCEPTION 'Scenario 28a failed for wrong reason: %', v_err_msg;
+      END IF;
+      v_caught_expected_error := TRUE;
       RAISE NOTICE 'SUCCESS: TieResolution into non-TIED session rejected [%]: %', v_err_sqlstate, v_err_msg;
     WHEN OTHERS THEN
       RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 28a: Caught % (%)', SQLERRM, SQLSTATE;
@@ -1203,16 +1309,314 @@ BEGIN
 END;
 $$;
 
--- Make SESS_PC3_ACTIVE a tied session (update TEST_CAND_IND tally to 500 to tie TEST_CAND_2 at 500)
+-- 28b: No candidate tallies — rejected (Requirement 2 #6)
+SAVEPOINT s28b_no_tallies;
+DELETE FROM candidate_tallies WHERE session_id = 'SESS_PC3_ACTIVE';
+UPDATE counting_sessions SET status = 'TIED' WHERE id = 'SESS_PC3_ACTIVE';
+
+DO $$
+DECLARE
+  v_caught_expected_error BOOLEAN := FALSE;
+  v_err_sqlstate TEXT;
+  v_err_msg TEXT;
+BEGIN
+  BEGIN
+    INSERT INTO tie_resolutions (id, session_id, decision, selected_winner_id, resolution_method, justification_note, approved_by_admin_id, resolved_at)
+    VALUES (
+      'dddddddd-2800-0000-0000-000000000001',
+      'SESS_PC3_ACTIVE',
+      'WINNER_SELECTED_BY_LOT',
+      'TEST_CAND_2',
+      'SIMULATED_DRAW_OF_LOTS',
+      'Attempted tie resolution when no candidate tallies exist in session.',
+      'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+      NOW()
+    );
+  EXCEPTION
+    WHEN SQLSTATE 'P0001' THEN
+      GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      IF v_err_msg NOT LIKE '%no candidate tallies exist for session%' THEN
+        RAISE EXCEPTION 'Scenario 28b failed for wrong reason: %', v_err_msg;
+      END IF;
+      v_caught_expected_error := TRUE;
+      RAISE NOTICE 'SUCCESS: TieResolution with no candidate tallies rejected [%]: %', v_err_sqlstate, v_err_msg;
+    WHEN OTHERS THEN
+      RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 28b: Caught % (%)', SQLERRM, SQLSTATE;
+  END;
+
+  IF NOT v_caught_expected_error THEN
+    RAISE EXCEPTION 'ASSERTION FAILED: TieResolution succeeded when no candidate tallies exist!';
+  END IF;
+END;
+$$;
+ROLLBACK TO SAVEPOINT s28b_no_tallies;
+
+-- 28c: Zero votes for all candidates — rejected (Requirement 2 #5)
+SAVEPOINT s28c_zero_votes;
+UPDATE candidate_tallies SET votes = 0, vote_share_percentage = 0.00 WHERE session_id = 'SESS_PC3_ACTIVE';
+UPDATE counting_sessions SET status = 'TIED' WHERE id = 'SESS_PC3_ACTIVE';
+
+DO $$
+DECLARE
+  v_caught_expected_error BOOLEAN := FALSE;
+  v_err_sqlstate TEXT;
+  v_err_msg TEXT;
+BEGIN
+  BEGIN
+    INSERT INTO tie_resolutions (id, session_id, decision, selected_winner_id, resolution_method, justification_note, approved_by_admin_id, resolved_at)
+    VALUES (
+      'dddddddd-2800-0000-0000-000000000002',
+      'SESS_PC3_ACTIVE',
+      'WINNER_SELECTED_BY_LOT',
+      'TEST_CAND_2',
+      'SIMULATED_DRAW_OF_LOTS',
+      'Attempted tie resolution when all candidates have zero votes.',
+      'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+      NOW()
+    );
+  EXCEPTION
+    WHEN SQLSTATE 'P0001' THEN
+      GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      IF v_err_msg NOT LIKE '%maximum vote count among eligible APPROVED candidates in session%must be greater than zero%' THEN
+        RAISE EXCEPTION 'Scenario 28c failed for wrong reason: %', v_err_msg;
+      END IF;
+      v_caught_expected_error := TRUE;
+      RAISE NOTICE 'SUCCESS: TieResolution with zero votes for all candidates rejected [%]: %', v_err_sqlstate, v_err_msg;
+    WHEN OTHERS THEN
+      RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 28c: Caught % (%)', SQLERRM, SQLSTATE;
+  END;
+
+  IF NOT v_caught_expected_error THEN
+    RAISE EXCEPTION 'ASSERTION FAILED: TieResolution succeeded when all candidates had zero votes!';
+  END IF;
+END;
+$$;
+ROLLBACK TO SAVEPOINT s28c_zero_votes;
+
+-- 28d: Single candidate with highest votes (only 1 candidate tally in session) — rejected (Requirement 2 #3)
+SAVEPOINT s28d_single_candidate;
+DELETE FROM candidate_tallies WHERE id = 'dddddddd-4444-4444-4444-444444444444';
+UPDATE counting_sessions SET status = 'TIED' WHERE id = 'SESS_PC3_ACTIVE';
+
+DO $$
+DECLARE
+  v_caught_expected_error BOOLEAN := FALSE;
+  v_err_sqlstate TEXT;
+  v_err_msg TEXT;
+BEGIN
+  BEGIN
+    INSERT INTO tie_resolutions (id, session_id, decision, selected_winner_id, resolution_method, justification_note, approved_by_admin_id, resolved_at)
+    VALUES (
+      'dddddddd-2800-0000-0000-000000000003',
+      'SESS_PC3_ACTIVE',
+      'WINNER_SELECTED_BY_LOT',
+      'TEST_CAND_2',
+      'SIMULATED_DRAW_OF_LOTS',
+      'Attempted tie resolution when only a single candidate has votes.',
+      'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+      NOW()
+    );
+  EXCEPTION
+    WHEN SQLSTATE 'P0001' THEN
+      GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      IF v_err_msg NOT LIKE '%genuine tie requires at least 2 eligible APPROVED candidates tied at highest votes%v_top_tied_count = 1%' THEN
+        RAISE EXCEPTION 'Scenario 28d failed for wrong reason: %', v_err_msg;
+      END IF;
+      v_caught_expected_error := TRUE;
+      RAISE NOTICE 'SUCCESS: TieResolution with single candidate rejected [%]: %', v_err_sqlstate, v_err_msg;
+    WHEN OTHERS THEN
+      RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 28d: Caught % (%)', SQLERRM, SQLSTATE;
+  END;
+
+  IF NOT v_caught_expected_error THEN
+    RAISE EXCEPTION 'ASSERTION FAILED: TieResolution succeeded with only a single candidate!';
+  END IF;
+END;
+$$;
+ROLLBACK TO SAVEPOINT s28d_single_candidate;
+
+-- 28e: Unique highest candidate among multiple candidates (600 vs 400 vs 400) — rejected (Requirement 2 #4)
+SAVEPOINT s28e_unique_highest;
+UPDATE candidate_tallies SET votes = 600, vote_share_percentage = 42.86 WHERE id = 'dddddddd-3333-3333-3333-333333333333'; -- TEST_CAND_2 = 600
+UPDATE candidate_tallies SET votes = 400, vote_share_percentage = 28.57 WHERE id = 'dddddddd-4444-4444-4444-444444444444'; -- TEST_CAND_IND = 400
+INSERT INTO candidate_tallies (id, session_id, candidate_id, nomination_id, party_id, votes, vote_share_percentage, created_at, updated_at)
+VALUES ('dddddddd-5555-5555-5555-555555555555', 'SESS_PC3_ACTIVE', 'TEST_CAND_3', '77777777-3333-3333-3333-777777777777', 'TEST_PARTY_1', 400, 28.57, NOW(), NOW());
+UPDATE counting_sessions SET status = 'TIED' WHERE id = 'SESS_PC3_ACTIVE';
+
+DO $$
+DECLARE
+  v_caught_expected_error BOOLEAN := FALSE;
+  v_err_sqlstate TEXT;
+  v_err_msg TEXT;
+BEGIN
+  BEGIN
+    INSERT INTO tie_resolutions (id, session_id, decision, selected_winner_id, resolution_method, justification_note, approved_by_admin_id, resolved_at)
+    VALUES (
+      'dddddddd-2800-0000-0000-000000000004',
+      'SESS_PC3_ACTIVE',
+      'WINNER_SELECTED_BY_LOT',
+      'TEST_CAND_2',
+      'SIMULATED_DRAW_OF_LOTS',
+      'Attempted tie resolution when TEST_CAND_2 has a unique highest vote total (600 vs 400 vs 400).',
+      'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+      NOW()
+    );
+  EXCEPTION
+    WHEN SQLSTATE 'P0001' THEN
+      GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      IF v_err_msg NOT LIKE '%genuine tie requires at least 2 eligible APPROVED candidates tied at highest votes (600)%v_top_tied_count = 1%' THEN
+        RAISE EXCEPTION 'Scenario 28e failed for wrong reason: %', v_err_msg;
+      END IF;
+      v_caught_expected_error := TRUE;
+      RAISE NOTICE 'SUCCESS: TieResolution with unique highest candidate rejected [%]: %', v_err_sqlstate, v_err_msg;
+    WHEN OTHERS THEN
+      RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 28e: Caught % (%)', SQLERRM, SQLSTATE;
+  END;
+
+  IF NOT v_caught_expected_error THEN
+    RAISE EXCEPTION 'ASSERTION FAILED: TieResolution succeeded when one candidate had a unique highest vote total!';
+  END IF;
+END;
+$$;
+ROLLBACK TO SAVEPOINT s28e_unique_highest;
+
+-- 28f: Selected winner not among tied candidates (500 vs 500 vs 300, selecting 300-vote candidate) — rejected (Requirement 2 #7)
+SAVEPOINT s28f_winner_not_in_tie;
+UPDATE candidate_tallies SET votes = 500, vote_share_percentage = 38.46 WHERE id = 'dddddddd-3333-3333-3333-333333333333'; -- TEST_CAND_2 = 500
+UPDATE candidate_tallies SET votes = 500, vote_share_percentage = 38.46 WHERE id = 'dddddddd-4444-4444-4444-444444444444'; -- TEST_CAND_IND = 500
+INSERT INTO candidate_tallies (id, session_id, candidate_id, nomination_id, party_id, votes, vote_share_percentage, created_at, updated_at)
+VALUES ('dddddddd-5555-5555-5555-555555555555', 'SESS_PC3_ACTIVE', 'TEST_CAND_3', '77777777-3333-3333-3333-777777777777', 'TEST_PARTY_1', 300, 23.08, NOW(), NOW());
+UPDATE counting_sessions SET status = 'TIED' WHERE id = 'SESS_PC3_ACTIVE';
+
+DO $$
+DECLARE
+  v_caught_expected_error BOOLEAN := FALSE;
+  v_err_sqlstate TEXT;
+  v_err_msg TEXT;
+BEGIN
+  BEGIN
+    INSERT INTO tie_resolutions (id, session_id, decision, selected_winner_id, resolution_method, justification_note, approved_by_admin_id, resolved_at)
+    VALUES (
+      'dddddddd-2800-0000-0000-000000000005',
+      'SESS_PC3_ACTIVE',
+      'WINNER_SELECTED_BY_LOT',
+      'TEST_CAND_3',
+      'SIMULATED_DRAW_OF_LOTS',
+      'Attempted tie resolution selecting third-place candidate TEST_CAND_3 (300 votes) instead of tied leaders (500 votes).',
+      'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+      NOW()
+    );
+  EXCEPTION
+    WHEN SQLSTATE 'P0001' THEN
+      GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      IF v_err_msg NOT LIKE '%selected winner TEST_CAND_3 (votes: 300) is not tied for the highest vote total (500)%' THEN
+        RAISE EXCEPTION 'Scenario 28f failed for wrong reason: %', v_err_msg;
+      END IF;
+      v_caught_expected_error := TRUE;
+      RAISE NOTICE 'SUCCESS: TieResolution selecting non-tied candidate rejected [%]: %', v_err_sqlstate, v_err_msg;
+    WHEN OTHERS THEN
+      RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 28f: Caught % (%)', SQLERRM, SQLSTATE;
+  END;
+
+  IF NOT v_caught_expected_error THEN
+    RAISE EXCEPTION 'ASSERTION FAILED: TieResolution accepted winner not among tied top candidates!';
+  END IF;
+END;
+$$;
+ROLLBACK TO SAVEPOINT s28f_winner_not_in_tie;
+
+-- 28g: Unapproved candidate included in highest-vote comparison — rejected (Requirement 2 #8)
+SAVEPOINT s28g_unapproved_candidate_tie;
+UPDATE candidate_tallies SET votes = 500, vote_share_percentage = 38.46 WHERE id = 'dddddddd-3333-3333-3333-333333333333'; -- TEST_CAND_2 (APPROVED) = 500
+UPDATE candidate_tallies SET votes = 300, vote_share_percentage = 23.08 WHERE id = 'dddddddd-4444-4444-4444-444444444444'; -- TEST_CAND_IND (APPROVED) = 300
+INSERT INTO candidate_tallies (id, session_id, candidate_id, nomination_id, party_id, votes, vote_share_percentage, created_at, updated_at)
+VALUES ('dddddddd-5555-5555-5555-555555555555', 'SESS_PC3_ACTIVE', 'TEST_CAND_3', '77777777-3333-3333-3333-777777777777', 'TEST_PARTY_1', 500, 38.46, NOW(), NOW());
+-- Place TEST_CAND_3 nomination into UNDER_REVIEW so it is NOT APPROVED
+UPDATE candidate_nominations SET status = 'UNDER_REVIEW' WHERE id = '77777777-3333-3333-3333-777777777777';
+UPDATE counting_sessions SET status = 'TIED' WHERE id = 'SESS_PC3_ACTIVE';
+
+DO $$
+DECLARE
+  v_caught_expected_error BOOLEAN := FALSE;
+  v_err_sqlstate TEXT;
+  v_err_msg TEXT;
+BEGIN
+  BEGIN
+    -- Even though TEST_CAND_2 (APPROVED) and TEST_CAND_3 (UNDER_REVIEW) both have 500 votes,
+    -- TEST_CAND_3 is not APPROVED and cannot contribute to a tie (leaving v_top_tied_count = 1).
+    INSERT INTO tie_resolutions (id, session_id, decision, selected_winner_id, resolution_method, justification_note, approved_by_admin_id, resolved_at)
+    VALUES (
+      'dddddddd-2800-0000-0000-000000000006',
+      'SESS_PC3_ACTIVE',
+      'WINNER_SELECTED_BY_LOT',
+      'TEST_CAND_2',
+      'SIMULATED_DRAW_OF_LOTS',
+      'Attempted tie resolution where second 500-vote candidate is UNDER_REVIEW (unapproved).',
+      'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+      NOW()
+    );
+  EXCEPTION
+    WHEN SQLSTATE 'P0001' THEN
+      GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      IF v_err_msg NOT LIKE '%genuine tie requires at least 2 eligible APPROVED candidates tied at highest votes (500)%v_top_tied_count = 1%' THEN
+        RAISE EXCEPTION 'Scenario 28g failed for wrong reason: %', v_err_msg;
+      END IF;
+      v_caught_expected_error := TRUE;
+      RAISE NOTICE 'SUCCESS: Unapproved candidate excluded from highest-vote comparison and tie rejected [%]: %', v_err_sqlstate, v_err_msg;
+    WHEN OTHERS THEN
+      RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 28g: Caught % (%)', SQLERRM, SQLSTATE;
+  END;
+
+  IF NOT v_caught_expected_error THEN
+    RAISE EXCEPTION 'ASSERTION FAILED: Unapproved candidate contributed to highest-vote tie comparison!';
+  END IF;
+END;
+$$;
+ROLLBACK TO SAVEPOINT s28g_unapproved_candidate_tie;
+
+-- 28h: Three-way tie — accepted (Requirement 2 #2)
+SAVEPOINT s28h_three_way_tie;
+UPDATE candidate_tallies SET votes = 500, vote_share_percentage = 33.33 WHERE id = 'dddddddd-3333-3333-3333-333333333333'; -- TEST_CAND_2 = 500
+UPDATE candidate_tallies SET votes = 500, vote_share_percentage = 33.33 WHERE id = 'dddddddd-4444-4444-4444-444444444444'; -- TEST_CAND_IND = 500
+INSERT INTO candidate_tallies (id, session_id, candidate_id, nomination_id, party_id, votes, vote_share_percentage, created_at, updated_at)
+VALUES ('dddddddd-5555-5555-5555-555555555555', 'SESS_PC3_ACTIVE', 'TEST_CAND_3', '77777777-3333-3333-3333-777777777777', 'TEST_PARTY_1', 500, 33.34, NOW(), NOW());
+UPDATE counting_sessions SET status = 'TIED' WHERE id = 'SESS_PC3_ACTIVE';
+
+INSERT INTO tie_resolutions (id, session_id, decision, selected_winner_id, resolution_method, justification_note, approved_by_admin_id, resolved_at)
+VALUES (
+  'dddddddd-2800-0000-0000-000000000007',
+  'SESS_PC3_ACTIVE',
+  'WINNER_SELECTED_BY_LOT',
+  'TEST_CAND_3',
+  'SIMULATED_DRAW_OF_LOTS',
+  'Valid simulated draw of lots resolving a genuine three-way tie at 500 votes each.',
+  'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+  NOW()
+);
+
+DO $$
+DECLARE
+  v_winner VARCHAR(50);
+BEGIN
+  SELECT selected_winner_id INTO v_winner FROM tie_resolutions WHERE id = 'dddddddd-2800-0000-0000-000000000007';
+  IF v_winner != 'TEST_CAND_3' THEN
+    RAISE EXCEPTION 'Three-way tie resolution verification failed: expected TEST_CAND_3, got %', v_winner;
+  END IF;
+  RAISE NOTICE 'SUCCESS: Scenario 28h passed - Genuine three-way tie (v_top_tied_count = 3) accepted and verified.';
+END;
+$$;
+ROLLBACK TO SAVEPOINT s28h_three_way_tie;
+
+-- Now configure SESS_PC3_ACTIVE as a genuine two-candidate tie (TEST_CAND_2 = 500, TEST_CAND_IND = 500) with 2 completed rounds
 UPDATE candidate_tallies SET votes = 500, vote_share_percentage = 50.00 WHERE id = 'dddddddd-4444-4444-4444-444444444444';
-UPDATE candidate_tallies SET vote_share_percentage = 50.00 WHERE id = 'dddddddd-3333-3333-3333-333333333333';
+UPDATE candidate_tallies SET votes = 500, vote_share_percentage = 50.00 WHERE id = 'dddddddd-3333-3333-3333-333333333333';
 INSERT INTO counting_rounds (id, session_id, round_number, round_votes, cumulative_votes, leading_candidate_id, lead_margin, processed_at, processed_by_admin_id)
 VALUES ('c6666666-6666-6666-6666-666666666666', 'SESS_PC3_ACTIVE', 1, 500, 500, 'TEST_CAND_2', 0, NOW(), 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
 INSERT INTO counting_rounds (id, session_id, round_number, round_votes, cumulative_votes, leading_candidate_id, lead_margin, processed_at, processed_by_admin_id)
 VALUES ('c7777777-7777-7777-7777-777777777777', 'SESS_PC3_ACTIVE', 2, 500, 1000, 'TEST_CAND_2', 0, NOW(), 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
 UPDATE counting_sessions SET status = 'TIED' WHERE id = 'SESS_PC3_ACTIVE';
 
--- 28b: Attempt TieResolution with selected_winner_id TEST_CAND_1 who lacks an APPROVED nomination in TEST_PC_THIRD (Must Fail)
+-- 28i: Attempt TieResolution with selected_winner_id TEST_CAND_1 who lacks an APPROVED nomination in TEST_PC_THIRD (Must Fail)
 DO $$
 DECLARE
   v_caught_expected_error BOOLEAN := FALSE;
@@ -1233,11 +1637,14 @@ BEGIN
     );
   EXCEPTION
     WHEN SQLSTATE 'P0001' THEN
-      v_caught_expected_error := TRUE;
       GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      IF v_err_msg NOT LIKE '%does not hold an APPROVED nomination%' THEN
+        RAISE EXCEPTION 'Scenario 28i failed for wrong reason: %', v_err_msg;
+      END IF;
+      v_caught_expected_error := TRUE;
       RAISE NOTICE 'SUCCESS: TieResolution with unnominated winner rejected [%]: %', v_err_sqlstate, v_err_msg;
     WHEN OTHERS THEN
-      RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 28b: Caught % (%)', SQLERRM, SQLSTATE;
+      RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 28i: Caught % (%)', SQLERRM, SQLSTATE;
   END;
 
   IF NOT v_caught_expected_error THEN
@@ -1285,8 +1692,11 @@ BEGIN
     );
   EXCEPTION
     WHEN SQLSTATE 'P0001' THEN
-      v_caught_expected_error := TRUE;
       GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      IF v_err_msg NOT LIKE '%approving administrator%is inactive%' THEN
+        RAISE EXCEPTION 'Scenario 29a failed for wrong reason: %', v_err_msg;
+      END IF;
+      v_caught_expected_error := TRUE;
       RAISE NOTICE 'SUCCESS: TieResolution by inactive administrator rejected [%]: %', v_err_sqlstate, v_err_msg;
     WHEN OTHERS THEN
       RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 29a: Caught % (%)', SQLERRM, SQLSTATE;
@@ -1319,8 +1729,11 @@ BEGIN
     );
   EXCEPTION
     WHEN SQLSTATE 'P0001' THEN
-      v_caught_expected_error := TRUE;
       GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      IF v_err_msg NOT LIKE '%assigned state (TEST_ST_2) does not match constituency state (TEST_ST)%' THEN
+        RAISE EXCEPTION 'Scenario 29b failed for wrong reason: %', v_err_msg;
+      END IF;
+      v_caught_expected_error := TRUE;
       RAISE NOTICE 'SUCCESS: TieResolution by out-of-scope administrator rejected [%]: %', v_err_sqlstate, v_err_msg;
     WHEN OTHERS THEN
       RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 29b: Caught % (%)', SQLERRM, SQLSTATE;
@@ -1348,8 +1761,11 @@ BEGIN
     DELETE FROM tie_resolutions WHERE id = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
   EXCEPTION
     WHEN SQLSTATE 'P0001' THEN
-      v_caught_expected_error := TRUE;
       GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      IF v_err_msg NOT LIKE '%immutable audit evidence%' THEN
+        RAISE EXCEPTION 'Scenario 30a failed for wrong reason: %', v_err_msg;
+      END IF;
+      v_caught_expected_error := TRUE;
       RAISE NOTICE 'SUCCESS: Deletion of tie_resolutions blocked by immutability trigger [%]: %', v_err_sqlstate, v_err_msg;
     WHEN OTHERS THEN
       RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 30a: Caught % (%)', SQLERRM, SQLSTATE;
@@ -1372,8 +1788,11 @@ BEGIN
     DELETE FROM counting_sessions WHERE id = 'SESS_TIED_1';
   EXCEPTION
     WHEN SQLSTATE 'P0001' OR foreign_key_violation THEN
-      v_caught_expected_error := TRUE;
       GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+      IF v_err_msg NOT LIKE '%immutable tie_resolutions evidence exists%' AND v_err_msg NOT LIKE '%fk_tie_res_session%' THEN
+        RAISE EXCEPTION 'Scenario 30b failed for wrong reason: %', v_err_msg;
+      END IF;
+      v_caught_expected_error := TRUE;
       RAISE NOTICE 'SUCCESS: CountingSession deletion with tie-resolution evidence rejected [%]: %', v_err_sqlstate, v_err_msg;
     WHEN OTHERS THEN
       RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 30b: Caught % (%)', SQLERRM, SQLSTATE;
@@ -1386,11 +1805,54 @@ END;
 $$;
 
 -- ============================================================================
--- SCENARIO 31: Publication Using Resolved Winner Only
+-- SCENARIO 31: Complete Tied Session Review & Publication Workflow
+--              (TIED -> RESULT_READY_FOR_REVIEW -> PUBLISHED)
 -- ============================================================================
 SAVEPOINT s31_publication_resolved_winner_only;
 
--- 31a: Attempt to publish SESS_TIED_1 with winner TEST_CAND_IND instead of resolved winner TEST_CAND_1 (Must Fail)
+-- Step 1: Verify SESS_PC3_ACTIVE is a valid tied session in TIED status (TEST_CAND_2 = 500, TEST_CAND_IND = 500, rounds = 2/2)
+DO $$
+DECLARE
+  v_stat "ResultStatus";
+  v_pub BOOLEAN;
+  v_rounds INT;
+  v_total INT;
+BEGIN
+  SELECT status, is_published, current_round, total_counted_votes
+  INTO v_stat, v_pub, v_rounds, v_total
+  FROM counting_sessions
+  WHERE id = 'SESS_PC3_ACTIVE';
+
+  IF v_stat != 'TIED' OR v_pub != FALSE OR v_rounds != 2 OR v_total != 1000 THEN
+    RAISE EXCEPTION 'Scenario 31 Step 1 precondition failed: status=%, is_published=%, rounds=%, total=%',
+      v_stat, v_pub, v_rounds, v_total;
+  END IF;
+END;
+$$;
+
+-- Step 2: Insert valid tie-resolution evidence for SESS_PC3_ACTIVE (Genuine two-candidate tie accepted [Requirement 2 #1])
+INSERT INTO tie_resolutions (id, session_id, decision, selected_winner_id, resolution_method, justification_note, approved_by_admin_id, resolved_at)
+VALUES (
+  'dddddddd-3131-3131-3131-313131313131',
+  'SESS_PC3_ACTIVE',
+  'WINNER_SELECTED_BY_LOT',
+  'TEST_CAND_2',
+  'SIMULATED_DRAW_OF_LOTS',
+  'Simulated educational draw of lots resolving 500-500 tie in SESS_PC3_ACTIVE in favor of TEST_CAND_2.',
+  'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+  NOW()
+);
+
+-- Step 3: Transition SESS_PC3_ACTIVE from TIED -> RESULT_READY_FOR_REVIEW with the resolved winner (TEST_CAND_2)
+UPDATE counting_sessions
+SET status = 'RESULT_READY_FOR_REVIEW',
+    winner_candidate_id = 'TEST_CAND_2',
+    runner_up_candidate_id = 'TEST_CAND_IND',
+    victory_margin = 0
+WHERE id = 'SESS_PC3_ACTIVE';
+
+-- Step 4: Attempt publication (RESULT_READY_FOR_REVIEW -> PUBLISHED) with a different winner (TEST_CAND_IND)
+--         and verify rejection SPECIFICALLY because of the winner mismatch (not a state-transition error!)
 DO $$
 DECLARE
   v_caught_expected_error BOOLEAN := FALSE;
@@ -1399,15 +1861,23 @@ DECLARE
 BEGIN
   BEGIN
     UPDATE counting_sessions
-    SET status = 'PUBLISHED', is_published = TRUE, winner_candidate_id = 'TEST_CAND_IND', runner_up_candidate_id = 'TEST_CAND_1', published_by_admin_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', published_at = NOW()
-    WHERE id = 'SESS_TIED_1';
+    SET status = 'PUBLISHED',
+        is_published = TRUE,
+        winner_candidate_id = 'TEST_CAND_IND',
+        runner_up_candidate_id = 'TEST_CAND_2',
+        published_by_admin_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+        published_at = NOW()
+    WHERE id = 'SESS_PC3_ACTIVE';
   EXCEPTION
     WHEN SQLSTATE 'P0001' THEN
-      v_caught_expected_error := TRUE;
       GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
-      RAISE NOTICE 'SUCCESS: Publication with non-resolved winner rejected [%]: %', v_err_sqlstate, v_err_msg;
+      IF v_err_msg NOT LIKE '%does not match resolved winner (TEST_CAND_2) in tie_resolutions%' THEN
+        RAISE EXCEPTION 'Scenario 31 Step 4 failed for wrong reason (expected winner mismatch error, got: %)', v_err_msg;
+      END IF;
+      v_caught_expected_error := TRUE;
+      RAISE NOTICE 'SUCCESS: Publication from RESULT_READY_FOR_REVIEW with non-resolved winner rejected specifically for winner mismatch [%]: %', v_err_sqlstate, v_err_msg;
     WHEN OTHERS THEN
-      RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 31a: Caught % (%)', SQLERRM, SQLSTATE;
+      RAISE EXCEPTION 'UNEXPECTED ERROR in Scenario 31 Step 4: Caught % (%)', SQLERRM, SQLSTATE;
   END;
 
   IF NOT v_caught_expected_error THEN
@@ -1416,15 +1886,75 @@ BEGIN
 END;
 $$;
 
--- 31b: Publish SESS_TIED_1 with exact resolved winner TEST_CAND_1 (Valid)
-UPDATE counting_sessions
-SET status = 'PUBLISHED', is_published = TRUE, winner_candidate_id = 'TEST_CAND_1', runner_up_candidate_id = 'TEST_CAND_IND', published_by_admin_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', published_at = NOW()
-WHERE id = 'SESS_TIED_1';
+-- Step 5: Verify that SESS_PC3_ACTIVE remains in RESULT_READY_FOR_REVIEW with is_published = FALSE after the failed attempt
+DO $$
+DECLARE
+  v_stat "ResultStatus";
+  v_pub BOOLEAN;
+  v_win VARCHAR(50);
+  v_pub_admin UUID;
+  v_pub_at TIMESTAMPTZ;
+BEGIN
+  SELECT status, is_published, winner_candidate_id, published_by_admin_id, published_at
+  INTO v_stat, v_pub, v_win, v_pub_admin, v_pub_at
+  FROM counting_sessions
+  WHERE id = 'SESS_PC3_ACTIVE';
 
-RAISE NOTICE 'SUCCESS: Scenario 31 passed - Tied session published strictly with resolved winner TEST_CAND_1.';
+  IF v_stat != 'RESULT_READY_FOR_REVIEW' OR v_pub != FALSE OR v_win != 'TEST_CAND_2' OR v_pub_admin IS NOT NULL OR v_pub_at IS NOT NULL THEN
+    RAISE EXCEPTION 'Scenario 31 Step 5 failed: session did not remain in RESULT_READY_FOR_REVIEW (status=%, is_published=%, winner=%)',
+      v_stat, v_pub, v_win;
+  END IF;
+  RAISE NOTICE 'SUCCESS: Scenario 31 Step 5 verified - Session remained in RESULT_READY_FOR_REVIEW after rejected publication attempt.';
+END;
+$$;
+
+-- Step 6: Publish SESS_PC3_ACTIVE (RESULT_READY_FOR_REVIEW -> PUBLISHED) using the exact resolved winner (TEST_CAND_2)
+UPDATE counting_sessions
+SET status = 'PUBLISHED',
+    is_published = TRUE,
+    winner_candidate_id = 'TEST_CAND_2',
+    runner_up_candidate_id = 'TEST_CAND_IND',
+    published_by_admin_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+    published_at = NOW()
+WHERE id = 'SESS_PC3_ACTIVE';
+
+-- Steps 7, 8 & 9: Verify status = PUBLISHED, is_published = TRUE, published_by_admin_id, and published_at
+DO $$
+DECLARE
+  v_stat "ResultStatus";
+  v_pub BOOLEAN;
+  v_win VARCHAR(50);
+  v_pub_admin UUID;
+  v_pub_at TIMESTAMPTZ;
+BEGIN
+  SELECT status, is_published, winner_candidate_id, published_by_admin_id, published_at
+  INTO v_stat, v_pub, v_win, v_pub_admin, v_pub_at
+  FROM counting_sessions
+  WHERE id = 'SESS_PC3_ACTIVE';
+
+  IF v_stat != 'PUBLISHED' THEN
+    RAISE EXCEPTION 'Scenario 31 Step 7 failed: expected status = PUBLISHED, got %', v_stat;
+  END IF;
+
+  IF v_pub != TRUE THEN
+    RAISE EXCEPTION 'Scenario 31 Step 8 failed: expected is_published = TRUE, got %', v_pub;
+  END IF;
+
+  IF v_win != 'TEST_CAND_2' THEN
+    RAISE EXCEPTION 'Scenario 31 winner check failed: expected TEST_CAND_2, got %', v_win;
+  END IF;
+
+  IF v_pub_admin IS DISTINCT FROM 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid OR v_pub_at IS NULL THEN
+    RAISE EXCEPTION 'Scenario 31 Step 9 failed: expected publisher ID and timestamp, got admin=%, at=%', v_pub_admin, v_pub_at;
+  END IF;
+
+  RAISE NOTICE 'SUCCESS: Scenario 31 passed - Full TIED -> RESULT_READY_FOR_REVIEW -> PUBLISHED workflow verified (status=%, is_published=%, winner=%, admin=%, published_at=%).',
+    v_stat, v_pub, v_win, v_pub_admin, v_pub_at;
+END;
+$$;
 
 ROLLBACK;
 
 -- All scenarios passed successfully
-SELECT 'OVS Phase 8.1.5 PostgreSQL Integration Validation Suite: ALL 31 SCENARIOS (INCLUDING ALL 23 BASE SCENARIOS) PASSED' AS verdict;
+SELECT 'OVS Phase 8.1.6 PostgreSQL Integration Validation Suite: ALL 31 SCENARIOS (INCLUDING ALL 23 BASE SCENARIOS) PASSED' AS verdict;
 

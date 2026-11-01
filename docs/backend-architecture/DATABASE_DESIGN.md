@@ -103,6 +103,28 @@ The following table documents the resolution of historical test fixture naming i
 | `counting_rounds` | `created_at`, `updated_at` | `processed_at`, `processed_by_admin_id` | `CountingRound.processedAt` | **Corrected** to `processed_at` |
 | `admin_users` | Direct user fields (`email`, `password_hash`) | Foreign key `user_id REFERENCES users(id)` | `AdminUser.userId` | **Corrected**; `User` row inserted first |
 
+### 2.2 Complete Prisma & PostgreSQL Enum Inventory (17 Enums — Verified Directly Against `PRISMA_SCHEMA_DRAFT.prisma`)
+
+| # | Prisma / PostgreSQL Enum Name | Defined Values |
+| :- | :--- | :--- |
+| 1 | `JurisdictionType` | `STATE`, `UNION_TERRITORY` |
+| 2 | `MetadataSource` | `VERIFIED_OFFICIAL`, `DEMO_SAMPLE` |
+| 3 | `ReservationType` | `GENERAL`, `SC`, `ST` |
+| 4 | `UserType` | `VOTER`, `ADMIN` |
+| 5 | `ElectionType` | `LOK_SABHA`, `STATE_ASSEMBLY` |
+| 6 | `ConstituencyType` | `PARLIAMENTARY`, `ASSEMBLY` |
+| 7 | `ElectionStatus` | `DRAFT`, `SCHEDULED`, `UPCOMING`, `NOMINATION_OPEN`, `SCRUTINY_COMPLETED`, `POLLING_ACTIVE`, `POLLING_CLOSED`, `COUNTING`, `RESULTS_DECLARED`, `ARCHIVED` |
+| 8 | `ParticipationStatus` | `VOTED` |
+| 9 | `CandidateNominationStatus` | `DRAFT`, `SUBMITTED`, `UNDER_REVIEW`, `APPROVED`, `REJECTED`, `WITHDRAWN`, `SUSPENDED`, `ARCHIVED` |
+| 10 | `PartyType` | `NATIONAL`, `STATE`, `INDEPENDENT` |
+| 11 | `PartyStatus` | `ACTIVE`, `INACTIVE` |
+| 12 | `AdminRole` | `SUPER_ADMIN`, `NATIONAL_ADMIN`, `STATE_ADMIN`, `ELECTION_OFFICER`, `READ_ONLY_AUDITOR` |
+| 13 | `ResultStatus` | `DRAFT`, `COUNTING_IN_PROGRESS`, `COUNTING_PAUSED`, `COUNTING_COMPLETED`, `TIED`, `RESULT_READY_FOR_REVIEW`, `PUBLISHED`, `UNDER_REVIEW`, `CORRECTED`, `UNPUBLISHED` |
+| 14 | `AnnouncementCategory` | `GENERAL_INFO`, `ELECTION_SCHEDULE`, `VOTER_EDUCATION`, `SECURITY_ADVISORY`, `RESULTS` |
+| 15 | `AnnouncementAudience` | `ALL_VOTERS`, `SPECIFIC_STATE`, `SPECIFIC_ELECTION`, `SPECIFIC_CONSTITUENCY` |
+| 16 | `AnnouncementStatus` | `DRAFT`, `PUBLISHED`, `ARCHIVED` |
+| 17 | `NotificationType` | `ELECTION_ANNOUNCEMENT`, `REGISTRATION_UPDATE`, `REMINDER` |
+
 ---
 
 ## 3. Candidate Nomination & Counting Integrity
@@ -171,21 +193,28 @@ with auxiliary states: `TIED`, `UNDER_REVIEW`, `CORRECTED`, `UNPUBLISHED`.
 6. **Accountability**: Publication requires `published_by_admin_id` and timestamp `published_at`.
 7. **Immutable Correction History**: Transition from `UNDER_REVIEW` to `CORRECTED` requires an entry in `result_correction_history`.
 
-### 5.2 Simulated Educational Tie Resolution (`TieResolution`) & Referential Policy:
+### 5.2 Simulated Educational Tie Resolution (`TieResolution`) & Genuine Tie Proof (Phase 8.1.6 Hardened):
 To model tie-breaking workflows in this educational election simulation without claiming legally authoritative certification:
 1. **Dedicated `BEFORE INSERT` Trigger (`trg_verify_tie_resolution_insert`)**:
    - **Session Existence & Lock**: Acquires `FOR UPDATE` lock on the parent `counting_sessions` row.
-   - **Tied Status Precondition**: The counting session must currently be in `status = 'TIED'`.
+   - **Tied Status Precondition**: The counting session must currently be in `status = 'TIED'` (however, `status = 'TIED'` alone never proves a tie exists).
    - **Single Resolution Per Session**: Enforced by `UNIQUE (session_id)` and trigger check.
    - **Approved Nomination Verification**: `selected_winner_id` must hold an `APPROVED` nomination in the session's exact election and constituency (`FOR SHARE` lock).
-   - **Top Tied Candidate Verification**: `selected_winner_id` must have a `candidate_tallies` record in the session whose `votes` equals `MAX(votes) > 0`, and at least two candidates must share that top vote count.
+   - **Genuine Tie Proof From `candidate_tallies` Joined With `candidate_nominations`**:
+     1. Candidate tallies must exist for the session (`v_total_tally_count > 0`); missing tallies are rejected.
+     2. Only candidates holding an `APPROVED` nomination in the exact session election and constituency participate in highest-vote comparison (`JOIN candidate_nominations cn ON cn.id = ct.nomination_id AND cn.candidate_id = ct.candidate_id ... AND cn.status = 'APPROVED'`). Unapproved candidates cannot contribute to a tie.
+     3. The maximum vote count among eligible `APPROVED` candidates must be strictly greater than zero (`v_max_votes > 0`). Zero-vote ties are rejected.
+     4. At least two eligible `APPROVED` candidates must share that exact highest vote count (`v_top_tied_count >= 2`). Single-candidate sessions or unique-leader sessions are rejected.
+     5. The selected winner must be one of the tied top candidates (`v_winner_votes = v_max_votes`).
    - **Active Authorized Admin Verification**: `approved_by_admin_id` must exist in `admin_users`, have `is_active = TRUE` (and linked `users.is_active = TRUE`), hold role `SUPER_ADMIN`, `NATIONAL_ADMIN`, `STATE_ADMIN`, or `ELECTION_OFFICER` (`READ_ONLY_AUDITOR` is rejected), satisfy state jurisdiction (`assigned_state_id` matching constituency state for `STATE_ADMIN`), and have an explicit `admin_election_scopes` entry when role is `ELECTION_OFFICER`.
-   - **Controlled Decision & Method Values**: `decision` must be `'SIMULATED_TIE_BROKEN_DRAW_OF_LOTS'` or `'WINNER_SELECTED_BY_LOT'`; `resolution_method` must be `'SIMULATED_DRAW_OF_LOTS'`, `'DRAW_OF_LOTS'`, or `'DRAW_OF_LOTS_RO_SECTION_102_RPA_1951'`; `justification_note` must be non-empty.
-2. **Winner Consistency Across Review & Publication**: Trigger `trg_verify_counting_session_publication` verifies that whenever a `tie_resolutions` row exists for a session, `counting_sessions.winner_candidate_id` must equal `tie_resolutions.selected_winner_id` in both `RESULT_READY_FOR_REVIEW` and `PUBLISHED` states.
+   - **Controlled Decision & Method Values**: `decision` must be in `('WINNER_SELECTED_BY_LOT', 'SIMULATED_DRAW_WINNER_DECLARED', 'RECOUNT_TIE_BROKEN_BY_LOT', 'SIMULATED_TIE_BROKEN_DRAW_OF_LOTS')`; `resolution_method` must be in `('SIMULATED_DRAW_OF_LOTS', 'DRAW_OF_LOTS', 'SIMULATED_RO_LOTTERY', 'DRAW_OF_LOTS_RO_SECTION_102_RPA_1951')`; `justification_note` must be non-empty ($\ge 10$ characters).
+2. **Mandatory Two-Step Publication Workflow (`TIED → RESULT_READY_FOR_REVIEW → PUBLISHED`)**:
+   - A `TIED` session cannot transition directly to `PUBLISHED`. It must first transition to `RESULT_READY_FOR_REVIEW` with `winner_candidate_id` matching `tie_resolutions.selected_winner_id`, and then transition from `RESULT_READY_FOR_REVIEW` to `PUBLISHED`.
+   - Trigger `trg_verify_counting_session_publication` verifies that whenever a `tie_resolutions` row exists for a session, `counting_sessions.winner_candidate_id` equals `tie_resolutions.selected_winner_id` in both `RESULT_READY_FOR_REVIEW` and `PUBLISHED` states.
 3. **Referential & Deletion Consistency (`onDelete: Restrict`)**:
    - Both Prisma (`TieResolution.session` with `onDelete: Restrict`) and PostgreSQL (`fk_tie_res_session REFERENCES counting_sessions(id) ON DELETE RESTRICT ON UPDATE RESTRICT`) use `RESTRICT`.
    - `trg_protect_tie_resolution_immutability` unconditionally rejects `UPDATE` and `DELETE` on `tie_resolutions`.
-   - `trg_protect_counting_session_deletion` prevents deleting any counting session that is progressed beyond `DRAFT` or has tie-resolution or correction-history evidence.
+   - `trg_protect_counting_session_deletion` prevents deleting any counting session that has tie-resolution evidence or is published.
 
 ---
 
@@ -223,7 +252,30 @@ To prevent deadlocks during concurrent counting, tally updates, nomination check
 
 ---
 
-## 8. Custom PostgreSQL SQL Integrity Script
+## 8. Custom PostgreSQL SQL Integrity Script & Reproducible 5-Step Schema Bootstrap
 
 All DDL, constraints, triggers, and procedural functions are centralized in:
 `docs/backend-architecture/CUSTOM_DATABASE_INTEGRITY.sql`.
+
+Because `CUSTOM_DATABASE_INTEGRITY.sql` alters base tables and references PostgreSQL enum types defined in `docs/backend-architecture/PRISMA_SCHEMA_DRAFT.prisma`, it **must** be executed after applying the Prisma schema in the following reproducible 5-step sequence:
+
+```bash
+# 1. Create disposable PostgreSQL 16 database
+export DATABASE_URL="postgresql://postgres:postgres@localhost:5432/ovs_validation_db?schema=public"
+psql "postgresql://postgres:postgres@localhost:5432/postgres" -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS ovs_validation_db WITH (FORCE);"
+psql "postgresql://postgres:postgres@localhost:5432/postgres" -v ON_ERROR_STOP=1 -c "CREATE DATABASE ovs_validation_db;"
+
+# 2. Validate & apply Prisma schema (creates all 25 tables and 17 enums using pinned Prisma CLI)
+npx --yes prisma@6.4.1 validate --schema=docs/backend-architecture/PRISMA_SCHEMA_DRAFT.prisma
+npx --yes prisma@6.4.1 db push --schema=docs/backend-architecture/PRISMA_SCHEMA_DRAFT.prisma --skip-generate
+
+# 3. Apply custom SQL integrity constraints and triggers
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f docs/backend-architecture/CUSTOM_DATABASE_INTEGRITY.sql
+
+# 4. Execute the PostgreSQL integration validation suite (31 scenarios)
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/postgresql-validation.sql
+
+# 5. Clean up disposable database
+psql "postgresql://postgres:postgres@localhost:5432/postgres" -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS ovs_validation_db WITH (FORCE);"
+```
+

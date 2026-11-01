@@ -166,24 +166,25 @@ All database triggers and transactional operations enforce a deterministic top-d
 24. `VoterNotification` (`voter_notifications`)
 25. `TieResolution` (`tie_resolutions`)
 
-### 9.2 Prisma Enums (17 Enums)
-1. `MetadataSource`
-2. `JurisdictionType`
+### 9.2 Prisma Enums (17 Enums — Verified Directly Against `PRISMA_SCHEMA_DRAFT.prisma`)
+1. `JurisdictionType`
+2. `MetadataSource`
 3. `ReservationType`
-4. `ConstituencyType`
-5. `UserRole`
-6. `AccountStatus`
-7. `VerificationStatus`
-8. `ElectionType`
-9. `ElectionStatus`
-10. `PartyCategory`
-11. `NominationStatus`
+4. `UserType`
+5. `ElectionType`
+6. `ConstituencyType`
+7. `ElectionStatus`
+8. `ParticipationStatus`
+9. `CandidateNominationStatus`
+10. `PartyType`
+11. `PartyStatus`
 12. `AdminRole`
-13. `DemoParticipationStatus`
-14. `CountingSessionStatus`
-15. `ResultStatus`
-16. `AnnouncementCategory`
-17. `NotificationPriority`
+13. `ResultStatus`
+14. `AnnouncementCategory`
+15. `AnnouncementAudience`
+16. `AnnouncementStatus`
+17. `NotificationType`
+
 
 ---
 

@@ -186,20 +186,26 @@
 
 ---
 
-### ADR-023: Subtransaction Assertion Pattern in Database Integration Tests
-- **Status**: Accepted (Phase 8.1.4 Added)
-- **Context**: Historical negative tests used the pattern `DO $$ BEGIN INSERT ... RAISE EXCEPTION 'succeeded'; EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'SUCCESS'; END $$;`. This caught its own internal exception, creating false-positive passes even if the invalid operation succeeded without constraint enforcement.
-- **Decision**: Adopt strict PL/pgSQL subtransaction assertion blocks:
+### ADR-023: Subtransaction Assertion Pattern & Specific Error Message Verification in Database Integration Tests
+- **Status**: Accepted (Phase 8.1.4 Added, Phase 8.1.6 Hardened)
+- **Context**: Historical negative tests used the pattern `DO $$ BEGIN INSERT ... RAISE EXCEPTION 'succeeded'; EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'SUCCESS'; END $$;`. This caught its own internal exception, creating false-positive passes even if the invalid operation succeeded without constraint enforcement. Furthermore, catching `SQLSTATE 'P0001'` alone could pass if a statement failed for the wrong trigger rule (e.g. failing a state transition check instead of a tie-resolution winner mismatch check).
+- **Decision**: Adopt strict PL/pgSQL subtransaction assertion blocks that verify **both** the expected `SQLSTATE` and the specific expected constraint name or trigger error message substring (`v_err_msg LIKE '%...%'`):
   ```sql
   DO $$
   DECLARE
     v_caught_expected_error BOOLEAN := FALSE;
+    v_err_sqlstate TEXT;
+    v_err_msg TEXT;
   BEGIN
     BEGIN
       -- [Attempt invalid operation]
     EXCEPTION
-      WHEN foreign_key_violation OR check_violation OR unique_violation OR SQLSTATE 'P0001' THEN
+      WHEN SQLSTATE 'P0001' THEN
         v_caught_expected_error := TRUE;
+        GET STACKED DIAGNOSTICS v_err_sqlstate = RETURNED_SQLSTATE, v_err_msg = MESSAGE_TEXT;
+        IF v_err_msg NOT LIKE '%expected trigger message substring%' THEN
+          RAISE EXCEPTION 'UNEXPECTED TRIGGER MESSAGE: %', v_err_msg;
+        END IF;
       WHEN OTHERS THEN
         RAISE EXCEPTION 'Unexpected error caught: % (%)', SQLERRM, SQLSTATE;
     END;
@@ -208,18 +214,27 @@
     END IF;
   END $$;
   ```
-- **Consequences**: Guarantees zero false positives. An invalid operation that executes without raising a constraint or trigger error immediately causes the validation suite to fail.
+- **Consequences**: Guarantees zero false positives and ensures every negative scenario fails for the exact intended database rule.
 
 ---
 
-### ADR-024: Simulated Educational Tie Resolution & 10-Rule Insert Validation (`TieResolution`)
-- **Status**: Accepted (Phase 8.1.4 Added, Phase 8.1.5 Hardened)
-- **Context**: When a simulated constituency count results in a tie between top candidates, the system models a Returning Officer draw-of-lots workflow inspired by Section 102 of the *Representation of the People Act, 1951*. This workflow is a **simulated educational governance mechanism**, not a legally authoritative statutory certification. However, inserting unvalidated rows into `tie_resolutions` or deleting sessions with tie-resolution evidence could corrupt the audit trail.
+### ADR-024: Simulated Educational Tie Resolution & Genuine Tie Proof (`TieResolution`)
+- **Status**: Accepted (Phase 8.1.4 Added, Phase 8.1.6 Hardened)
+- **Context**: When a simulated constituency count results in a tie between top candidates, the system models a Returning Officer draw-of-lots workflow inspired by Section 102 of the *Representation of the People Act, 1951*. This workflow is a **simulated educational governance mechanism**, not a legally authoritative statutory certification. Critically, `counting_sessions.status = 'TIED'` alone does not prove a tie exists in `candidate_tallies`.
 - **Decision**:
-  1. Implement `trg_verify_tie_resolution_insert` (`BEFORE INSERT ON tie_resolutions`) enforcing all 10 invariants: session exists (`FOR UPDATE` lock), session is in `TIED` status, at most one resolution per session, `selected_winner_id` holds an `APPROVED` nomination in the session's election/constituency, `selected_winner_id` is tied for the highest vote total (`MAX(votes) > 0` shared by $\ge 2$ candidates), `approved_by_admin_id` is an active authorized officer (`SUPER_ADMIN`, `NATIONAL_ADMIN`, `STATE_ADMIN` matching state, or `ELECTION_OFFICER` with `admin_election_scopes`), controlled decision/method values, and non-empty `justification_note`.
-  2. Enforce `winner_candidate_id = tie_resolutions.selected_winner_id` across both `RESULT_READY_FOR_REVIEW` and `PUBLISHED` states.
+  1. Implement `trg_verify_tie_resolution_insert` (`BEFORE INSERT ON tie_resolutions`) enforcing genuine tie proof from `candidate_tallies` joined with `candidate_nominations`:
+     - Session exists (`FOR UPDATE` lock) and is in `TIED` status.
+     - At most one resolution per session (`UNIQUE(session_id)`).
+     - `selected_winner_id` holds an `APPROVED` nomination in the session's exact election and constituency (`FOR SHARE` lock).
+     - Candidate tallies exist for the session (`v_total_tally_count > 0`).
+     - Highest-vote comparison (`v_max_votes`, `v_top_tied_count`, `v_winner_votes`) filters strictly by candidates holding an `APPROVED` nomination for the exact session election and constituency (`JOIN candidate_nominations cn ON cn.id = ct.nomination_id AND cn.candidate_id = ct.candidate_id ... AND cn.status = 'APPROVED'`). Unapproved candidates cannot contribute to a tie.
+     - `v_max_votes > 0` (zero-vote ties rejected).
+     - `v_top_tied_count >= 2` (at least two eligible `APPROVED` candidates tied at `v_max_votes`; single-candidate or unique-leader sessions rejected).
+     - `v_winner_votes = v_max_votes` (`selected_winner_id` must be one of the tied top candidates).
+     - `approved_by_admin_id` is an active authorized officer (`SUPER_ADMIN`, `NATIONAL_ADMIN`, `STATE_ADMIN` matching state, or `ELECTION_OFFICER` with `admin_election_scopes`), with controlled decision/method values and non-empty `justification_note`.
+  2. Enforce two-step post-tie publication (`TIED → RESULT_READY_FOR_REVIEW → PUBLISHED`) and require `winner_candidate_id = tie_resolutions.selected_winner_id` across both `RESULT_READY_FOR_REVIEW` and `PUBLISHED` states.
   3. Enforce `onDelete: Restrict` in both Prisma (`TieResolution.session`) and PostgreSQL (`fk_tie_res_session`), backed by `trg_protect_tie_resolution_immutability` and `trg_protect_counting_session_deletion`.
-- **Consequences**: Prevents unauthorized, non-tied, or non-top-candidate tie resolutions and preserves immutable audit evidence.
+- **Consequences**: Prevents unauthorized, non-tied, zero-vote, single-candidate, or unapproved-candidate tie resolutions and preserves immutable audit evidence.
 
 ---
 
@@ -254,6 +269,17 @@
   3. `candidate_nominations` row lock (`FOR SHARE`).
   4. Child counting tables (`counting_rounds`, `candidate_tallies`, `tie_resolutions`, `result_correction_history`).
 - **Consequences**: Guarantees deadlock-free serialization of concurrent counting session mutations.
+
+---
+
+### ADR-028: Reproducible 5-Step Disposable PostgreSQL 16 Schema Bootstrap & CI Service Container Validation
+- **Status**: Accepted (Phase 8.1.6 Added)
+- **Context**: `CUSTOM_DATABASE_INTEGRITY.sql` alters base tables and references PostgreSQL enum types defined in `PRISMA_SCHEMA_DRAFT.prisma`. Running `CUSTOM_DATABASE_INTEGRITY.sql` directly on an empty database fails because those base tables and enum types do not exist until the Prisma schema is pushed.
+- **Decision**:
+  1. Standardize a reproducible 5-step disposable PostgreSQL 16 bootstrap sequence: (1) create disposable database, (2) run `prisma validate` and `prisma db push --schema=docs/backend-architecture/PRISMA_SCHEMA_DRAFT.prisma` using pinned `prisma@6.4.1`, (3) apply `CUSTOM_DATABASE_INTEGRITY.sql`, (4) execute `tests/postgresql-validation.sql`, (5) drop disposable database.
+  2. Add a dedicated `postgres-validation` job in `.github/workflows/ci.yml` backed by a `postgres:16-alpine` service container to execute all 5 steps automatically in GitHub Actions.
+- **Consequences**: Eliminates manual schema bootstrap errors and provides automated PostgreSQL 16 runtime verification in CI.
+
 
 
 

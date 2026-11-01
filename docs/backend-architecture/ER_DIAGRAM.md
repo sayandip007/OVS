@@ -367,15 +367,19 @@ erDiagram
   3. NOTA cannot be recorded as a candidate; it is tracked independently via `counting_sessions.nota_votes`.
   4. Winner and runner-up declared in `counting_sessions` must also hold `APPROVED` nominations in that constituency.
 
-### 2.4 Hardened Publication State Machine
+### 2.4 Hardened Publication State Machine & Genuine Tie Verification
 - Result publication requires transition through an approved review stage:
   `DRAFT` → `COUNTING_IN_PROGRESS` → `COUNTING_PAUSED` / `COUNTING_COMPLETED` → `RESULT_READY_FOR_REVIEW` → `PUBLISHED`.
+- For tied sessions, publication strictly follows the two-step post-tie review sequence:
+  `TIED` → `RESULT_READY_FOR_REVIEW` → `PUBLISHED`. Direct transition from `TIED` to `PUBLISHED` is rejected.
 - Direct insertion of `is_published = TRUE` or `status = 'PUBLISHED'` is blocked on `INSERT`.
 - Publication from `DRAFT` or directly from `COUNTING_COMPLETED` is rejected on `UPDATE`.
-- All configured rounds must be completed (`current_round >= total_configured_rounds`).
-- Results in `TIED` status cannot be published without documented tie-break resolution.
-- Enforced by trigger `trg_verify_counting_session_publication` in `CUSTOM_DATABASE_INTEGRITY.sql`.
+- All configured rounds must be completed (`current_round >= total_configured_rounds`) and physically present in `counting_rounds`.
+- Results in `TIED` status cannot transition to `RESULT_READY_FOR_REVIEW` without documented tie-break resolution in `tie_resolutions` (`onDelete: Restrict`).
+- Trigger `trg_verify_tie_resolution_insert` enforces genuine tie proof from `candidate_tallies` joined with `candidate_nominations`: tallies must exist (`v_total_tally_count > 0`), maximum votes among eligible `APPROVED` candidates must exceed zero (`v_max_votes > 0`), at least two eligible `APPROVED` candidates must share that exact highest vote total (`v_top_tied_count >= 2`), and `selected_winner_id` must be one of the tied top candidates (`v_winner_votes = v_max_votes`).
+- Enforced by triggers `trg_verify_counting_session_publication` and `trg_verify_tie_resolution_insert` in `CUSTOM_DATABASE_INTEGRITY.sql`.
 
 ### 2.5 Strict Decoupling of Demo Participation
 - The `demo_participations` table contains **zero candidate or party choice columns**.
 - Counting sessions and candidate tallies are calculated from independent seed and simulation data, guaranteeing constitutional ballot secrecy by structural design.
+

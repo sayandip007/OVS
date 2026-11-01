@@ -1,4 +1,4 @@
-name: OVS Frontend CI
+name: OVS Frontend & PostgreSQL Database CI
 
 on:
   push:
@@ -50,3 +50,66 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 7
+
+  postgres-validation:
+    name: PostgreSQL 16 Schema, Trigger & Integration Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ovs_validation_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d ovs_validation_db"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ovs_validation_db?schema=public
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install project dependencies
+        run: npm ci
+
+      - name: Install pinned Prisma CLI (6.4.1) for schema bootstrap
+        run: npm install --no-save prisma@6.4.1 @prisma/client@6.4.1
+
+      - name: Step 1 - Verify disposable PostgreSQL 16 database readiness
+        run: |
+          psql "postgresql://postgres:postgres@localhost:5432/postgres" -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS ovs_validation_db WITH (FORCE);"
+          psql "postgresql://postgres:postgres@localhost:5432/postgres" -v ON_ERROR_STOP=1 -c "CREATE DATABASE ovs_validation_db;"
+
+      - name: Step 2 - Validate Prisma schema & push tables and enums to PostgreSQL 16
+        run: |
+          npx prisma validate --schema=docs/backend-architecture/PRISMA_SCHEMA_DRAFT.prisma
+          npx prisma db push --schema=docs/backend-architecture/PRISMA_SCHEMA_DRAFT.prisma --skip-generate
+
+      - name: Step 3 - Apply CUSTOM_DATABASE_INTEGRITY.sql constraints and triggers
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f docs/backend-architecture/CUSTOM_DATABASE_INTEGRITY.sql
+
+      - name: Step 4 - Execute PostgreSQL integration validation suite (31 scenarios)
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/postgresql-validation.sql
+
+      - name: Step 5 - Clean up disposable PostgreSQL validation database
+        if: always()
+        run: |
+          psql "postgresql://postgres:postgres@localhost:5432/postgres" -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS ovs_validation_db WITH (FORCE);"
+

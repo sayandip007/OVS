@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { extractPrismaInventory } from './prismaInventory.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -875,7 +876,7 @@ describe('OVS Phase 8.1.5 — Final SQL Trigger Corrections & Database Runtime R
     assert.ok(sqlContent.includes('SELECT 1 FROM admin_election_scopes'), 'Trigger must verify ELECTION_OFFICER scope in admin_election_scopes');
     assert.ok(sqlContent.includes('chk_tie_resolution_valid_fields'), 'Declarative CHECK constraint chk_tie_resolution_valid_fields must exist');
 
-    assert.ok(valContent.includes('SCENARIO 28: TieResolution Insertion Validation'), 'Scenario 28 must test non-TIED and unnominated winner rejection');
+    assert.ok(valContent.includes('SCENARIO 28:'), 'Scenario 28 must test non-TIED and unnominated winner rejection');
     assert.ok(valContent.includes('SCENARIO 29: TieResolution Administrator Active Status & RBAC Scope Validation'), 'Scenario 29 must test inactive and out-of-scope admin rejection');
   });
 
@@ -910,9 +911,219 @@ describe('OVS Phase 8.1.5 — Final SQL Trigger Corrections & Database Runtime R
 
     assert.ok(sqlContent.includes('DETERMINISTIC TRANSACTION LOCK ORDERING HIERARCHY'), 'SQL must document deterministic transaction lock ordering hierarchy');
     assert.ok(sqlContent.includes('Declared session winner (%) does not match resolved winner (%) in tie_resolutions'), 'Session review/publication must enforce winner matches TieResolution');
-    assert.ok(valContent.includes('SCENARIO 31: Publication Using Resolved Winner Only'), 'Scenario 31 must test publication with resolved winner only');
+    assert.ok(valContent.includes('SCENARIO 31: Complete Tied Session Review & Publication Workflow'), 'Scenario 31 must test publication with resolved winner only');
   });
 });
+
+describe('OVS Phase 8.1.6 — Final Tie Integrity, Publication Workflow & PostgreSQL CI Verification (Static Architecture Suite)', () => {
+  const prismaSchemaPath = path.join(rootDir, 'docs/backend-architecture/PRISMA_SCHEMA_DRAFT.prisma');
+  const customSqlPath = path.join(rootDir, 'docs/backend-architecture/CUSTOM_DATABASE_INTEGRITY.sql');
+  const validationSqlPath = path.join(rootDir, 'tests/postgresql-validation.sql');
+  const dbDesignPath = path.join(rootDir, 'docs/backend-architecture/DATABASE_DESIGN.md');
+  const dockerPlanPath = path.join(rootDir, 'docs/backend-architecture/DOCKER_DEVELOPMENT_PLAN.md');
+  const testingStrategyPath = path.join(rootDir, 'docs/backend-architecture/TESTING_STRATEGY.md');
+  const ciWorkflowPath = path.join(rootDir, '.github/workflows/ci.yml');
+  const phase815ReportPath = path.join(rootDir, 'PHASE_8_1_5_FINAL_AUDIT_REPORT.md');
+  const phase816ReportPath = path.join(rootDir, 'PHASE_8_1_6_FINAL_AUDIT_REPORT.md');
+
+  test('Test 8.1.6.1: Genuine tie check in verify_tie_resolution_insert() enforces v_top_tied_count >= 2', () => {
+    const sqlContent = fs.readFileSync(customSqlPath, 'utf8');
+    const valContent = fs.readFileSync(validationSqlPath, 'utf8');
+
+    const funcMatch = sqlContent.match(/CREATE OR REPLACE FUNCTION verify_tie_resolution_insert\(\)[\s\S]*?\$\$ LANGUAGE plpgsql;/);
+    assert.ok(funcMatch, 'verify_tie_resolution_insert() must exist in CUSTOM_DATABASE_INTEGRITY.sql');
+    const funcBody = funcMatch[0];
+
+    assert.ok(
+      funcBody.includes('IF v_top_tied_count < 2 THEN'),
+      'verify_tie_resolution_insert() must explicitly reject when v_top_tied_count < 2'
+    );
+    assert.ok(
+      funcBody.includes('genuine tie requires at least 2 eligible APPROVED candidates tied at highest votes'),
+      'verify_tie_resolution_insert() must raise specific error when fewer than 2 eligible APPROVED candidates are tied'
+    );
+
+    // Verify all required tie scenarios are covered in tests/postgresql-validation.sql
+    assert.ok(valContent.includes('28d: Single candidate with highest votes (only 1 candidate tally in session)'), 'Scenario 28d must test single candidate rejection');
+    assert.ok(valContent.includes('28e: Unique highest candidate among multiple candidates (600 vs 400 vs 400)'), 'Scenario 28e must test unique highest candidate rejection');
+    assert.ok(valContent.includes('28f: Selected winner not among tied candidates'), 'Scenario 28f must test winner not among tied candidates rejection');
+    assert.ok(valContent.includes('28h: Three-way tie — accepted'), 'Scenario 28h must test three-way tie acceptance');
+    assert.ok(valContent.includes('Step 2: Insert valid tie-resolution evidence for SESS_PC3_ACTIVE (Genuine two-candidate tie accepted'), 'Scenario 31 Step 2 must test two-candidate tie acceptance');
+  });
+
+  test('Test 8.1.6.2: Missing candidate tallies are explicitly rejected in verify_tie_resolution_insert()', () => {
+    const sqlContent = fs.readFileSync(customSqlPath, 'utf8');
+    const valContent = fs.readFileSync(validationSqlPath, 'utf8');
+
+    const funcMatch = sqlContent.match(/CREATE OR REPLACE FUNCTION verify_tie_resolution_insert\(\)[\s\S]*?\$\$ LANGUAGE plpgsql;/);
+    assert.ok(funcMatch, 'verify_tie_resolution_insert() must exist');
+    const funcBody = funcMatch[0];
+
+    assert.ok(funcBody.includes('v_total_tally_count'), 'verify_tie_resolution_insert() must count candidate tallies in session');
+    assert.ok(funcBody.includes('IF v_total_tally_count = 0 THEN'), 'verify_tie_resolution_insert() must reject when v_total_tally_count = 0');
+    assert.ok(funcBody.includes('no candidate tallies exist for session'), 'verify_tie_resolution_insert() must raise clear error for missing candidate tallies');
+    assert.ok(valContent.includes('28b: No candidate tallies — rejected'), 'Scenario 28b must test missing candidate tallies rejection');
+  });
+
+  test('Test 8.1.6.3: Zero-vote ties are explicitly rejected in verify_tie_resolution_insert()', () => {
+    const sqlContent = fs.readFileSync(customSqlPath, 'utf8');
+    const valContent = fs.readFileSync(validationSqlPath, 'utf8');
+
+    const funcMatch = sqlContent.match(/CREATE OR REPLACE FUNCTION verify_tie_resolution_insert\(\)[\s\S]*?\$\$ LANGUAGE plpgsql;/);
+    assert.ok(funcMatch, 'verify_tie_resolution_insert() must exist');
+    const funcBody = funcMatch[0];
+
+    assert.ok(
+      funcBody.includes('IF v_max_votes IS NULL OR v_max_votes <= 0 THEN'),
+      'verify_tie_resolution_insert() must reject when v_max_votes <= 0'
+    );
+    assert.ok(
+      funcBody.includes('maximum vote count among eligible APPROVED candidates in session % must be greater than zero'),
+      'verify_tie_resolution_insert() must raise specific error for zero-vote ties'
+    );
+    assert.ok(valContent.includes('28c: Zero votes for all candidates — rejected'), 'Scenario 28c must test zero-vote tie rejection');
+  });
+
+  test('Test 8.1.6.4: Eligible candidate filtering in tie comparison joins candidate_nominations with status = APPROVED', () => {
+    const sqlContent = fs.readFileSync(customSqlPath, 'utf8');
+    const valContent = fs.readFileSync(validationSqlPath, 'utf8');
+
+    const funcMatch = sqlContent.match(/CREATE OR REPLACE FUNCTION verify_tie_resolution_insert\(\)[\s\S]*?\$\$ LANGUAGE plpgsql;/);
+    assert.ok(funcMatch, 'verify_tie_resolution_insert() must exist');
+    const funcBody = funcMatch[0];
+
+    // Verify v_max_votes, v_top_tied_count, and v_winner_votes join candidate_nominations with cn.status = 'APPROVED'
+    const joinMatches = [...funcBody.matchAll(/JOIN\s+candidate_nominations\s+cn[\s\S]*?AND\s+cn\.status\s*=\s*'APPROVED'/g)];
+    assert.equal(
+      joinMatches.length,
+      6,
+      `Expected 6 APPROVED candidate_nominations joins (3 for PARLIAMENTARY + 3 for ASSEMBLY across v_max_votes, v_top_tied_count, and v_winner_votes), found ${joinMatches.length}`
+    );
+    assert.ok(
+      valContent.includes('28g: Unapproved candidate included in highest-vote comparison'),
+      'Scenario 28g must test exclusion of unapproved candidate from highest-vote tie comparison'
+    );
+  });
+
+  test('Test 8.1.6.5: Scenario 31 uses the valid TIED -> RESULT_READY_FOR_REVIEW -> PUBLISHED workflow', () => {
+    const valContent = fs.readFileSync(validationSqlPath, 'utf8');
+
+    const s31Index = valContent.indexOf('-- SCENARIO 31:');
+    assert.ok(s31Index !== -1, 'Scenario 31 must exist in tests/postgresql-validation.sql');
+    const s31Block = valContent.slice(s31Index);
+
+    const reviewTransitionIdx = s31Block.indexOf("SET status = 'RESULT_READY_FOR_REVIEW',\n    winner_candidate_id = 'TEST_CAND_2'");
+    const wrongWinnerPublishIdx = s31Block.indexOf("SET status = 'PUBLISHED',\n        is_published = TRUE,\n        winner_candidate_id = 'TEST_CAND_IND'");
+    const validPublishIdx = s31Block.indexOf("SET status = 'PUBLISHED',\n    is_published = TRUE,\n    winner_candidate_id = 'TEST_CAND_2'");
+
+    assert.ok(reviewTransitionIdx !== -1, 'Scenario 31 must first transition TIED session to RESULT_READY_FOR_REVIEW with resolved winner');
+    assert.ok(wrongWinnerPublishIdx > reviewTransitionIdx, 'Scenario 31 must attempt publication with wrong winner AFTER transitioning to RESULT_READY_FOR_REVIEW');
+    assert.ok(validPublishIdx > wrongWinnerPublishIdx, 'Scenario 31 must publish with resolved winner AFTER verifying wrong-winner rejection');
+  });
+
+  test('Test 8.1.6.6: Scenario 31 verifies the specific wrong-winner rejection message and post-failure state', () => {
+    const valContent = fs.readFileSync(validationSqlPath, 'utf8');
+
+    const s31Index = valContent.indexOf('-- SCENARIO 31:');
+    const s31Block = valContent.slice(s31Index);
+
+    assert.ok(
+      s31Block.includes("IF v_err_msg NOT LIKE '%does not match resolved winner (TEST_CAND_2) in tie_resolutions%'"),
+      'Scenario 31 must assert the specific winner mismatch trigger message'
+    );
+    assert.ok(
+      s31Block.includes("IF v_stat != 'RESULT_READY_FOR_REVIEW' OR v_pub != FALSE OR v_win != 'TEST_CAND_2' OR v_pub_admin IS NOT NULL OR v_pub_at IS NOT NULL"),
+      'Scenario 31 must verify session remains in RESULT_READY_FOR_REVIEW with is_published = FALSE after failed attempt'
+    );
+    assert.ok(
+      s31Block.includes("IF v_stat != 'PUBLISHED'") && s31Block.includes("IF v_pub != TRUE") && s31Block.includes("IF v_win != 'TEST_CAND_2'") && s31Block.includes("v_pub_admin IS DISTINCT FROM 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid OR v_pub_at IS NULL"),
+      'Scenario 31 must verify final PUBLISHED status, is_published = TRUE, winner, publisher ID, and publication timestamp'
+    );
+  });
+
+  test('Test 8.1.6.7: Programmatic model and enum inventory matches PRISMA_SCHEMA_DRAFT.prisma across documentation and reports', () => {
+    const inventory = extractPrismaInventory(prismaSchemaPath);
+
+    assert.equal(inventory.modelCount, 25, `Prisma schema must contain exactly 25 models, found ${inventory.modelCount}`);
+    assert.equal(inventory.enumCount, 17, `Prisma schema must contain exactly 17 enums, found ${inventory.enumCount}`);
+
+    const dbDesignContent = fs.readFileSync(dbDesignPath, 'utf8');
+    const report815Content = fs.readFileSync(phase815ReportPath, 'utf8');
+    const report816Content = fs.readFileSync(phase816ReportPath, 'utf8');
+
+    // Every actual model and enum must appear in DATABASE_DESIGN.md, PHASE_8_1_5_FINAL_AUDIT_REPORT.md, and PHASE_8_1_6_FINAL_AUDIT_REPORT.md
+    for (const model of inventory.models) {
+      assert.ok(dbDesignContent.includes(`\`${model.name}\``), `DATABASE_DESIGN.md must document model ${model.name}`);
+      assert.ok(report815Content.includes(`\`${model.name}\``), `PHASE_8_1_5_FINAL_AUDIT_REPORT.md must document model ${model.name}`);
+      assert.ok(report816Content.includes(`\`${model.name}\``), `PHASE_8_1_6_FINAL_AUDIT_REPORT.md must document model ${model.name}`);
+    }
+
+    for (const enumItem of inventory.enums) {
+      assert.ok(dbDesignContent.includes(`\`${enumItem.name}\``), `DATABASE_DESIGN.md must document enum ${enumItem.name}`);
+      assert.ok(report815Content.includes(`\`${enumItem.name}\``), `PHASE_8_1_5_FINAL_AUDIT_REPORT.md must document enum ${enumItem.name}`);
+      assert.ok(report816Content.includes(`\`${enumItem.name}\``), `PHASE_8_1_6_FINAL_AUDIT_REPORT.md must document enum ${enumItem.name}`);
+    }
+
+    // Ensure non-existent enum names are absent from Section 9.2 of PHASE_8_1_5_FINAL_AUDIT_REPORT.md and PHASE_8_1_6_FINAL_AUDIT_REPORT.md
+    const bogusEnums = [
+      'AccountStatus',
+      'VerificationStatus',
+      'PartyCategory',
+      'NominationStatus',
+      'DemoParticipationStatus',
+      'CountingSessionStatus',
+      'NotificationPriority',
+    ];
+    for (const bogus of bogusEnums) {
+      assert.ok(!report815Content.includes(`\`${bogus}\``), `PHASE_8_1_5_FINAL_AUDIT_REPORT.md must not list nonexistent enum ${bogus}`);
+    }
+  });
+
+  test('Test 8.1.6.8: PostgreSQL setup instructions include Prisma schema bootstrap before CUSTOM_DATABASE_INTEGRITY.sql', () => {
+    const sqlContent = fs.readFileSync(customSqlPath, 'utf8');
+    const valContent = fs.readFileSync(validationSqlPath, 'utf8');
+    const dbDesignContent = fs.readFileSync(dbDesignPath, 'utf8');
+    const dockerPlanContent = fs.readFileSync(dockerPlanPath, 'utf8');
+    const testingStrategyContent = fs.readFileSync(testingStrategyPath, 'utf8');
+
+    for (const [docName, content] of [
+      ['CUSTOM_DATABASE_INTEGRITY.sql', sqlContent],
+      ['tests/postgresql-validation.sql', valContent],
+      ['DATABASE_DESIGN.md', dbDesignContent],
+      ['DOCKER_DEVELOPMENT_PLAN.md', dockerPlanContent],
+      ['TESTING_STRATEGY.md', testingStrategyContent],
+    ]) {
+      const prismaPushIdx = content.indexOf('prisma');
+      const customSqlIdx = content.indexOf('psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f docs/backend-architecture/CUSTOM_DATABASE_INTEGRITY.sql');
+      const validationSqlIdx = content.indexOf('psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/postgresql-validation.sql');
+
+      assert.ok(prismaPushIdx !== -1 && content.includes('db push --schema=docs/backend-architecture/PRISMA_SCHEMA_DRAFT.prisma'), `${docName} must document prisma db push schema bootstrap`);
+      assert.ok(customSqlIdx > prismaPushIdx, `${docName} must apply CUSTOM_DATABASE_INTEGRITY.sql AFTER Prisma schema bootstrap`);
+      assert.ok(validationSqlIdx > customSqlIdx, `${docName} must execute tests/postgresql-validation.sql AFTER CUSTOM_DATABASE_INTEGRITY.sql`);
+    }
+  });
+
+  test('Test 8.1.6.9: GitHub Actions workflow includes the PostgreSQL 16 integration validation job while keeping frontend CI intact', () => {
+    const ciContent = fs.readFileSync(ciWorkflowPath, 'utf8');
+
+    // Frontend verify job intact
+    assert.ok(ciContent.includes('verify:'), 'CI workflow must preserve verify job');
+    assert.ok(ciContent.includes('npm run lint'), 'CI workflow must run lint');
+    assert.ok(ciContent.includes('npm run typecheck'), 'CI workflow must run typecheck');
+    assert.ok(ciContent.includes('npm test'), 'CI workflow must run npm test');
+    assert.ok(ciContent.includes('npm run build'), 'CI workflow must run npm run build');
+    assert.ok(ciContent.includes('npm run test:e2e'), 'CI workflow must run Playwright E2E tests');
+
+    // PostgreSQL 16 validation job
+    assert.ok(ciContent.includes('postgres-validation:'), 'CI workflow must define postgres-validation job');
+    assert.ok(ciContent.includes('image: postgres:16-alpine'), 'CI workflow must use postgres:16-alpine service container');
+    assert.ok(ciContent.includes('npx prisma validate --schema=docs/backend-architecture/PRISMA_SCHEMA_DRAFT.prisma'), 'CI workflow must validate Prisma schema');
+    assert.ok(ciContent.includes('npx prisma db push --schema=docs/backend-architecture/PRISMA_SCHEMA_DRAFT.prisma --skip-generate'), 'CI workflow must push Prisma schema to disposable database');
+    assert.ok(ciContent.includes('psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f docs/backend-architecture/CUSTOM_DATABASE_INTEGRITY.sql'), 'CI workflow must apply CUSTOM_DATABASE_INTEGRITY.sql');
+    assert.ok(ciContent.includes('psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/postgresql-validation.sql'), 'CI workflow must run tests/postgresql-validation.sql');
+  });
+});
+
 
 
 

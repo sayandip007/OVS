@@ -168,3 +168,30 @@ npm run dev
 cd ..
 npm run dev
 ```
+
+---
+
+## 5. Reproducible 5-Step Disposable PostgreSQL 16 Validation Workflow
+
+Because `docs/backend-architecture/CUSTOM_DATABASE_INTEGRITY.sql` alters tables and references PostgreSQL enum types defined in `docs/backend-architecture/PRISMA_SCHEMA_DRAFT.prisma`, it **cannot** be run on an empty database before the Prisma schema is applied. Use the following exact 5-step sequence locally or in CI (`.github/workflows/ci.yml`):
+
+```bash
+# 1. Create a disposable PostgreSQL 16 validation database
+export DATABASE_URL="postgresql://postgres:postgres@localhost:5432/ovs_validation_db?schema=public"
+psql "postgresql://postgres:postgres@localhost:5432/postgres" -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS ovs_validation_db WITH (FORCE);"
+psql "postgresql://postgres:postgres@localhost:5432/postgres" -v ON_ERROR_STOP=1 -c "CREATE DATABASE ovs_validation_db;"
+
+# 2. Validate & apply Prisma schema (creates all 25 tables and 17 enums using pinned Prisma 6.4.1)
+npx --yes prisma@6.4.1 validate --schema=docs/backend-architecture/PRISMA_SCHEMA_DRAFT.prisma
+npx --yes prisma@6.4.1 db push --schema=docs/backend-architecture/PRISMA_SCHEMA_DRAFT.prisma --skip-generate
+
+# 3. Apply custom SQL constraints, partial unique indexes, and PL/pgSQL triggers
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f docs/backend-architecture/CUSTOM_DATABASE_INTEGRITY.sql
+
+# 4. Execute the 31-scenario PostgreSQL integration validation suite
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f tests/postgresql-validation.sql
+
+# 5. Clean up disposable database
+psql "postgresql://postgres:postgres@localhost:5432/postgres" -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS ovs_validation_db WITH (FORCE);"
+```
+
