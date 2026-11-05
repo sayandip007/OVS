@@ -2,7 +2,7 @@ import {
   ELECTION_TYPES,
   CONSTITUENCY_TYPES,
   PARTICIPATION_STATUSES,
-} from './constants';
+} from './constants.js';
 
 /**
  * Checks whether a voter is eligible for a specific election based on their

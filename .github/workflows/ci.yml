@@ -38,6 +38,12 @@ jobs:
       - name: 5. Frontend production build
         run: npm run build
 
+      - name: Install Playwright Chromium browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright E2E test suite
+        run: npm run test:e2e
+
   backend-and-postgresql-verification:
     name: Backend Foundation & Live PostgreSQL 16 Verification
     runs-on: ubuntu-latest

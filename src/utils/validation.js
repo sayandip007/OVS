@@ -1,4 +1,4 @@
-import { ELECTION_TYPES, CONSTITUENCY_TYPES, ELECTION_STATUSES } from './constants';
+import { ELECTION_TYPES, CONSTITUENCY_TYPES, ELECTION_STATUSES } from './constants.js';
 
 export function calculateAgeFromDob(dobString) {
   if (!dobString) return -1;
