@@ -37,16 +37,31 @@
 
 ## 2. Technology Stack & Supported Runtime Versions
 
-- **Frontend Framework**: React `^19.0.1` (`react@19.3.1`, `react-dom@19.3.1`), React Router `^7.18.5`
-- **Build Tool**: Vite `^8.3.0` (`vite@8.3.5`) with `@vitejs/plugin-react`
-- **Styling**: Tailwind CSS `^4.3.3` (`@tailwindcss/vite`)
-- **Icons & Motion**: `lucide-react` `^0.546.0`, `motion` `^12.23.24`
-- **Linting & Typechecking**: ESLint `^10.14.0` (`eslint.config.js`), TypeScript `^7.0.2` (`tsconfig.json`)
-- **Testing**: Node.js built-in test runner (`node:test`) + Playwright `^1.64.1` (`@playwright/test`)
-- **Canonical Package Manager**: `npm` (`packageManager: "npm@10.9.9"`, canonical lockfile: `package-lock.json`)
+- **Frontend Framework**: React `^19.0.1` (`react@19.0.1`, `react-dom@19.0.1`), React Router `^7.5.0`
+- **Build Tool**: Vite `^6.2.0` with `@vitejs/plugin-react`
+- **Styling**: Tailwind CSS `^4.3.4` (`@tailwindcss/vite`)
+- **Icons & UI**: `lucide-react` `^0.546.0`
+- **Backend Foundation (Phase 8.2 Modular Monolith)**:
+  - Node.js 22+ (ES Modules)
+  - Express 5 (`5.1.0`)
+  - TypeScript (`~5.8.2`, strict mode)
+  - PostgreSQL 16+
+  - Prisma ORM (`6.4.1`) with explicit snake_case physical mappings and custom PL/pgSQL database integrity triggers
+  - Zod (`3.24.2`) for environment configuration and HTTP request validation
+  - Pino (`9.6.0`) & `pino-http` (`10.5.0`) structured JSON logger
+  - Helmet (`8.1.0`), CORS (`2.8.5`), and `express-rate-limit` (`7.5.0`)
+  - RFC 9457 Problem Details error responses (`application/problem+json`)
+- **Testing**:
+  - Node.js built-in test runner (`node:test`)
+  - Architecture & SQL Consistency Test Suite (55 automated tests)
+  - Election Architecture & Lifecycle Suite (37 automated tests)
+  - Backend Unit & Integration Tests (`node:test` + `supertest@7.0.0`)
+  - Playwright `^1.51.1` (`@playwright/test`) End-to-End browser test suite
+- **Canonical Package Manager**: `npm` (`packageManager: "npm@10.9.2"`, canonical lockfile: `package-lock.json`)
 - **Supported Runtime Versions**:
-  - **Node.js**: `>=22.0.0` (verified on `v22.23.4`)
-  - **npm**: `>=10.0.0` (verified on `10.9.9`)
+  - **Node.js**: `>=22.0.0`
+  - **npm**: `>=10.0.0`
+  - **PostgreSQL**: `16+` (for backend development & database verification)
 
 ---
 
@@ -56,7 +71,9 @@
 ├── .github/
 │   └── workflows/
 │       └── ci.yml
+├── .env.example
 ├── .gitignore
+├── docker-compose.yml
 ├── index.html
 ├── package.json
 ├── package-lock.json
@@ -75,6 +92,25 @@
 ├── PHASE_7_6_FINAL_REPORT.md
 ├── PHASE_7_7_AUDIT.md
 ├── PHASE_7_7_FINAL_REPORT.md
+├── backend/
+│   ├── Dockerfile
+│   ├── .env.example
+│   ├── package.json
+│   ├── tsconfig.json
+│   ├── tsconfig.build.json
+│   ├── prisma/
+│   │   ├── schema.prisma
+│   │   ├── seed.ts
+│   │   └── migrations/
+│   ├── src/
+│   │   ├── app.ts
+│   │   ├── server.ts
+│   │   ├── config/
+│   │   ├── common/
+│   │   └── modules/
+│   └── tests/
+│       ├── unit/
+│       └── integration/
 ├── src/
 │   ├── main.jsx
 │   ├── App.jsx
@@ -205,19 +241,46 @@
 
 ---
 
-## 4. Installation, Development, Build & Verification Commands
+## 4. Setup, Development, Build & Verification Guide
 
-### Reproducible Installation
+### 4.1 Prerequisites
+- **Node.js**: `>=22.0.0` (Verify with `node -v`)
+- **npm**: `>=10.0.0` (Verify with `npm -v`)
+- **Docker & Docker Compose** *(Optional, for PostgreSQL 16 containerized backend)*: Verify with `docker compose version`
+
+---
+
+### 4.2 Environment Configuration
+Copy the provided environment template to initialize local settings:
 ```bash
-# Install exact locked dependencies from package-lock.json
-npm ci
+# Copy root environment configuration
+cp .env.example .env
+
+# (Optional) Copy backend environment configuration if running backend independently
+cp backend/.env.example backend/.env
 ```
 
-### Development & Production Preview
+The application supports dual runtime data-source modes configured via `VITE_DATA_SOURCE_MODE` in `.env`:
+- **`LOCAL_DEMO`** *(Default)*: Operates 100% in the browser using curated demonstration datasets and `localStorage`. Zero backend server or database setup required.
+- **`BACKEND_API`**: Directs the frontend API client (`src/services/apiClient.js`) to communicate with the Express 5 + PostgreSQL 16 backend at `http://localhost:5000/api/v1`.
+
+---
+
+### 4.3 Mode A: Frontend Standalone Demo (Quick Start)
+To run the educational voting prototype with zero backend dependencies:
+
 ```bash
-# Start development server on http://localhost:3000
+# 1. Install dependencies from package-lock.json
+npm ci
+
+# 2. Start the Vite development server (Port 3000)
 npm run dev
 
+# 3. Open http://localhost:3000 in your browser
+```
+
+To create and preview the optimized production build:
+```bash
 # Build production bundle into dist/
 npm run build
 
@@ -225,21 +288,109 @@ npm run build
 npm run preview
 ```
 
-### Lint, Typecheck & Automated Tests
+---
+
+### 4.4 Mode B: Backend & PostgreSQL Local Setup
+To run the Phase 8.2 modular monolith backend with a live PostgreSQL 16 database:
+
+#### 1. Start PostgreSQL 16
+You can launch a lightweight PostgreSQL 16 container via Docker:
 ```bash
-# Run ESLint across src/, tests/, and config files
-npm run lint
+docker run --name ovs-postgres -e POSTGRES_USER=ovs_admin -e POSTGRES_PASSWORD=ovs_secret_dev -e POSTGRES_DB=ovs_db -p 5432:5432 -d postgres:16-alpine
+```
+*(Or connect to an existing local PostgreSQL 16 instance and update `DATABASE_URL` in `.env`)*
 
-# Run TypeScript compiler validation (tsc --noEmit)
-npm run typecheck
+#### 2. Bootstrap Database Schema & Seed Data
+```bash
+# Validate Prisma schema
+npm run prisma:validate
 
-# Run Node.js unit and service test suite (37 suites covering Phases 1–7.7)
+# Generate Prisma Client
+npm run prisma:generate
+
+# Deploy migrations (DDL + PL/pgSQL custom integrity triggers)
+npm run prisma:migrate:deploy
+
+# Seed synthetic DEMO_SAMPLE dataset (idempotent)
+npm run prisma:seed
+```
+
+#### 3. Start Backend API Server
+```bash
+# Start backend server in development mode with live watch (Port 5000)
+npm run backend:dev
+
+# Verify health probes
+curl http://localhost:5000/api/v1/health/live
+curl http://localhost:5000/api/v1/health/ready
+```
+
+---
+
+### 4.5 Mode C: Full-Stack Docker Compose Setup
+Run the entire platform (PostgreSQL 16, Backend API on port 5000, and Frontend on port 3000) with a single command:
+
+```bash
+# Build and start all services in the background
+docker compose up -d --build
+
+# View container logs
+docker compose logs -f
+
+# Tear down all services and networks
+docker compose down
+```
+
+---
+
+### 4.6 Verification, Linting, Typechecking & Test Suites
+
+#### Full Test Suite Execution
+```bash
+# Run all 92 automated tests (37 Election Architecture tests + 55 Architecture & Database Consistency tests)
 npm test
 
-# Install Playwright Chromium browser (if not already present)
+# Run individual test suites
+npm run test:unit            # 37 Election architecture & lifecycle tests
+npm run test:architecture    # 55 Database integrity, Prisma schema, & trigger consistency tests
+```
+
+#### Backend Unit & Integration Tests
+```bash
+# Run backend foundation unit tests (15 tests: Zod validation, Problem Details, error mapping)
+npm run backend:test:unit
+
+# Run backend API integration tests against live PostgreSQL 16 (requires running database)
+npm run backend:test:integration
+
+# Run all backend tests
+npm run backend:test
+```
+
+#### Code Quality, Typechecking & Linting
+```bash
+# Frontend ESLint validation
+npm run lint
+
+# Frontend TypeScript compiler check (tsc --noEmit)
+npm run typecheck
+
+# Backend TypeScript compiler check
+npm run backend:typecheck
+
+# Backend TypeScript lint
+npm run backend:lint
+
+# Backend production build
+npm run backend:build
+```
+
+#### Playwright Browser End-to-End (E2E) Testing
+```bash
+# Install Playwright Chromium browser binary (if not already installed)
 npx playwright install chromium
 
-# Run Playwright End-to-End (E2E) browser test suite (12 spec files)
+# Run all 12 browser E2E test specs
 npm run test:e2e
 ```
 
