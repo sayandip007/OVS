@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useAuth } from '../../context/AuthContext';
 import { useVoter } from '../../context/VoterContext';
 import { useElection } from '../../context/ElectionContext';
 import { useNotification } from '../../context/NotificationContext';
+import { frontendEnv } from '../../config/env';
+import { apiClient } from '../../services/apiClient';
 import Modal from '../../components/common/Modal';
 import { GENDER_OPTIONS } from '../../utils/constants';
 import {
@@ -11,6 +14,7 @@ import {
 import { defaultAvatar } from '../../assets';
 
 export default function VoterProfile() {
+  const { csrfToken } = useAuth();
   const {
     currentVoter,
     voterState,
@@ -117,8 +121,30 @@ export default function VoterProfile() {
     });
   };
 
-  const handleSaveProfile = (e) => {
+  const handleSaveProfile = async (e) => {
     e.preventDefault();
+
+    if (frontendEnv.isBackendApi && csrfToken) {
+      try {
+        await apiClient.voters.updateMe(
+          {
+            fullName: form.fullName.trim() || undefined,
+            gender: form.gender || undefined,
+            email: form.email.trim() || undefined,
+            mobile: form.mobile.trim() || undefined,
+            address: form.address.trim() || undefined,
+            pinCode: form.pinCode.trim() || undefined,
+          },
+          csrfToken
+        );
+      } catch (err) {
+        notifyError(
+          err?.detail || err?.message || 'Failed to update profile on backend.'
+        );
+        return;
+      }
+    }
+
     const res = updateCurrentVoterProfile(form, {
       allowAdminConstituencyCorrection: false,
     });

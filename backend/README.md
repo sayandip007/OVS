@@ -1,6 +1,6 @@
-# OVS Backend Foundation (Phase 8.2)
+# OVS Backend Foundation & Voter Authentication (Phases 8.2 & 8.3)
 
-Production-grade **Modular Monolith** backend foundation for the **Online Voting System (OVS)** educational election-management and voting simulation platform.
+Production-grade **Modular Monolith** backend for the **Online Voting System (OVS)** educational election-management and voting simulation platform.
 
 ## 1. Technology Stack
 
@@ -10,8 +10,10 @@ Production-grade **Modular Monolith** backend foundation for the **Online Voting
 - **Database**: PostgreSQL 16+
 - **ORM & Migrations**: Prisma ORM (`6.4.1`) with explicit snake_case `@map()` / `@@map()` physical mappings and custom PL/pgSQL integrity triggers
 - **Validation**: Zod (`3.24.2`) for startup environment variables and HTTP request parameters
+- **Authentication & Sessions**: Server-managed opaque sessions, SHA-256 database token hashing, HttpOnly secure cookies (`ovs_session`), constant-time HMAC-SHA256 anti-CSRF protection
+- **OTP Verification**: Simulated mobile OTP provider abstraction (`DevelopmentOtpProvider` & `FutureSmsProvider`), HMAC-SHA256 challenge digests, timing-safe equality verification, 5-minute TTL, and 3-attempt lockout
 - **Observability**: Pino (`9.6.0`) + `pino-http` (`10.5.0`) structured JSON logging with correlation `X-Request-Id` and strict PII redaction
-- **Security**: Helmet (`8.1.0`), strict CORS allowlist (`cors` `2.8.5` with `credentials: true`), and `express-rate-limit` (`7.5.0`)
+- **Security**: Helmet (`8.1.0`), strict CORS allowlist (`cors` `2.8.5` with `credentials: true`), anti-CSRF token verification, and `express-rate-limit` (`7.5.0`)
 - **Error Contract**: RFC 9457 Problem Details (`application/problem+json`)
 - **Testing**: Node.js built-in test runner (`node:test`) + Supertest (`7.0.0`) against live PostgreSQL
 
@@ -55,6 +57,23 @@ backend/
 │   └── modules/
 │       ├── health/
 │       │   └── health.routes.ts
+│       ├── auth/
+│       │   ├── auth.constants.ts
+│       │   ├── auth.types.ts
+│       │   ├── auth.schemas.ts
+│       │   ├── otp.service.ts
+│       │   ├── session.service.ts
+│       │   ├── auth.repository.ts
+│       │   ├── auth.service.ts
+│       │   ├── auth.middleware.ts
+│       │   ├── auth.controller.ts
+│       │   └── auth.routes.ts
+│       ├── voters/
+│       │   ├── voters.schemas.ts
+│       │   ├── voters.repository.ts
+│       │   ├── voters.service.ts
+│       │   ├── voters.controller.ts
+│       │   └── voters.routes.ts
 │       ├── geography/
 │       │   ├── geography.schemas.ts
 │       │   ├── geography.repository.ts
@@ -74,7 +93,9 @@ backend/
 │           └── candidates.routes.ts
 └── tests/
     ├── unit/
-    │   └── foundation.unit.test.ts
+    │   ├── foundation.unit.test.ts
+    │   ├── auth.unit.test.ts
+    │   └── voters.unit.test.ts
     └── integration/
         └── api.integration.test.ts
 ```
@@ -94,10 +115,15 @@ npm --prefix backend run prisma:migrate:deploy
 # 3. Seed synthetic DEMO_SAMPLE dataset (idempotent)
 npm --prefix backend run prisma:seed
 
-# 4. Run unit and live PostgreSQL integration tests
-npm --prefix backend test
+# 4. Run unit tests (foundation, auth, voters - 43 unit tests)
+npm run backend:test:unit
 
-# 5. Start backend server in development mode (Port 5000)
+# 5. Run live PostgreSQL integration tests (including Phase 8.3 auth & voters suite)
+npm run backend:test:integration
+
+# 6. Start backend server in development mode (Port 5000)
+npm run backend:dev
+```
 npm --prefix backend run dev
 ```
 

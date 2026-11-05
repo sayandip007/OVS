@@ -105,3 +105,37 @@ All validation failures (`400`), forbidden CORS origins (`403`), unmatched route
 - **`GET /api/v1/candidates/:candidateId`**
   - **Path Params**: `candidateId` (e.g. `CAND-LS29-WB-KRN-1`)
   - **Response**: Candidate profile, `currentRegisteredPartyId`, `currentRegisteredParty`, and `nominations[]` where each nomination preserves its own historical `nominationPartyId` and `nominationParty`.
+
+### 3.5 Voter Authentication & Session Management (Phase 8.3)
+- **`POST /api/v1/auth/register`**
+  - **Payload**: `fullName`, `dateOfBirth` (>= 18 yrs), `gender`, `mobile`, `email`, `epicNumber`, `address`, `pinCode`, `stateId`, `districtId`, `parliamentaryConstituencyId`, `assemblyConstituencyId`.
+  - **Behavior**: Atomic creation of `User` and `VoterProfile` records in transaction. Normalizes mobile/email, validates geographic hierarchy, rejects duplicates with 409 Conflict.
+- **`POST /api/v1/auth/otp/request`**
+  - **Payload**: `identifier` (mobile or EPIC).
+  - **Behavior**: Issues 5-minute cryptographic OTP challenge, records HMAC-SHA256 digest in `AuthChallenge`, limits rate, avoids account enumeration.
+- **`POST /api/v1/auth/otp/verify`**
+  - **Payload**: `challengeId` (UUID), `otp` (6 digits).
+  - **Behavior**: Constant-time digest verification, max 3 attempts lockout, atomic challenge consumption preventing replay, creates server session with SHA-256 token hashing, sets HttpOnly `ovs_session` cookie.
+- **`GET /api/v1/auth/me`**
+  - **Response**: Authenticated user identity and safe voter profile summary. Requires active session.
+- **`GET /api/v1/auth/csrf`**
+  - **Response**: `{ csrfToken }` HMAC-derived token bound to active session.
+- **`GET /api/v1/auth/sessions`**
+  - **Response**: List of active user sessions without exposing raw session tokens.
+- **`DELETE /api/v1/auth/sessions/:sessionId`**
+  - **Behavior**: Revokes specific session owned by authenticated user.
+- **`POST /api/v1/auth/logout`**
+  - **Behavior**: Revokes current session, clears `ovs_session` cookie.
+- **`POST /api/v1/auth/logout-all`**
+  - **Behavior**: Revokes all sessions belonging to the current user.
+- **`GET /api/v1/auth/dev/latest-otp`** (Development/Testing Only)
+  - **Query Params**: `identifier`
+  - **Behavior**: Returns latest generated OTP in non-production environments. Strictly disabled in production.
+
+### 3.6 Voter Profile APIs (Phase 8.3)
+- **`GET /api/v1/voters/me`**
+  - **Behavior**: Returns authenticated voter's profile with fully resolved State, District, Parliamentary Constituency, and Assembly Constituency objects.
+- **`PATCH /api/v1/voters/me`**
+  - **Behavior**: Updates permitted demographic fields (`fullName`, `gender`, `address`, `pinCode`, `mobile`, `email`, `stateId`, `districtId`, `assemblyConstituencyId`, `parliamentaryConstituencyId`). Enforces anti-CSRF token (`X-CSRF-Token`). Validates geographic hierarchy consistency. Strictly rejects role/privilege escalation.
+- **`GET /api/v1/voters/me/constituencies`**
+  - **Behavior**: Returns voter's geographic and constituency relationships.

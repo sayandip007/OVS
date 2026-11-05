@@ -30,7 +30,7 @@ export function createCorsMiddleware(allowedOriginsInput: string | string[]) {
   const corsHandler = cors({
     origin: true,
     credentials: true,
-    methods: ['GET', 'HEAD', 'OPTIONS'],
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Accept', 'X-Request-Id', 'X-CSRF-Token'],
     exposedHeaders: ['X-Request-Id'],
     maxAge: 600,

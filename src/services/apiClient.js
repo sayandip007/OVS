@@ -195,6 +195,38 @@ export function createOvsApiClient(options = {}) {
       getById: (candidateId) =>
         request(`/candidates/${encodeURIComponent(candidateId)}`),
     },
+
+    // Phase 8.3 Authentication & Session Management
+    auth: {
+      register: (data) =>
+        request('/auth/register', { method: 'POST', body: data }),
+      requestOtp: (data) =>
+        request('/auth/otp/request', { method: 'POST', body: data }),
+      verifyOtp: (data) =>
+        request('/auth/otp/verify', { method: 'POST', body: data }),
+      getMe: () => request('/auth/me'),
+      getCsrf: () => request('/auth/csrf'),
+      listSessions: () => request('/auth/sessions'),
+      revokeSession: (sessionId, csrfToken) =>
+        request(`/auth/sessions/${encodeURIComponent(sessionId)}`, {
+          method: 'DELETE',
+          csrfToken,
+        }),
+      logout: (csrfToken) =>
+        request('/auth/logout', { method: 'POST', csrfToken }),
+      logoutAll: (csrfToken) =>
+        request('/auth/logout-all', { method: 'POST', csrfToken }),
+      getDevOtp: (identifier) =>
+        request('/auth/dev/latest-otp', { query: { identifier } }),
+    },
+
+    // Phase 8.3 Voter Profile APIs
+    voters: {
+      getMe: () => request('/voters/me'),
+      updateMe: (data, csrfToken) =>
+        request('/voters/me', { method: 'PATCH', body: data, csrfToken }),
+      getConstituencies: () => request('/voters/me/constituencies'),
+    },
   };
 }
 

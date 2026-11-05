@@ -99,3 +99,15 @@ export function validateRequest(schemas: RequestValidationSchemas) {
     next();
   };
 }
+
+export function validateBody(schema: ZodTypeAny) {
+  return validateRequest({ body: schema });
+}
+
+export function validateParams(schema: ZodTypeAny) {
+  return validateRequest({ params: schema });
+}
+
+export function validateQuery(schema: ZodTypeAny) {
+  return validateRequest({ query: schema });
+}

@@ -1,4 +1,5 @@
 import express, { type Express } from 'express';
+import cookieParser from 'cookie-parser';
 import type { DatabaseReadinessResult } from './config/database.js';
 import { requestIdMiddleware } from './common/middleware/requestId.js';
 import { httpLoggerMiddleware } from './common/middleware/logger.js';
@@ -16,6 +17,14 @@ import { createGeographyRouter } from './modules/geography/geography.routes.js';
 import { createElectionsRouter } from './modules/elections/elections.routes.js';
 import { createPartiesRouter } from './modules/parties/parties.routes.js';
 import { createCandidatesRouter } from './modules/candidates/candidates.routes.js';
+import {
+  createAuthRouter,
+  type CreateAuthRouterOptions,
+} from './modules/auth/auth.routes.js';
+import {
+  createVotersRouter,
+  type CreateVotersRouterOptions,
+} from './modules/voters/voters.routes.js';
 
 export interface CreateAppOptions {
   clientOrigin?: string;
@@ -23,6 +32,8 @@ export interface CreateAppOptions {
   enableRateLimit?: boolean;
   rateLimitMax?: number;
   readinessCheck?: () => Promise<DatabaseReadinessResult>;
+  authOptions?: CreateAuthRouterOptions;
+  votersOptions?: CreateVotersRouterOptions;
 }
 
 export function createApp(options: CreateAppOptions = {}): Express {
@@ -39,6 +50,7 @@ export function createApp(options: CreateAppOptions = {}): Express {
   app.use(httpLoggerMiddleware);
   app.use(createHelmetMiddleware());
   app.use(createCorsMiddleware(origins));
+  app.use(cookieParser());
   app.use(express.json({ limit: '100kb' }));
 
   const shouldRateLimit =
@@ -53,6 +65,14 @@ export function createApp(options: CreateAppOptions = {}): Express {
     '/api/v1/health',
     createHealthRouter({ readinessCheck: options.readinessCheck })
   );
+  app.use(
+    '/api/v1/auth',
+    createAuthRouter({
+      enableRateLimit: options.enableRateLimit,
+      ...options.authOptions,
+    })
+  );
+  app.use('/api/v1/voters', createVotersRouter(options.votersOptions));
   app.use('/api/v1/geography', createGeographyRouter());
   app.use('/api/v1/elections', createElectionsRouter());
   app.use('/api/v1/parties', createPartiesRouter());

@@ -100,6 +100,42 @@ export class ConflictProblemError extends AppProblemError {
   }
 }
 
+export class UnauthorizedProblemError extends AppProblemError {
+  constructor(detail = 'Authentication is required to access this resource.') {
+    super({
+      status: 401,
+      code: 'UNAUTHORIZED',
+      title: 'Unauthorized',
+      detail,
+      type: 'https://ovs.eci.gov.in/errors/unauthorized',
+    });
+  }
+}
+
+export class ForbiddenProblemError extends AppProblemError {
+  constructor(detail = 'You do not have permission to access this resource.', code = 'FORBIDDEN') {
+    super({
+      status: 403,
+      code,
+      title: 'Forbidden',
+      detail,
+      type: 'https://ovs.eci.gov.in/errors/forbidden',
+    });
+  }
+}
+
+export class CsrfProblemError extends AppProblemError {
+  constructor(detail = 'A valid anti-CSRF token is required in the X-CSRF-Token header.') {
+    super({
+      status: 403,
+      code: 'CSRF_TOKEN_INVALID',
+      title: 'Invalid or Missing CSRF Token',
+      detail,
+      type: 'https://ovs.eci.gov.in/errors/csrf-token-invalid',
+    });
+  }
+}
+
 export class ForbiddenOriginProblemError extends AppProblemError {
   constructor(origin?: string) {
     super({

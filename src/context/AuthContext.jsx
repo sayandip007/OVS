@@ -1,8 +1,10 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { STORAGE_KEYS, DEMO_OTP_CODES, OTP_CONFIG } from '../utils/constants';
 import { storageService } from '../services/storageService';
 import { INITIAL_ADMIN_OFFICERS } from '../data/voters';
 import { useElection } from './ElectionContext';
+import { frontendEnv } from '../config/env';
+import { apiClient } from '../services/apiClient';
 import {
   canAdminAccessRoute,
   canAdminPerformAction,
@@ -164,11 +166,54 @@ export function AuthProvider({ children }) {
 
   const [session, setSession] = useState(() => loadValidSession());
   const [otpChallenge, setOtpChallenge] = useState(null);
+  const [backendUser, setBackendUser] = useState(null);
+  const [csrfToken, setCsrfToken] = useState(null);
 
   const updateSession = useCallback((nextSession) => {
     storageService.setSessionItem(STORAGE_KEYS.SESSION_AUTH, nextSession);
     setSession(nextSession);
   }, []);
+
+  // When configured for BACKEND_API mode, probe /api/v1/auth/me to restore live session
+  useEffect(() => {
+    if (!frontendEnv.isBackendApi) return;
+    let cancelled = false;
+
+    async function checkBackendSession() {
+      try {
+        const res = await apiClient.auth.getMe();
+        if (cancelled) return;
+        if (res?.data?.user) {
+          setBackendUser(res.data.user);
+          const voterProfile = res.data.voterProfile;
+          const assignedId = voterProfile?.id || res.data.user.id;
+          updateSession({
+            role: res.data.user.role || 'VOTER',
+            voterId: assignedId,
+            adminId: null,
+            authenticatedAt: new Date().toISOString(),
+            expiresAt: Date.now() + OTP_CONFIG.SESSION_DURATION_MS,
+          });
+
+          try {
+            const csrfRes = await apiClient.auth.getCsrf();
+            if (!cancelled && csrfRes?.data?.csrfToken) {
+              setCsrfToken(csrfRes.data.csrfToken);
+            }
+          } catch {
+            // Non-fatal if CSRF endpoint probe fails
+          }
+        }
+      } catch {
+        // Backend session not present or expired
+      }
+    }
+
+    checkBackendSession();
+    return () => {
+      cancelled = true;
+    };
+  }, [updateSession]);
 
   const verifyVoterCredentials = useCallback(
     (identifier, mobile = '') => {
@@ -359,8 +404,17 @@ export function AuthProvider({ children }) {
     [verifyAdminCredentials, completeAdminLogin]
   );
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    if (frontendEnv.isBackendApi && csrfToken) {
+      try {
+        await apiClient.auth.logout(csrfToken);
+      } catch {
+        // Safe to ignore on frontend logout
+      }
+    }
     setOtpChallenge(null);
+    setBackendUser(null);
+    setCsrfToken(null);
     updateSession({
       role: null,
       voterId: null,
@@ -368,7 +422,7 @@ export function AuthProvider({ children }) {
       adminRole: null,
       expiresAt: null,
     });
-  }, [updateSession]);
+  }, [updateSession, csrfToken]);
 
   const currentAdmin =
     session.role === 'ADMIN'
@@ -395,6 +449,10 @@ export function AuthProvider({ children }) {
       value={{
         session,
         otpChallenge,
+        backendUser,
+        csrfToken,
+        isBackendApi: frontendEnv.isBackendApi,
+        setCsrfToken,
         isAuthenticated: Boolean(session.role),
         isVoter,
         isAdmin,

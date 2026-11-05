@@ -13,12 +13,16 @@ import { useElection } from '../../context/ElectionContext';
 import { useNotification } from '../../context/NotificationContext';
 import { DEMO_OTP_CODES, OTP_CONFIG } from '../../utils/constants';
 import { eciLogo } from '../../assets';
+import { frontendEnv } from '../../config/env';
+import { apiClient } from '../../services/apiClient';
 
 export default function VoterLogin() {
   const navigate = useNavigate();
   const {
     requestVoterOtp,
     verifyVoterOtp,
+    completeVoterLogin,
+    setCsrfToken,
     otpChallenge,
     isVoterAuthenticated,
   } = useAuth();
@@ -28,6 +32,7 @@ export default function VoterLogin() {
   const [loginIdentifier, setLoginIdentifier] = useState('DEMO-EPIC-001');
   const [phoneNumber, setPhoneNumber] = useState('9876543210');
   const [otpRequested, setOtpRequested] = useState(false);
+  const [backendChallengeId, setBackendChallengeId] = useState(null);
   const [otpInput, setOtpInput] = useState('');
   const [expectedOtp, setExpectedOtp] = useState(DEMO_OTP_CODES.PRIMARY);
   const [resendCooldown, setResendCooldown] = useState(0);
@@ -50,9 +55,52 @@ export default function VoterLogin() {
     return () => clearInterval(id);
   }, [resendCooldown, expirySecondsLeft]);
 
-  const handleRequestOtp = (e) => {
+  const handleRequestOtp = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
+
+    if (frontendEnv.isBackendApi) {
+      try {
+        const res = await apiClient.auth.requestOtp({
+          identifier: loginIdentifier.trim(),
+          phoneNumber: phoneNumber.trim(),
+        });
+        const challengeId = res.data.challengeId;
+        setOtpRequested(true);
+        setBackendChallengeId(challengeId);
+        setResendCooldown(OTP_CONFIG.RESEND_COOLDOWN_SECONDS);
+        setExpirySecondsLeft(Math.floor(res.data.expiresInSeconds || 300));
+
+        let devCode = '';
+        try {
+          const devRes = await apiClient.auth.getDevOtp(
+            loginIdentifier.trim() || phoneNumber.trim()
+          );
+          if (devRes?.data?.otp) {
+            devCode = devRes.data.otp;
+            setExpectedOtp(devCode);
+            setOtpInput(devCode);
+          }
+        } catch {
+          // Dev route unavailable in production
+        }
+
+        notifyInfo(
+          devCode
+            ? `Development Backend OTP generated: ${devCode}`
+            : 'OTP challenge generated. Please enter your code.'
+        );
+        return;
+      } catch (err) {
+        notifyError(
+          err?.detail || err?.message || 'Failed to request OTP from backend.'
+        );
+        return;
+      } finally {
+        setIsSubmitting(false);
+      }
+    }
+
     setTimeout(() => {
       const res = requestVoterOtp({
         voterIdentifier: loginIdentifier.trim(),
@@ -78,7 +126,47 @@ export default function VoterLogin() {
     }, 200);
   };
 
-  const handleResendOtp = () => {
+  const handleResendOtp = async () => {
+    if (frontendEnv.isBackendApi) {
+      setIsSubmitting(true);
+      try {
+        const res = await apiClient.auth.requestOtp({
+          identifier: loginIdentifier.trim(),
+          phoneNumber: phoneNumber.trim(),
+        });
+        const challengeId = res.data.challengeId;
+        setBackendChallengeId(challengeId);
+        setResendCooldown(OTP_CONFIG.RESEND_COOLDOWN_SECONDS);
+        setExpirySecondsLeft(Math.floor(res.data.expiresInSeconds || 300));
+
+        let devCode = '';
+        try {
+          const devRes = await apiClient.auth.getDevOtp(
+            loginIdentifier.trim() || phoneNumber.trim()
+          );
+          if (devRes?.data?.otp) {
+            devCode = devRes.data.otp;
+            setExpectedOtp(devCode);
+            setOtpInput(devCode);
+          }
+        } catch {}
+
+        notifyInfo(
+          devCode
+            ? `Resent Development Backend OTP: ${devCode}`
+            : 'New OTP code issued.'
+        );
+        return;
+      } catch (err) {
+        notifyError(
+          err?.detail || err?.message || 'Failed to resend OTP from backend.'
+        );
+        return;
+      } finally {
+        setIsSubmitting(false);
+      }
+    }
+
     const res = requestVoterOtp({
       voterIdentifier: loginIdentifier.trim(),
       phoneNumber: phoneNumber.trim(),
@@ -97,7 +185,7 @@ export default function VoterLogin() {
     );
   };
 
-  const handleVerifyOtp = (e) => {
+  const handleVerifyOtp = async (e) => {
     e.preventDefault();
     if (expirySecondsLeft <= 0) {
       notifyError(
@@ -107,6 +195,37 @@ export default function VoterLogin() {
     }
 
     setIsSubmitting(true);
+
+    if (frontendEnv.isBackendApi && backendChallengeId) {
+      try {
+        const verifyRes = await apiClient.auth.verifyOtp({
+          challengeId: backendChallengeId,
+          otp: otpInput.trim(),
+        });
+        const userData = verifyRes.data.user;
+        const voterData = verifyRes.data.voterProfile;
+
+        try {
+          const csrfRes = await apiClient.auth.getCsrf();
+          if (csrfRes?.data?.csrfToken && setCsrfToken) {
+            setCsrfToken(csrfRes.data.csrfToken);
+          }
+        } catch {}
+
+        completeVoterLogin(voterData?.id || userData.id);
+        notifySuccess(
+          `Session established for ${voterData?.fullName || userData.mobileNumber || 'Voter'}. Redirecting to dashboard.`
+        );
+        navigate('/voter/dashboard');
+        return;
+      } catch (err) {
+        notifyError(err?.detail || err?.message || 'OTP verification failed.');
+        return;
+      } finally {
+        setIsSubmitting(false);
+      }
+    }
+
     setTimeout(() => {
       const res = verifyVoterOtp({
         voterIdentifier: loginIdentifier.trim(),

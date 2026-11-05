@@ -433,4 +433,262 @@ describe('OVS Phase 8.2 — Live PostgreSQL & Supertest API Integration Suite', 
       );
     });
   });
+
+  describe('8. Phase 8.3 — Voter Registration, OTP Challenge, Sessions, CSRF & Profile APIs', () => {
+    const voterPayload = {
+      fullName: 'Sayan Integration Test',
+      mobileNumber: '9876500001',
+      email: 'sayan.test@example.com',
+      epicNumber: 'TEST-EPIC-001',
+      dateOfBirth: '1995-04-12',
+      gender: 'MALE',
+      address: '123 Demo Street, Krishnanagar',
+      pinCode: '741101',
+      stateId: 'WB',
+      districtId: 'NADIA',
+      parliamentaryConstituencyId: 'WB-PC-KRISHNANAGAR',
+      assemblyConstituencyId: 'WB-AC-KRISHNANAGAR-UTTAR',
+    };
+
+    let createdUserId: string;
+    let authChallengeId: string;
+    let sessionCookie: string;
+    let rawSessionToken: string;
+    let csrfToken: string;
+
+    test('POST /api/v1/auth/register creates atomic User and VoterProfile records', async () => {
+      const res = await request(app)
+        .post('/api/v1/auth/register')
+        .send(voterPayload);
+
+      assert.equal(res.status, 201);
+      assert.equal(res.body.success, true);
+      assert.equal(res.body.data.fullName, voterPayload.fullName);
+      assert.equal(res.body.data.epicNumber, voterPayload.epicNumber);
+      assert.equal(res.body.data.role, 'VOTER');
+      assert.equal(res.body.data.accountStatus, 'UNVERIFIED');
+      assert.ok(res.body.data.id);
+      assert.ok(res.body.data.userId);
+
+      createdUserId = res.body.data.userId;
+
+      // Verify database state directly
+      const dbUser = await prisma.user.findUnique({
+        where: { id: createdUserId },
+        include: { voterProfile: true },
+      });
+      assert.ok(dbUser);
+      assert.equal(dbUser.userType, 'VOTER');
+      assert.equal(dbUser.voterProfile?.epicNumber, voterPayload.epicNumber);
+    });
+
+    test('POST /api/v1/auth/register rejects duplicate EPIC, mobile, and email with 409 Conflict', async () => {
+      // Duplicate EPIC
+      const dupEpicRes = await request(app)
+        .post('/api/v1/auth/register')
+        .send({
+          ...voterPayload,
+          mobileNumber: '9876500002',
+          email: 'different1@example.com',
+        });
+      assert.equal(dupEpicRes.status, 409);
+      assert.match(dupEpicRes.body.detail, /EPIC/i);
+
+      // Duplicate mobile
+      const dupMobileRes = await request(app)
+        .post('/api/v1/auth/register')
+        .send({
+          ...voterPayload,
+          epicNumber: 'TEST-EPIC-002',
+          email: 'different2@example.com',
+        });
+      assert.equal(dupMobileRes.status, 409);
+      assert.match(dupMobileRes.body.detail, /mobile/i);
+    });
+
+    test('POST /api/v1/auth/register rejects mutually inconsistent geography hierarchy', async () => {
+      const invalidGeoRes = await request(app)
+        .post('/api/v1/auth/register')
+        .send({
+          ...voterPayload,
+          epicNumber: 'TEST-EPIC-GEO',
+          mobileNumber: '9876500099',
+          email: 'geo.test@example.com',
+          stateId: 'MH', // Mismatched state for Nadia district
+        });
+      assert.equal(invalidGeoRes.status, 409);
+      assert.match(invalidGeoRes.body.detail, /geographic hierarchy/i);
+    });
+
+    test('POST /api/v1/auth/otp/request generates challenge without exposing plaintext OTP', async () => {
+      const res = await request(app)
+        .post('/api/v1/auth/otp/request')
+        .send({ identifier: voterPayload.mobileNumber });
+
+      assert.equal(res.status, 200);
+      assert.equal(res.body.success, true);
+      assert.ok(res.body.data.challengeId);
+      assert.ok(res.body.data.expiresInSeconds);
+      // Response must never contain plaintext otp
+      assert.equal((res.body.data as any).otp, undefined);
+
+      authChallengeId = res.body.data.challengeId;
+
+      // Verify challenge recorded in database with SHA-256 HMAC digest
+      const challenge = await prisma.authChallenge.findUnique({
+        where: { id: authChallengeId },
+      });
+      assert.ok(challenge);
+      assert.equal(challenge.consumedAt, null);
+      assert.equal(challenge.attempts, 0);
+      assert.equal(challenge.otpHash.length, 64);
+    });
+
+    test('POST /api/v1/auth/otp/verify validates OTP, sets HttpOnly session cookie, and marks challenge consumed', async () => {
+      // Retrieve development OTP via inspection endpoint
+      const devRes = await request(app)
+        .get(`/api/v1/auth/dev/latest-otp?identifier=${voterPayload.mobileNumber}`);
+      assert.equal(devRes.status, 200);
+      const { otp } = devRes.body.data;
+      assert.ok(otp);
+      assert.equal(otp.length, 6);
+
+      // Verify with incorrect OTP first
+      const failRes = await request(app)
+        .post('/api/v1/auth/otp/verify')
+        .send({ challengeId: authChallengeId, otp: '000000' });
+      assert.equal(failRes.status, 401);
+
+      // Verify with correct OTP
+      const verifyRes = await request(app)
+        .post('/api/v1/auth/otp/verify')
+        .send({ challengeId: authChallengeId, otp });
+
+      assert.equal(verifyRes.status, 200);
+      assert.equal(verifyRes.body.success, true);
+      assert.equal(verifyRes.body.data.user.role, 'VOTER');
+
+      // Check cookie headers
+      const cookies = verifyRes.headers['set-cookie'] as string[] | undefined;
+      assert.ok(cookies && cookies.length > 0);
+      sessionCookie = cookies[0]!;
+      assert.match(sessionCookie, /ovs_session=/);
+      assert.match(sessionCookie, /HttpOnly/i);
+
+      // Extract raw token value for header fallback tests
+      const match = sessionCookie.match(/ovs_session=([^;]+)/);
+      assert.ok(match);
+      rawSessionToken = match[1]!;
+
+      // Replay prevention: Re-submitting the same challenge fails
+      const replayRes = await request(app)
+        .post('/api/v1/auth/otp/verify')
+        .send({ challengeId: authChallengeId, otp });
+      assert.equal(replayRes.status, 401);
+    });
+
+    test('GET /api/v1/auth/csrf provides an anti-CSRF token tied to active session', async () => {
+      const res = await request(app)
+        .get('/api/v1/auth/csrf')
+        .set('Cookie', sessionCookie);
+
+      assert.equal(res.status, 200);
+      assert.equal(res.body.success, true);
+      assert.ok(res.body.data.csrfToken);
+      csrfToken = res.body.data.csrfToken;
+    });
+
+    test('GET /api/v1/auth/me returns current authenticated user and session details', async () => {
+      const res = await request(app)
+        .get('/api/v1/auth/me')
+        .set('Cookie', sessionCookie);
+
+      assert.equal(res.status, 200);
+      assert.equal(res.body.success, true);
+      assert.equal(res.body.data.user.id, createdUserId);
+      assert.equal(res.body.data.user.role, 'VOTER');
+      assert.equal(res.body.data.voterProfile.epicNumber, voterPayload.epicNumber);
+    });
+
+    test('Voter Profile: GET /api/v1/voters/me returns profile with resolved geography hierarchy', async () => {
+      const res = await request(app)
+        .get('/api/v1/voters/me')
+        .set('Cookie', sessionCookie);
+
+      assert.equal(res.status, 200);
+      assert.equal(res.body.success, true);
+      assert.equal(res.body.data.fullName, voterPayload.fullName);
+      assert.equal(res.body.data.state.id, 'WB');
+      assert.equal(res.body.data.district.id, 'NADIA');
+      assert.equal(res.body.data.parliamentaryConstituency.id, 'WB-PC-KRISHNANAGAR');
+      assert.equal(res.body.data.assemblyConstituency.id, 'WB-AC-KRISHNANAGAR-UTTAR');
+    });
+
+    test('Voter Profile: PATCH /api/v1/voters/me enforces anti-CSRF token and updates permitted fields', async () => {
+      // 1. Mutating request without CSRF token returns 403 CsrfProblemError
+      const blockedRes = await request(app)
+        .patch('/api/v1/voters/me')
+        .set('Cookie', sessionCookie)
+        .send({ fullName: 'Tampered Without CSRF' });
+      assert.equal(blockedRes.status, 403);
+      assert.match(blockedRes.body.title, /CSRF/i);
+
+      // 2. Mutating request with valid CSRF token succeeds
+      const updateRes = await request(app)
+        .patch('/api/v1/voters/me')
+        .set('Cookie', sessionCookie)
+        .set('X-CSRF-Token', csrfToken)
+        .send({
+          fullName: 'Sayan Saha Verified',
+          address: '456 Updated Lane, Krishnanagar',
+        });
+
+      assert.equal(updateRes.status, 200);
+      assert.equal(updateRes.body.success, true);
+      assert.equal(updateRes.body.data.fullName, 'Sayan Saha Verified');
+      assert.equal(updateRes.body.data.address, '456 Updated Lane, Krishnanagar');
+    });
+
+    test('Voter Profile: GET /api/v1/voters/me/constituencies returns full constituency bundle', async () => {
+      const res = await request(app)
+        .get('/api/v1/voters/me/constituencies')
+        .set('Cookie', sessionCookie);
+
+      assert.equal(res.status, 200);
+      assert.equal(res.body.success, true);
+      assert.equal(res.body.data.state.code, 'WB');
+      assert.equal(res.body.data.district.name, 'Nadia');
+      assert.equal(res.body.data.parliamentaryConstituency.name, 'Krishnanagar');
+      assert.equal(res.body.data.assemblyConstituency.name, 'Krishnanagar Uttar');
+    });
+
+    test('Session Lifecycle: lists sessions, revokes session, and logs out cleanly', async () => {
+      // List sessions
+      const listRes = await request(app)
+        .get('/api/v1/auth/sessions')
+        .set('Cookie', sessionCookie);
+
+      assert.equal(listRes.status, 200);
+      assert.equal(listRes.body.success, true);
+      assert.ok(Array.isArray(listRes.body.data));
+      assert.ok(listRes.body.data.length >= 1);
+      assert.equal(listRes.body.data[0].isCurrent, true);
+
+      // Logout
+      const logoutRes = await request(app)
+        .post('/api/v1/auth/logout')
+        .set('Cookie', sessionCookie)
+        .set('X-CSRF-Token', csrfToken);
+
+      assert.equal(logoutRes.status, 200);
+      assert.equal(logoutRes.body.success, true);
+
+      // Subsequent access with revoked session returns 401 Unauthorized
+      const unauthRes = await request(app)
+        .get('/api/v1/auth/me')
+        .set('Cookie', sessionCookie);
+
+      assert.equal(unauthRes.status, 401);
+    });
+  });
 });

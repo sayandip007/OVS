@@ -18,6 +18,8 @@ import {
   reconcileGeographySelection,
 } from '../../utils/electionHelpers';
 import { eciLogo } from '../../assets';
+import { frontendEnv } from '../../config/env';
+import { apiClient } from '../../services/apiClient';
 
 const STEPS = [
   { id: 1, title: 'Personal Information', subtitle: 'Name, DOB, Contact' },
@@ -195,13 +197,57 @@ export default function VoterRegister() {
     setCurrentStep((prev) => Math.max(1, prev - 1));
   };
 
-  const handleSubmitRegistration = (e) => {
+  const handleSubmitRegistration = async (e) => {
     e.preventDefault();
     if (!consentChecked) {
       notifyError(
         'Please check the demonstration consent box before submitting.'
       );
       return;
+    }
+
+    if (frontendEnv.isBackendApi) {
+      try {
+        const payload = {
+          fullName: form.fullName.trim(),
+          dateOfBirth: form.dateOfBirth,
+          gender: form.gender || 'OTHER',
+          email: form.email.trim(),
+          mobile: form.mobile.trim(),
+          epicNumber:
+            form.epicReference.trim() ||
+            `DEMO-${Date.now().toString().slice(-6)}`,
+          address: form.address.trim() || 'Demonstration Address, India',
+          pinCode: form.pinCode.trim() || '741101',
+          stateId: form.stateId,
+          districtId: form.districtId,
+          parliamentaryConstituencyId: form.parliamentaryConstituencyId,
+          assemblyConstituencyId: form.assemblyConstituencyId,
+        };
+
+        const res = await apiClient.auth.register(payload);
+        const registered = res.data;
+        // Keep local election context synchronized for smooth UI transition
+        registerVoter(form);
+        setRegisteredVoterResult({
+          ...form,
+          id: registered.id || registered.userId,
+          epicRef: registered.epicNumber,
+          fullName: registered.fullName,
+        });
+        notifySuccess(
+          `Voter registration successful! Assigned ID: ${registered.id}`
+        );
+        return;
+      } catch (err) {
+        const errorMsg =
+          err?.detail ||
+          err?.message ||
+          'Failed to complete registration on backend.';
+        notifyError(errorMsg);
+        setStepErrors({ form: errorMsg });
+        return;
+      }
     }
 
     const res = registerVoter(form);

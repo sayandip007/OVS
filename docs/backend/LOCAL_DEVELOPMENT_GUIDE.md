@@ -70,15 +70,37 @@ docker compose down
 ## 4. Running the Verification Suites
 
 ```bash
-# Frontend unit & architecture consistency tests (92+ tests)
+# Frontend unit & architecture consistency tests (92 tests)
 npm test
 
-# Backend unit tests
-npm --prefix backend run test:unit
+# Backend unit tests (Foundation, Auth, Voters — 43 tests)
+npm run backend:test:unit
 
-# Backend Supertest + live PostgreSQL integration tests
-npm --prefix backend run test:integration
+# Backend Supertest + live PostgreSQL integration tests (including Phase 8.3 suite)
+npm run backend:test:integration
 
 # Full 31-scenario PostgreSQL trigger & constraint validation suite
 psql "postgresql://ovs_admin:ovs_secret_dev@localhost:5432/ovs_db" -v ON_ERROR_STOP=1 -f tests/postgresql-validation.sql
+```
+
+---
+
+## 5. Development OTP Inspection & Authentication Testing
+
+In development and test environments (`NODE_ENV !== 'production'`), generated OTP codes are stored in-memory by `DevelopmentOtpProvider` and can be inspected via:
+
+```bash
+# Request OTP for registered voter:
+curl -X POST http://localhost:5000/api/v1/auth/otp/request \
+  -H "Content-Type: application/json" \
+  -d '{"identifier":"9876500001"}'
+
+# Inspect generated code (Development only):
+curl http://localhost:5000/api/v1/auth/dev/latest-otp?identifier=9876500001
+# Returns: { "success": true, "data": { "identifier": "9876500001", "otp": "123456" } }
+
+# Verify OTP and receive HttpOnly session cookie:
+curl -i -X POST http://localhost:5000/api/v1/auth/otp/verify \
+  -H "Content-Type: application/json" \
+  -d '{"challengeId":"<uuid>","otp":"123456"}'
 ```
