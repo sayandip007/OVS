@@ -22,6 +22,7 @@ export interface UpdateVoterProfileInput {
 export interface VoterConstituencyDetails {
   state: {
     id: string;
+    code: string;
     name: string;
     type: string;
     totalLokSabhaSeats: number;
@@ -29,16 +30,20 @@ export interface VoterConstituencyDetails {
   };
   district: {
     id: string;
+    stateId: string;
     name: string;
   };
   parliamentaryConstituency: {
     id: string;
+    stateId: string;
     name: string;
     seatNumber: number;
     reservation: string;
   };
   assemblyConstituency: {
     id: string;
+    stateId: string;
+    districtId: string;
     name: string;
     seatNumber: number;
     reservation: string;
@@ -70,6 +75,28 @@ export class VotersService {
       registrationDate: profile.registrationDate.toISOString(),
       isVerified: profile.isVerified,
       metadataSource: profile.metadataSource,
+      state: {
+        id: profile.state.id,
+        code: profile.state.id,
+        name: profile.state.name,
+        type: profile.state.type,
+      },
+      district: {
+        id: profile.district.id,
+        stateId: profile.district.stateId,
+        name: profile.district.name,
+      },
+      parliamentaryConstituency: {
+        id: profile.parliamentaryConstituency.id,
+        stateId: profile.parliamentaryConstituency.stateId,
+        name: profile.parliamentaryConstituency.name,
+      },
+      assemblyConstituency: {
+        id: profile.assemblyConstituency.id,
+        stateId: profile.assemblyConstituency.stateId,
+        districtId: profile.assemblyConstituency.districtId,
+        name: profile.assemblyConstituency.name,
+      },
     };
   }
 
@@ -158,6 +185,7 @@ export class VotersService {
     return {
       state: {
         id: profile.state.id,
+        code: profile.state.id,
         name: profile.state.name,
         type: profile.state.type,
         totalLokSabhaSeats: profile.state.totalLokSabhaSeats,
@@ -165,16 +193,20 @@ export class VotersService {
       },
       district: {
         id: profile.district.id,
+        stateId: profile.district.stateId,
         name: profile.district.name,
       },
       parliamentaryConstituency: {
         id: profile.parliamentaryConstituency.id,
+        stateId: profile.parliamentaryConstituency.stateId,
         name: profile.parliamentaryConstituency.name,
         seatNumber: profile.parliamentaryConstituency.constituencyNumber,
         reservation: profile.parliamentaryConstituency.reservationType,
       },
       assemblyConstituency: {
         id: profile.assemblyConstituency.id,
+        stateId: profile.assemblyConstituency.stateId,
+        districtId: profile.assemblyConstituency.districtId,
         name: profile.assemblyConstituency.name,
         seatNumber: profile.assemblyConstituency.constituencyNumber,
         reservation: profile.assemblyConstituency.reservationType,

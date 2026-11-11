@@ -1,11 +1,35 @@
-import type { PrismaClient, User, VoterProfile, AdminUser, UserSession, AuthChallenge } from '@prisma/client';
+import type {
+  PrismaClient,
+  User,
+  VoterProfile,
+  AdminUser,
+  AdminStateScope,
+  AdminElectionScope,
+  AdminConstituencyScope,
+  UserSession,
+  AuthChallenge,
+} from '@prisma/client';
 import { prisma as defaultPrisma } from '../../config/database.js';
 import type { RegisterVoterInput } from './auth.types.js';
 
+export interface AdminUserWithScopes extends AdminUser {
+  assignedStateScopes?: AdminStateScope[];
+  assignedElectionScopes?: AdminElectionScope[];
+  assignedConstituencyScopes?: AdminConstituencyScope[];
+}
+
 export interface UserWithRelations extends User {
   voterProfile: VoterProfile | null;
-  adminUser: AdminUser | null;
+  adminUser: AdminUserWithScopes | null;
 }
+
+const ADMIN_USER_INCLUDE = {
+  include: {
+    assignedStateScopes: true,
+    assignedElectionScopes: true,
+    assignedConstituencyScopes: true,
+  },
+} as const;
 
 export interface SessionWithUser extends UserSession {
   user: UserWithRelations;
@@ -27,7 +51,7 @@ export class AuthRepository {
       where: { identifier: identifier.trim().toUpperCase() },
       include: {
         voterProfile: true,
-        adminUser: true,
+        adminUser: ADMIN_USER_INCLUDE,
       },
     });
   }
@@ -42,7 +66,7 @@ export class AuthRepository {
         user: {
           include: {
             voterProfile: true,
-            adminUser: true,
+            adminUser: ADMIN_USER_INCLUDE,
           },
         },
       },
@@ -59,7 +83,7 @@ export class AuthRepository {
       where: { id: userId },
       include: {
         voterProfile: true,
-        adminUser: true,
+        adminUser: ADMIN_USER_INCLUDE,
       },
     });
   }
@@ -295,11 +319,25 @@ export class AuthRepository {
         user: {
           include: {
             voterProfile: true,
-            adminUser: true,
+            adminUser: ADMIN_USER_INCLUDE,
           },
         },
       },
     });
+  }
+
+  /**
+   * Updates lastActivityAt timestamp on an active session.
+   */
+  async touchSessionActivity(sessionHash: string): Promise<void> {
+    await this.prisma.userSession
+      .update({
+        where: { id: sessionHash },
+        data: { lastActivityAt: new Date() },
+      })
+      .catch(() => {
+        // Ignore if concurrently deleted
+      });
   }
 
   /**

@@ -1,12 +1,45 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useElection } from '../../context/ElectionContext';
+import { useAuth } from '../../context/AuthContext';
+import { apiClient } from '../../services/apiClient';
 import SearchBar from '../../components/common/SearchBar';
 import { ADMIN_ROLE_LABELS } from '../../utils/constants';
 import { escapeCsvCell, triggerCsvDownload } from '../../services/countingService';
 import { FileText, ShieldCheck, Download } from 'lucide-react';
 
 export default function AuditLogs() {
-  const { auditLogs } = useElection();
+  const { auditLogs: localAuditLogs } = useElection();
+  const { isBackendApiMode } = useAuth();
+  const [backendLogs, setBackendLogs] = useState([]);
+
+  useEffect(() => {
+    if (!isBackendApiMode) return undefined;
+    let cancelled = false;
+    apiClient.admin
+      .listAuditLogs({ limit: 100 })
+      .then((res) => {
+        if (!cancelled && Array.isArray(res?.data)) {
+          setBackendLogs(
+            res.data.map((item) => ({
+              id: item.id,
+              timestamp: item.timestamp,
+              adminName: item.adminUser?.fullName || item.actorIdentifier || 'System',
+              adminRole: item.actorRole || item.adminUser?.role || 'SYSTEM',
+              actionType: item.actionType,
+              targetEntity: item.domain,
+              targetId: item.targetEntityId,
+              summary: `${item.outcome}: ${JSON.stringify(item.details || {})}`,
+            }))
+          );
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [isBackendApiMode]);
+
+  const auditLogs = isBackendApiMode ? backendLogs : localAuditLogs;
 
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('ALL');

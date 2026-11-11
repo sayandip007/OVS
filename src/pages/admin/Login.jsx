@@ -5,14 +5,30 @@ import { useElection } from '../../context/ElectionContext';
 import { useNotification } from '../../context/NotificationContext';
 import { DEMO_OTP_CODES, ADMIN_ROLE_LABELS } from '../../utils/constants';
 import { eciLogo } from '../../assets';
-import { ShieldCheck, UserCheck } from 'lucide-react';
+import { ShieldCheck, UserCheck, Lock, AlertTriangle } from 'lucide-react';
 
 export default function AdminLogin() {
   const navigate = useNavigate();
-  const { requestAdminOtp, verifyAdminOtp, isAdminAuthenticated, adminOfficers } = useAuth();
+  const {
+    requestAdminOtp,
+    verifyAdminOtp,
+    loginAdminWithPassword,
+    isAdminAuthenticated,
+    adminOfficers,
+    isBackendApiMode,
+    sessionExpiredNotice,
+    clearSessionExpiredNotice,
+  } = useAuth();
   const { appendAuditLog } = useElection();
   const { notifySuccess, notifyError, notifyInfo } = useNotification();
 
+  // Backend API credentials state (Email or Officer Code + Password)
+  const [backendIdentifier, setBackendIdentifier] = useState('');
+  const [backendPassword, setBackendPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // LOCAL_DEMO simulated OTP state (Phases 5-7 compatibility)
   const [officerIdentifier, setOfficerIdentifier] = useState('ECI001');
   const [phoneNumber, setPhoneNumber] = useState('9876543210');
   const [otpRequested, setOtpRequested] = useState(false);
@@ -33,6 +49,30 @@ export default function AdminLogin() {
     }, 1000);
     return () => clearInterval(id);
   }, [timer]);
+
+  const handleBackendLogin = async (e) => {
+    e.preventDefault();
+    setLoginError('');
+    setIsSubmitting(true);
+    try {
+      const admin = await loginAdminWithPassword({
+        identifier: backendIdentifier.trim(),
+        password: backendPassword,
+      });
+      setBackendPassword('');
+      notifySuccess(
+        `Welcome, ${admin.fullName}! Authenticated as ${ADMIN_ROLE_LABELS[admin.role] || admin.role}.`
+      );
+      navigate('/eci/dashboard');
+    } catch (err) {
+      const msg =
+        err?.detail || err?.message || 'Invalid administrator credentials.';
+      setLoginError(msg);
+      notifyError(msg);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const handleSelectPresetOfficer = (officer) => {
     setOfficerIdentifier(officer.officerCode);
@@ -98,6 +138,113 @@ export default function AdminLogin() {
     navigate('/eci/dashboard');
   };
 
+  // BACKEND_API Mode Login UI
+  if (isBackendApiMode) {
+    return (
+      <div className="max-w-xl mx-auto px-4 py-12">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sm:p-8 space-y-6">
+          <div className="flex items-center gap-3.5 pb-4 border-b border-slate-200">
+            <img src={eciLogo} alt="ECI" className="h-11 w-auto object-contain" />
+            <div>
+              <span className="text-xs font-bold uppercase tracking-wider text-amber-700">
+                Secure Administrative Authentication (Backend API)
+              </span>
+              <h1 className="text-2xl font-extrabold text-slate-900">
+                ECI Officer Console Sign In
+              </h1>
+            </div>
+          </div>
+
+          {sessionExpiredNotice && (
+            <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-xs text-red-900 flex items-start justify-between gap-2">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                <span>
+                  Your previous session expired or was revoked on the server. Please sign in again.
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={clearSessionExpiredNotice}
+                className="text-red-700 font-bold underline cursor-pointer shrink-0"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
+          <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-950 space-y-1">
+            <p className="font-bold">Controlled Administrator Provisioning:</p>
+            <p>
+              Administrator accounts cannot be self-registered through the public voter portal. Sign in using provisioned Officer Code or Administrator Email and Password.
+            </p>
+          </div>
+
+          {loginError && (
+            <div
+              role="alert"
+              className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-xs font-semibold text-red-900"
+            >
+              {loginError}
+            </div>
+          )}
+
+          <form onSubmit={handleBackendLogin} className="space-y-4">
+            <div>
+              <label
+                htmlFor="admin-identifier"
+                className="block text-xs font-bold text-slate-700 mb-1"
+              >
+                Administrator Email or Officer Code *
+              </label>
+              <input
+                id="admin-identifier"
+                type="text"
+                required
+                autoComplete="username"
+                disabled={isSubmitting}
+                value={backendIdentifier}
+                onChange={(e) => setBackendIdentifier(e.target.value)}
+                placeholder="e.g. ECI-SUPER-001 or admin@ovs-demo.local"
+                className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-lg disabled:bg-slate-100"
+              />
+            </div>
+
+            <div>
+              <label
+                htmlFor="admin-password"
+                className="block text-xs font-bold text-slate-700 mb-1"
+              >
+                Administrator Password *
+              </label>
+              <input
+                id="admin-password"
+                type="password"
+                required
+                autoComplete="current-password"
+                disabled={isSubmitting}
+                value={backendPassword}
+                onChange={(e) => setBackendPassword(e.target.value)}
+                placeholder="Enter your administrator password"
+                className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-lg disabled:bg-slate-100"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="w-full py-3 bg-[#002868] hover:bg-blue-900 disabled:bg-slate-400 text-white font-bold rounded-xl shadow-xs transition-colors cursor-pointer text-sm inline-flex items-center justify-center gap-2"
+            >
+              <Lock className="w-4 h-4" />
+              {isSubmitting ? 'Authenticating...' : 'Sign In to ECI Admin Console'}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  // LOCAL_DEMO Mode Login UI (Existing Demo Experience Preserved)
   return (
     <div className="max-w-4xl mx-auto px-4 py-10">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">

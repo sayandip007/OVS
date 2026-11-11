@@ -8,6 +8,8 @@ import { apiClient } from '../services/apiClient';
 import {
   canAdminAccessRoute,
   canAdminPerformAction,
+  getRolePermissions,
+  hasAdminPermission as checkAdminPermission,
 } from '../services/adminPermissionService';
 
 const AuthContext = createContext(null);
@@ -167,45 +169,113 @@ export function AuthProvider({ children }) {
   const [session, setSession] = useState(() => loadValidSession());
   const [otpChallenge, setOtpChallenge] = useState(null);
   const [backendUser, setBackendUser] = useState(null);
+  const [backendAdmin, setBackendAdmin] = useState(null);
   const [csrfToken, setCsrfToken] = useState(null);
+  const [sessionExpiredNotice, setSessionExpiredNotice] = useState(false);
+  const [isAuthInitialized, setIsAuthInitialized] = useState(!frontendEnv.isBackendApiMode);
 
   const updateSession = useCallback((nextSession) => {
     storageService.setSessionItem(STORAGE_KEYS.SESSION_AUTH, nextSession);
     setSession(nextSession);
   }, []);
 
-  // When configured for BACKEND_API mode, probe /api/v1/auth/me to restore live session
+  const clearLocalSessionState = useCallback(() => {
+    setOtpChallenge(null);
+    setBackendUser(null);
+    setBackendAdmin(null);
+    setCsrfToken(null);
+    updateSession({
+      role: null,
+      voterId: null,
+      adminId: null,
+      adminRole: null,
+      expiresAt: null,
+    });
+  }, [updateSession]);
+
+  // Register global 401 session-expiration handler in BACKEND_API mode
   useEffect(() => {
-    if (!frontendEnv.isBackendApi) return;
+    if (!frontendEnv.isBackendApiMode) return undefined;
+    apiClient.setUnauthorizedHandler(() => {
+      setSessionExpiredNotice(true);
+      clearLocalSessionState();
+    });
+    return () => {
+      apiClient.setUnauthorizedHandler(null);
+    };
+  }, [clearLocalSessionState]);
+
+  // When configured for BACKEND_API mode, probe /api/v1/auth/me to restore live voter or admin session
+  useEffect(() => {
+    if (!frontendEnv.isBackendApiMode) return undefined;
     let cancelled = false;
 
     async function checkBackendSession() {
       try {
         const res = await apiClient.auth.getMe();
         if (cancelled) return;
-        if (res?.data?.user) {
-          setBackendUser(res.data.user);
-          const voterProfile = res.data.voterProfile;
-          const assignedId = voterProfile?.id || res.data.user.id;
-          updateSession({
-            role: res.data.user.role || 'VOTER',
-            voterId: assignedId,
-            adminId: null,
-            authenticatedAt: new Date().toISOString(),
-            expiresAt: Date.now() + OTP_CONFIG.SESSION_DURATION_MS,
-          });
+        const userPayload = res?.data?.user || res?.data;
 
-          try {
-            const csrfRes = await apiClient.auth.getCsrf();
-            if (!cancelled && csrfRes?.data?.csrfToken) {
-              setCsrfToken(csrfRes.data.csrfToken);
+        if (userPayload && userPayload.id) {
+          setBackendUser(userPayload);
+          const freshCsrf = res?.meta?.csrfToken || res?.data?.csrfToken;
+          if (freshCsrf) {
+            setCsrfToken(freshCsrf);
+          } else {
+            try {
+              const csrfRes = await apiClient.auth.getCsrf();
+              if (!cancelled && csrfRes?.data?.csrfToken) {
+                setCsrfToken(csrfRes.data.csrfToken);
+              }
+            } catch {
+              // Non-fatal if CSRF endpoint probe fails
             }
-          } catch {
-            // Non-fatal if CSRF endpoint probe fails
+          }
+
+          if (userPayload.userType === 'ADMIN' && userPayload.adminUser) {
+            // Fetch full admin profile with resolved permissions & scopes
+            let fullAdmin = userPayload.adminUser;
+            try {
+              const adminRes = await apiClient.admin.getMe();
+              if (!cancelled && adminRes?.data?.admin) {
+                fullAdmin = adminRes.data.admin;
+              }
+              if (!cancelled && adminRes?.data?.csrfToken) {
+                setCsrfToken(adminRes.data.csrfToken);
+              }
+            } catch {
+              // Keep base adminUser payload if /admin/auth/me unavailable
+            }
+
+            if (!cancelled) {
+              setBackendAdmin(fullAdmin);
+              updateSession({
+                role: 'ADMIN',
+                voterId: null,
+                adminId: fullAdmin.id,
+                adminRole: fullAdmin.role,
+                authenticatedAt: new Date().toISOString(),
+                expiresAt: Date.now() + OTP_CONFIG.SESSION_DURATION_MS,
+              });
+            }
+          } else {
+            const voterProfile = res?.data?.voterProfile || userPayload.voterProfile;
+            const assignedId = voterProfile?.id || userPayload.id;
+            updateSession({
+              role: 'VOTER',
+              voterId: assignedId,
+              adminId: null,
+              authenticatedAt: new Date().toISOString(),
+              expiresAt: Date.now() + OTP_CONFIG.SESSION_DURATION_MS,
+            });
           }
         }
       } catch {
         // Backend session not present or expired
+      } finally {
+        if (!cancelled) {
+          setIsAuthInitialized(true);
+        }
       }
     }
 
@@ -404,34 +474,106 @@ export function AuthProvider({ children }) {
     [verifyAdminCredentials, completeAdminLogin]
   );
 
+  const loginAdminWithPassword = useCallback(
+    async ({ identifier, password }) => {
+      const res = await apiClient.admin.login({ identifier, password });
+      const adminDto = res?.data?.admin;
+      const freshCsrf = res?.data?.csrfToken;
+      if (!adminDto) {
+        throw new Error('Unexpected login response from administrator API.');
+      }
+
+      setSessionExpiredNotice(false);
+      setBackendAdmin(adminDto);
+      setBackendUser({
+        id: adminDto.userId,
+        identifier: adminDto.officerCode,
+        userType: 'ADMIN',
+        role: adminDto.role,
+        isActive: adminDto.isActive,
+        adminUser: adminDto,
+      });
+      if (freshCsrf) {
+        setCsrfToken(freshCsrf);
+      }
+
+      const now = Date.now();
+      updateSession({
+        role: 'ADMIN',
+        voterId: null,
+        adminId: adminDto.id,
+        adminRole: adminDto.role,
+        authenticatedAt: new Date(now).toISOString(),
+        expiresAt: now + OTP_CONFIG.SESSION_DURATION_MS,
+      });
+
+      return adminDto;
+    },
+    [updateSession]
+  );
+
+  const refreshAdminSession = useCallback(async () => {
+    if (!frontendEnv.isBackendApiMode) return null;
+    const res = await apiClient.admin.getMe();
+    const adminDto = res?.data?.admin;
+    if (adminDto) {
+      setBackendAdmin(adminDto);
+      if (res?.data?.csrfToken) setCsrfToken(res.data.csrfToken);
+    }
+    return adminDto;
+  }, []);
+
   const logout = useCallback(async () => {
-    if (frontendEnv.isBackendApi && csrfToken) {
+    if (frontendEnv.isBackendApiMode && csrfToken) {
       try {
-        await apiClient.auth.logout(csrfToken);
+        if (session.role === 'ADMIN') {
+          await apiClient.admin.logout(csrfToken);
+        } else {
+          await apiClient.auth.logout(csrfToken);
+        }
       } catch {
         // Safe to ignore on frontend logout
       }
     }
-    setOtpChallenge(null);
-    setBackendUser(null);
-    setCsrfToken(null);
-    updateSession({
-      role: null,
-      voterId: null,
-      adminId: null,
-      adminRole: null,
-      expiresAt: null,
-    });
-  }, [updateSession, csrfToken]);
+    setSessionExpiredNotice(false);
+    clearLocalSessionState();
+  }, [clearLocalSessionState, csrfToken, session.role]);
+
+  const logoutAll = useCallback(async () => {
+    if (frontendEnv.isBackendApiMode && csrfToken) {
+      try {
+        if (session.role === 'ADMIN') {
+          await apiClient.admin.logoutAll(csrfToken);
+        } else {
+          await apiClient.auth.logoutAll(csrfToken);
+        }
+      } catch {
+        // Safe to ignore on frontend logout
+      }
+    }
+    setSessionExpiredNotice(false);
+    clearLocalSessionState();
+  }, [clearLocalSessionState, csrfToken, session.role]);
 
   const currentAdmin =
     session.role === 'ADMIN'
-      ? INITIAL_ADMIN_OFFICERS.find((a) => a.id === session.adminId) ||
-        INITIAL_ADMIN_OFFICERS[0]
+      ? frontendEnv.isBackendApiMode
+        ? backendAdmin
+        : INITIAL_ADMIN_OFFICERS.find((a) => a.id === session.adminId) ||
+          INITIAL_ADMIN_OFFICERS[0]
       : null;
 
   const isVoter = session.role === 'VOTER';
-  const isAdmin = session.role === 'ADMIN';
+  const isAdmin = session.role === 'ADMIN' && Boolean(currentAdmin);
+
+  const adminPermissions = currentAdmin
+    ? currentAdmin.permissions || getRolePermissions(currentAdmin.role || currentAdmin.adminRole)
+    : [];
+
+  const hasAdminPermission = useCallback(
+    (permission) => checkAdminPermission(currentAdmin, permission),
+    [currentAdmin]
+  );
 
   const canAccessAdminRoute = useCallback(
     (routePath) => canAdminAccessRoute(currentAdmin, routePath),
@@ -450,8 +592,13 @@ export function AuthProvider({ children }) {
         session,
         otpChallenge,
         backendUser,
+        backendAdmin,
         csrfToken,
-        isBackendApi: frontendEnv.isBackendApi,
+        isBackendApi: frontendEnv.isBackendApiMode,
+        isBackendApiMode: frontendEnv.isBackendApiMode,
+        isAuthInitialized,
+        sessionExpiredNotice,
+        clearSessionExpiredNotice: () => setSessionExpiredNotice(false),
         setCsrfToken,
         isAuthenticated: Boolean(session.role),
         isVoter,
@@ -460,6 +607,8 @@ export function AuthProvider({ children }) {
         isAdminAuthenticated: isAdmin,
         activeVoterId: session.voterId,
         currentAdmin,
+        adminPermissions,
+        hasAdminPermission,
         adminOfficers: INITIAL_ADMIN_OFFICERS,
         verifyVoterCredentials,
         completeVoterLogin,
@@ -468,12 +617,15 @@ export function AuthProvider({ children }) {
         switchActiveVoter,
         verifyAdminCredentials,
         completeAdminLogin,
+        loginAdminWithPassword,
+        refreshAdminSession,
         switchActiveAdmin,
         requestAdminOtp,
         verifyAdminOtp,
         canAccessAdminRoute,
         canPerformAdminAction,
         logout,
+        logoutAll,
         logoutAdmin: logout,
         logoutVoter: logout,
       }}

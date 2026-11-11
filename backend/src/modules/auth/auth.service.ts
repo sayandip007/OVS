@@ -30,10 +30,48 @@ export class AuthService {
    * Transforms a UserWithRelations entity into a safe client payload.
    */
   toSafeUserPayload(user: UserWithRelations): AuthUserPayload {
+    const adminUser = user.adminUser
+      ? (() => {
+          const stateIdSet = new Set<string>();
+          if (user.adminUser.assignedStateId) {
+            stateIdSet.add(user.adminUser.assignedStateId);
+          }
+          for (const s of user.adminUser.assignedStateScopes ?? []) {
+            stateIdSet.add(s.stateId);
+          }
+          return {
+            id: user.adminUser.id,
+            userId: user.adminUser.userId,
+            officerCode: user.adminUser.officerCode,
+            email: user.adminUser.email,
+            fullName: user.adminUser.fullName,
+            designation: user.adminUser.designation,
+            role: user.adminUser.role,
+            status: user.adminUser.status,
+            isActive: user.adminUser.isActive,
+            assignedStateId: user.adminUser.assignedStateId,
+            assignedStateIds: Array.from(stateIdSet),
+            assignedElectionIds: (user.adminUser.assignedElectionScopes ?? []).map(
+              (e) => e.electionId
+            ),
+            assignedConstituencyScopes: (
+              user.adminUser.assignedConstituencyScopes ?? []
+            ).map((c) => ({
+              id: c.id,
+              electionId: c.electionId,
+              constituencyType: c.constituencyType,
+              parliamentaryConstituencyId: c.parliamentaryConstituencyId,
+              assemblyConstituencyId: c.assemblyConstituencyId,
+            })),
+          };
+        })()
+      : null;
+
     return {
       id: user.id,
       identifier: user.identifier,
       userType: user.userType,
+      role: user.userType === 'ADMIN' && adminUser ? adminUser.role : 'VOTER',
       isActive: user.isActive,
       voterProfile: user.voterProfile
         ? {
@@ -55,15 +93,7 @@ export class AuthService {
             metadataSource: user.voterProfile.metadataSource,
           }
         : null,
-      adminUser: user.adminUser
-        ? {
-            id: user.adminUser.id,
-            officerCode: user.adminUser.officerCode,
-            fullName: user.adminUser.fullName,
-            role: user.adminUser.role,
-            assignedStateId: user.adminUser.assignedStateId,
-          }
-        : null,
+      adminUser,
     };
   }
 
@@ -187,18 +217,14 @@ export class AuthService {
       maxAttempts: AUTH_CONSTANTS.OTP_MAX_ATTEMPTS,
     });
 
-    // Deliver OTP via configured provider
+    // Deliver OTP via configured provider (never exposed in normal auth responses)
     const targetMobile = user.voterProfile?.mobile || cleanMobile || user.identifier;
     await this.otpService.deliverOtp(user.identifier, targetMobile, rawOtp);
-
-    const isNonProd = process.env.NODE_ENV !== 'production';
-    const isDevInspect = process.env.ENABLE_DEV_OTP_INSPECT === 'true' || isNonProd;
 
     return {
       challengeId: challenge.id,
       expiresInSeconds,
       message: 'Demonstration OTP challenge initiated. Please verify with the 6-digit code.',
-      ...(isDevInspect ? { devCode: rawOtp } : {}),
     };
   }
 
@@ -209,7 +235,8 @@ export class AuthService {
     challengeId: string,
     otpCode: string,
     userAgent?: string,
-    ipAddress?: string
+    ipAddress?: string,
+    existingSessionToken?: string | null
   ): Promise<OtpVerifyResult> {
     const challenge = await this.repository.findChallengeById(challengeId);
 
@@ -264,6 +291,12 @@ export class AuthService {
     // Invalidate any other challenges for this identifier
     await this.repository.invalidateActiveChallenges(user.identifier);
 
+    // Prevent session fixation by revoking any existing session held by client
+    if (existingSessionToken) {
+      const oldHash = this.sessionService.hashSessionToken(existingSessionToken);
+      await this.repository.deleteSessionByHash(oldHash);
+    }
+
     // Establish secure session
     const rawSessionToken = this.sessionService.generateSessionToken();
     const sessionHash = this.sessionService.hashSessionToken(rawSessionToken);
@@ -300,13 +333,34 @@ export class AuthService {
 
     if (!session) return null;
 
-    if (new Date() > session.expiresAt) {
+    const now = Date.now();
+    if (now > session.expiresAt.getTime()) {
+      await this.repository.deleteSessionByHash(sessionHash);
+      return null;
+    }
+
+    const lastActivity = session.lastActivityAt?.getTime() ?? session.createdAt.getTime();
+    if (now - lastActivity > AUTH_CONSTANTS.SESSION_INACTIVITY_TIMEOUT_MS) {
       await this.repository.deleteSessionByHash(sessionHash);
       return null;
     }
 
     if (!session.user.isActive) {
       return null;
+    }
+
+    if (
+      session.user.userType === 'ADMIN' &&
+      (!session.user.adminUser ||
+        !session.user.adminUser.isActive ||
+        session.user.adminUser.status !== 'ACTIVE')
+    ) {
+      await this.repository.deleteSessionByHash(sessionHash);
+      return null;
+    }
+
+    if (now - lastActivity > AUTH_CONSTANTS.SESSION_ACTIVITY_REFRESH_INTERVAL_MS) {
+      await this.repository.touchSessionActivity(sessionHash);
     }
 
     return {
@@ -339,6 +393,7 @@ export class AuthService {
       id: s.id,
       userAgent: s.userAgent,
       ipAddress: s.ipAddress,
+      lastActivityAt: s.lastActivityAt.toISOString(),
       createdAt: s.createdAt.toISOString(),
       expiresAt: s.expiresAt.toISOString(),
       isCurrent: s.id === currentSessionHash,

@@ -100,6 +100,12 @@ enum AdminRole {
   READ_ONLY_AUDITOR
 }
 
+enum AdminStatus {
+  ACTIVE
+  SUSPENDED
+  DEACTIVATED
+}
+
 enum ResultStatus {
   DRAFT
   COUNTING_IN_PROGRESS
@@ -168,6 +174,7 @@ model State {
   elections            Election[]
   voterProfiles        VoterProfile[]
   adminUsers           AdminUser[]
+  adminStateScopes     AdminStateScope[]
   announcements        Announcement[]
 
   @@map("states")
@@ -206,9 +213,10 @@ model ParliamentaryConstituency {
   childAssemblySeats AssemblyConstituency[]
   voterProfiles      VoterProfile[]
   electionMappings   ElectionConstituency[]
-  nominations        CandidateNomination[]
-  countingSessions   CountingSession[]
-  targetAnnouncements Announcement[]
+  nominations              CandidateNomination[]
+  countingSessions         CountingSession[]
+  targetAnnouncements      Announcement[]
+  adminConstituencyScopes  AdminConstituencyScope[]
 
   @@unique([id, stateId]) // Composite key for geographic hierarchy integrity
   @@unique([stateId, constituencyNumber])
@@ -237,6 +245,7 @@ model AssemblyConstituency {
   nominations                       CandidateNomination[]
   countingSessions                  CountingSession[]
   targetAnnouncements               Announcement[]
+  adminConstituencyScopes           AdminConstituencyScope[]
 
   @@unique([id, stateId]) // Composite key for state integrity
   @@unique([id, parentParliamentaryConstituencyId]) // Inherent dual-mapping integrity key
@@ -304,12 +313,13 @@ model VoterProfile {
 }
 
 model UserSession {
-  id        String   @id @db.VarChar(128)
-  userId    String   @db.Uuid @map("user_id")
-  userAgent String?  @db.Text @map("user_agent")
-  ipAddress String?  @db.VarChar(45) @map("ip_address")
-  expiresAt DateTime @db.Timestamptz(6) @map("expires_at")
-  createdAt DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+  id             String   @id @db.VarChar(128)
+  userId         String   @db.Uuid @map("user_id")
+  userAgent      String?  @db.Text @map("user_agent")
+  ipAddress      String?  @db.VarChar(45) @map("ip_address")
+  lastActivityAt DateTime @default(now()) @db.Timestamptz(6) @map("last_activity_at")
+  expiresAt      DateTime @db.Timestamptz(6) @map("expires_at")
+  createdAt      DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
 
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -366,8 +376,9 @@ model Election {
   candidateNominations CandidateNomination[]
   demoParticipations   DemoParticipation[]
   countingSessions     CountingSession[]
-  announcements        Announcement[]
-  adminScopes          AdminElectionScope[]
+  announcements           Announcement[]
+  adminScopes             AdminElectionScope[]
+  adminConstituencyScopes AdminConstituencyScope[]
 
   @@index([status, type])
   @@map("elections")
@@ -502,35 +513,67 @@ model CandidateNomination {
 }
 
 // ============================================================================
-// ADMINISTRATIVE RBAC & SCOPE MODELS (Models 15–17)
+// ADMINISTRATIVE RBAC, SCOPING & AUDIT MODELS
 // ============================================================================
 
 model AdminUser {
   id                    String                     @id @default(uuid()) @db.Uuid
   userId                String                     @unique @db.Uuid @map("user_id")
   officerCode           String                     @unique @db.VarChar(50) @map("officer_code") // e.g. "ECI-SUPER-001"
+  email                 String                     @unique @db.VarChar(255)
   fullName              String                     @db.VarChar(150) @map("full_name")
   designation           String                     @db.VarChar(150)
   role                  AdminRole                  @default(READ_ONLY_AUDITOR)
+  status                AdminStatus                @default(ACTIVE)
   assignedStateId       String?                    @db.VarChar(10) @map("assigned_state_id")
   isActive              Boolean                    @default(true) @map("is_active")
+  suspendedAt           DateTime?                  @db.Timestamptz(6) @map("suspended_at")
+  suspendedReason       String?                    @db.Text @map("suspended_reason")
+  deactivatedAt         DateTime?                  @db.Timestamptz(6) @map("deactivated_at")
+  createdByAdminId      String?                    @db.Uuid @map("created_by_admin_id")
+  passwordUpdatedAt     DateTime?                  @db.Timestamptz(6) @map("password_updated_at")
   createdAt             DateTime                   @default(now()) @db.Timestamptz(6) @map("created_at")
   updatedAt             DateTime                   @updatedAt @db.Timestamptz(6) @map("updated_at")
 
-  user                  User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  assignedState         State?                     @relation(fields: [assignedStateId], references: [id], onDelete: Restrict)
-  assignedElectionScopes AdminElectionScope[]      @relation("ScopedAdmin")
-  delegatedScopes       AdminElectionScope[]       @relation("ScopeDelegator")
-  actionLogs            AdminActionLog[]
-  lifecycleChanges      ElectionLifecycleHistory[]
-  scrutinizedNominations CandidateNomination[]
-  publishedSessions     CountingSession[]          @relation("SessionPublisher")
-  processedRounds       CountingRound[]            @relation("RoundProcessor")
-  correctedSessions     ResultCorrectionHistory[]  @relation("SessionCorrector")
-  approvedTieResolutions TieResolution[]           @relation("TieResolutionApprover")
-  createdAnnouncements  Announcement[]             @relation("AnnouncementCreator")
+  user                        User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignedState               State?                     @relation(fields: [assignedStateId], references: [id], onDelete: Restrict)
+  createdByAdmin              AdminUser?                 @relation("AdminProvisioner", fields: [createdByAdminId], references: [id], onDelete: SetNull)
+  provisionedAdmins           AdminUser[]                @relation("AdminProvisioner")
+  assignedStateScopes         AdminStateScope[]          @relation("StateScopedAdmin")
+  delegatedStateScopes        AdminStateScope[]          @relation("StateScopeDelegator")
+  assignedElectionScopes      AdminElectionScope[]       @relation("ScopedAdmin")
+  delegatedScopes             AdminElectionScope[]       @relation("ScopeDelegator")
+  assignedConstituencyScopes  AdminConstituencyScope[]   @relation("ConstituencyScopedAdmin")
+  delegatedConstituencyScopes AdminConstituencyScope[]   @relation("ConstituencyScopeDelegator")
+  actionLogs                  AdminActionLog[]
+  lifecycleChanges            ElectionLifecycleHistory[]
+  scrutinizedNominations      CandidateNomination[]
+  publishedSessions           CountingSession[]          @relation("SessionPublisher")
+  processedRounds             CountingRound[]            @relation("RoundProcessor")
+  correctedSessions           ResultCorrectionHistory[]  @relation("SessionCorrector")
+  approvedTieResolutions      TieResolution[]            @relation("TieResolutionApprover")
+  createdAnnouncements        Announcement[]             @relation("AnnouncementCreator")
 
+  @@index([role, status])
+  @@index([assignedStateId])
   @@map("admin_users")
+}
+
+model AdminStateScope {
+  id                String     @id @default(uuid()) @db.Uuid
+  adminUserId       String     @db.Uuid @map("admin_user_id")
+  stateId           String     @db.VarChar(10) @map("state_id")
+  assignedAt        DateTime   @default(now()) @db.Timestamptz(6) @map("assigned_at")
+  assignedByAdminId String?    @db.Uuid @map("assigned_by_admin_id")
+
+  adminUser         AdminUser  @relation("StateScopedAdmin", fields: [adminUserId], references: [id], onDelete: Cascade)
+  state             State      @relation(fields: [stateId], references: [id], onDelete: Restrict)
+  assignedByAdmin   AdminUser? @relation("StateScopeDelegator", fields: [assignedByAdminId], references: [id], onDelete: SetNull)
+
+  @@unique([adminUserId, stateId])
+  @@index([adminUserId])
+  @@index([stateId])
+  @@map("admin_state_scopes")
 }
 
 model AdminElectionScope {
@@ -550,19 +593,50 @@ model AdminElectionScope {
   @@map("admin_election_scopes")
 }
 
-model AdminActionLog {
-  id             String    @id @default(uuid()) @db.Uuid
-  adminUserId    String?   @db.Uuid @map("admin_user_id")
-  actionType     String    @db.VarChar(50) @map("action_type")
-  domain         String    @db.VarChar(50)
-  targetEntityId String    @db.VarChar(100) @map("target_entity_id")
-  details        Json      @default("{}")
-  ipAddress      String?   @db.VarChar(45) @map("ip_address")
-  timestamp      DateTime  @default(now()) @db.Timestamptz(6)
+model AdminConstituencyScope {
+  id                          String                     @id @default(uuid()) @db.Uuid
+  adminUserId                 String                     @db.Uuid @map("admin_user_id")
+  electionId                  String?                    @db.VarChar(50) @map("election_id")
+  constituencyType            ConstituencyType           @map("constituency_type")
+  parliamentaryConstituencyId String?                    @db.VarChar(50) @map("parliamentary_constituency_id")
+  assemblyConstituencyId      String?                    @db.VarChar(50) @map("assembly_constituency_id")
+  assignedAt                  DateTime                   @default(now()) @db.Timestamptz(6) @map("assigned_at")
+  assignedByAdminId           String?                    @db.Uuid @map("assigned_by_admin_id")
 
-  adminUser      AdminUser? @relation(fields: [adminUserId], references: [id], onDelete: SetNull)
+  adminUser                 AdminUser                  @relation("ConstituencyScopedAdmin", fields: [adminUserId], references: [id], onDelete: Cascade)
+  election                  Election?                  @relation(fields: [electionId], references: [id], onDelete: Cascade)
+  parliamentaryConstituency ParliamentaryConstituency? @relation(fields: [parliamentaryConstituencyId], references: [id], onDelete: Cascade)
+  assemblyConstituency      AssemblyConstituency?      @relation(fields: [assemblyConstituencyId], references: [id], onDelete: Cascade)
+  assignedByAdmin           AdminUser?                 @relation("ConstituencyScopeDelegator", fields: [assignedByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([adminUserId])
+  @@index([electionId])
+  @@index([parliamentaryConstituencyId])
+  @@index([assemblyConstituencyId])
+  @@map("admin_constituency_scopes")
+}
+
+model AdminActionLog {
+  id              String     @id @default(uuid()) @db.Uuid
+  adminUserId     String?    @db.Uuid @map("admin_user_id")
+  actorUserId     String?    @db.Uuid @map("actor_user_id")
+  actorIdentifier String?    @db.VarChar(100) @map("actor_identifier")
+  actorRole       AdminRole? @map("actor_role")
+  actionType      String     @db.VarChar(50) @map("action_type")
+  domain          String     @db.VarChar(50)
+  targetEntityId  String     @db.VarChar(100) @map("target_entity_id")
+  outcome         String     @default("SUCCESS") @db.VarChar(20)
+  requestId       String?    @db.VarChar(100) @map("request_id")
+  userAgent       String?    @db.Text @map("user_agent")
+  details         Json       @default("{}")
+  ipAddress       String?    @db.VarChar(45) @map("ip_address")
+  timestamp       DateTime   @default(now()) @db.Timestamptz(6)
+
+  adminUser       AdminUser? @relation(fields: [adminUserId], references: [id], onDelete: SetNull)
 
   @@index([domain, targetEntityId, timestamp])
+  @@index([adminUserId, timestamp])
+  @@index([outcome, timestamp])
   @@map("admin_action_logs")
 }
 

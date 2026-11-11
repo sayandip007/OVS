@@ -141,8 +141,9 @@ export function createAuthRouter(options: CreateAuthRouterOptions = {}): Router 
     controller.logoutAll
   );
 
-  // Development-only inspector endpoint
+  // Development-only inspector endpoints
   if (process.env.NODE_ENV !== 'production') {
+    router.get('/dev/latest-otp', controller.devInspectOtp);
     router.get('/dev/otp/:identifier', controller.devInspectOtp);
   }
 

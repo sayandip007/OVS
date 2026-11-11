@@ -96,6 +96,7 @@ export function createAuthMiddleware(
       }
 
       authReq.user = authResult.user;
+      authReq.adminUser = authResult.user.adminUser ?? undefined;
       authReq.sessionId = authResult.sessionHash;
       authReq.sessionToken = rawToken;
       authReq.csrfToken = sessionService.generateCsrfToken(rawToken);
@@ -138,6 +139,18 @@ export function createAuthMiddleware(
     if (!authReq.user.isActive) {
       return next(
         new ForbiddenProblemError('Your account is deactivated. Access is denied.')
+      );
+    }
+    if (
+      authReq.user.userType === 'ADMIN' &&
+      (!authReq.user.adminUser ||
+        !authReq.user.adminUser.isActive ||
+        authReq.user.adminUser.status !== 'ACTIVE')
+    ) {
+      return next(
+        new ForbiddenProblemError(
+          'Your administrator account is suspended or deactivated. Access is denied.'
+        )
       );
     }
     next();

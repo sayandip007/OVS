@@ -1,5 +1,5 @@
 import React from 'react';
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 import PublicLayout from '../layouts/PublicLayout';
@@ -48,14 +48,24 @@ import AnnouncementManagement from '../pages/admin/AnnouncementManagement';
 import ResultsManagement from '../pages/admin/ResultsManagement';
 import AuditLogs from '../pages/admin/AuditLogs';
 import AdminSettings from '../pages/admin/AdminSettings';
+import AdminProfile from '../pages/admin/AdminProfile';
+import AdminUserManagement from '../pages/admin/AdminUserManagement';
 
 /**
  * Frontend Route Guard for Protected Voter Routes
  * Prevents unauthenticated users or ECI Admins from accessing Voter Hub routes.
  */
 function RequireVoter({ children }) {
-  const { isVoterAuthenticated, isAdminAuthenticated } = useAuth();
+  const { isVoterAuthenticated, isAdminAuthenticated, isAuthInitialized } = useAuth();
   const location = useLocation();
+
+  if (!isAuthInitialized) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 text-xs font-bold text-slate-600">
+        Verifying session...
+      </div>
+    );
+  }
 
   if (!isVoterAuthenticated) {
     if (isAdminAuthenticated) {
@@ -70,12 +80,24 @@ function RequireVoter({ children }) {
 /**
  * Frontend Route Guard for Protected ECI Officer / Admin Routes
  * Prevents unauthenticated users or Voters from accessing Admin Console routes
- * and enforces role-based route permissions.
+ * and displays explicit 403 Forbidden state for unauthorized route access.
  */
 function RequireAdmin({ children }) {
-  const { isAdminAuthenticated, isVoterAuthenticated, canAccessAdminRoute } =
-    useAuth();
+  const {
+    isAdminAuthenticated,
+    isVoterAuthenticated,
+    canAccessAdminRoute,
+    isAuthInitialized,
+  } = useAuth();
   const location = useLocation();
+
+  if (!isAuthInitialized) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 text-xs font-bold text-slate-600">
+        Verifying administrator session...
+      </div>
+    );
+  }
 
   if (!isAdminAuthenticated) {
     if (isVoterAuthenticated) {
@@ -85,7 +107,28 @@ function RequireAdmin({ children }) {
   }
 
   if (!canAccessAdminRoute(location.pathname)) {
-    return <Navigate to="/eci/dashboard" replace />;
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
+        <div className="max-w-md w-full bg-white border border-red-200 rounded-2xl p-6 text-center space-y-4 shadow-xs">
+          <span className="inline-block px-3 py-1 rounded-full bg-red-100 text-red-900 text-xs font-extrabold uppercase">
+            403 Forbidden
+          </span>
+          <h1 className="text-xl font-extrabold text-slate-900">
+            Insufficient Administrative Permissions
+          </h1>
+          <p className="text-xs text-slate-600">
+            Your assigned role or jurisdiction scope does not permit access to{' '}
+            <code className="font-mono font-bold">{location.pathname}</code>.
+          </p>
+          <Link
+            to="/eci/dashboard"
+            className="inline-block px-4 py-2 rounded-xl bg-[#002868] text-white text-xs font-bold hover:bg-blue-900"
+          >
+            Return to Authorized Dashboard
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   return children;
@@ -175,7 +218,9 @@ export default function AppRoutes() {
         <Route path="monitoring" element={<ElectionMonitoring />} />
         <Route path="announcements" element={<AnnouncementManagement />} />
         <Route path="results" element={<ResultsManagement />} />
+        <Route path="admin-users" element={<AdminUserManagement />} />
         <Route path="audit-logs" element={<AuditLogs />} />
+        <Route path="profile" element={<AdminProfile />} />
         <Route path="settings" element={<AdminSettings />} />
       </Route>
     </Routes>

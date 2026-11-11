@@ -48,6 +48,7 @@ export const frontendEnv = Object.freeze({
   dataSourceMode: resolveDataSourceMode(),
   apiBaseUrl: resolveApiBaseUrl(),
   isBackendApiMode: resolveDataSourceMode() === DATA_SOURCE_MODES.BACKEND_API,
+  isBackendApi: resolveDataSourceMode() === DATA_SOURCE_MODES.BACKEND_API,
   isLocalDemoMode: resolveDataSourceMode() === DATA_SOURCE_MODES.LOCAL_DEMO,
 });
 

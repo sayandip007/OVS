@@ -70,6 +70,8 @@ export function buildApiUrl(baseUrl, path, query = {}) {
 export function createOvsApiClient(options = {}) {
   const baseUrl = options.baseUrl || frontendEnv.apiBaseUrl;
   const fetchImpl = options.fetchImpl || globalThis.fetch;
+  let unauthorizedHandler =
+    typeof options.onUnauthorized === 'function' ? options.onUnauthorized : null;
 
   async function request(path, config = {}) {
     if (typeof fetchImpl !== 'function') {
@@ -121,10 +123,23 @@ export function createOvsApiClient(options = {}) {
     const payload = isJson ? await response.json().catch(() => null) : null;
 
     if (!response.ok) {
+      const errStatus = payload?.status || response.status;
+      if (
+        errStatus === 401 &&
+        unauthorizedHandler &&
+        !path.endsWith('/auth/login') &&
+        !path.endsWith('/auth/me')
+      ) {
+        try {
+          unauthorizedHandler(path);
+        } catch {
+          // Ignore callback errors
+        }
+      }
       throw new ApiProblemError({
         type: payload?.type,
         title: payload?.title || response.statusText || 'Request Failed',
-        status: payload?.status || response.status,
+        status: errStatus,
         detail:
           payload?.detail ||
           `HTTP ${response.status} error returned from ${path}`,
@@ -141,6 +156,9 @@ export function createOvsApiClient(options = {}) {
 
   return {
     request,
+    setUnauthorizedHandler: (fn) => {
+      unauthorizedHandler = typeof fn === 'function' ? fn : null;
+    },
     get: (path, query, config = {}) =>
       request(path, { ...config, method: 'GET', query }),
 
@@ -226,6 +244,57 @@ export function createOvsApiClient(options = {}) {
       updateMe: (data, csrfToken) =>
         request('/voters/me', { method: 'PATCH', body: data, csrfToken }),
       getConstituencies: () => request('/voters/me/constituencies'),
+    },
+
+    // Phase 8.4 Administrative Authentication, RBAC, Scoping & Audit APIs
+    admin: {
+      login: (data) =>
+        request('/admin/auth/login', { method: 'POST', body: data }),
+      logout: (csrfToken) =>
+        request('/admin/auth/logout', { method: 'POST', csrfToken }),
+      logoutAll: (csrfToken) =>
+        request('/admin/auth/logout-all', { method: 'POST', csrfToken }),
+      getMe: () => request('/admin/auth/me'),
+      updateMe: (data, csrfToken) =>
+        request('/admin/auth/me', { method: 'PATCH', body: data, csrfToken }),
+      listSessions: () => request('/admin/auth/sessions'),
+      revokeSession: (sessionId, csrfToken) =>
+        request(`/admin/auth/sessions/${encodeURIComponent(sessionId)}`, {
+          method: 'DELETE',
+          csrfToken,
+        }),
+      getPermissions: () => request('/admin/permissions'),
+      listUsers: (query) => request('/admin/users', { query }),
+      getUser: (id) => request(`/admin/users/${encodeURIComponent(id)}`),
+      createUser: (data, csrfToken) =>
+        request('/admin/users', { method: 'POST', body: data, csrfToken }),
+      updateUser: (id, data, csrfToken) =>
+        request(`/admin/users/${encodeURIComponent(id)}`, {
+          method: 'PATCH',
+          body: data,
+          csrfToken,
+        }),
+      suspendUser: (id, data, csrfToken) =>
+        request(`/admin/users/${encodeURIComponent(id)}/suspend`, {
+          method: 'POST',
+          body: data,
+          csrfToken,
+        }),
+      activateUser: (id, data, csrfToken) =>
+        request(`/admin/users/${encodeURIComponent(id)}/activate`, {
+          method: 'POST',
+          body: data || {},
+          csrfToken,
+        }),
+      getUserScopes: (id) =>
+        request(`/admin/users/${encodeURIComponent(id)}/scopes`),
+      updateUserScopes: (id, data, csrfToken) =>
+        request(`/admin/users/${encodeURIComponent(id)}/scopes`, {
+          method: 'PUT',
+          body: data,
+          csrfToken,
+        }),
+      listAuditLogs: (query) => request('/admin/audit-logs', { query }),
     },
   };
 }

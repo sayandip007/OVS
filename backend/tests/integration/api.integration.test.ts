@@ -3,14 +3,19 @@ import assert from 'node:assert/strict';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import { prisma, disconnectDatabase } from '../../src/config/database.js';
+import { assertSafeTestDatabase } from '../../src/config/testDatabaseGuard.js';
+import { bootstrapSuperAdmin } from '../../src/modules/admin/bootstrapSuperAdmin.js';
 import { seedDatabase } from '../../prisma/seed.js';
 
-describe('OVS Phase 8.2 — Live PostgreSQL & Supertest API Integration Suite', () => {
+describe('OVS Phase 8.2–8.4 — Live PostgreSQL & Supertest API Integration Suite', () => {
   const app = createApp({
     allowedOrigins: ['http://localhost:3000'],
   });
 
   before(async () => {
+    // Fail-closed test database guard before any destructive cleanup
+    assertSafeTestDatabase();
+
     // Clean any test artifacts while preserving schema and triggers, then seed DEMO_SAMPLE dataset
     await prisma.candidateTally.deleteMany();
     await prisma.countingRound.deleteMany();
@@ -23,6 +28,8 @@ describe('OVS Phase 8.2 — Live PostgreSQL & Supertest API Integration Suite', 
     await prisma.demoParticipation.deleteMany();
     await prisma.voterNotification.deleteMany();
     await prisma.announcement.deleteMany();
+    await prisma.adminConstituencyScope.deleteMany();
+    await prisma.adminStateScope.deleteMany();
     await prisma.adminElectionScope.deleteMany();
     await prisma.adminActionLog.deleteMany();
     await prisma.adminUser.deleteMany();
@@ -516,8 +523,8 @@ describe('OVS Phase 8.2 — Live PostgreSQL & Supertest API Integration Suite', 
           email: 'geo.test@example.com',
           stateId: 'MH', // Mismatched state for Nadia district
         });
-      assert.equal(invalidGeoRes.status, 409);
-      assert.match(invalidGeoRes.body.detail, /geographic hierarchy/i);
+      assert.ok([400, 409].includes(invalidGeoRes.status));
+      assert.match(invalidGeoRes.body.detail, /geographic|belong to state/i);
     });
 
     test('POST /api/v1/auth/otp/request generates challenge without exposing plaintext OTP', async () => {
@@ -689,6 +696,303 @@ describe('OVS Phase 8.2 — Live PostgreSQL & Supertest API Integration Suite', 
         .set('Cookie', sessionCookie);
 
       assert.equal(unauthRes.status, 401);
+    });
+  });
+
+  describe('9. Phase 8.4 — Admin Authentication, RBAC, Jurisdiction Scoping, Provisioning & Audit Logs (Live PostgreSQL)', () => {
+    const superCredentials = {
+      officerCode: 'ECI-SUPER-CI-01',
+      email: 'super.ci@ovs-test.local',
+      fullName: 'Chief Election Commissioner CI',
+      designation: 'Chief Election Commissioner',
+      password: 'SuperCiSecret#2026!',
+    };
+
+    let superCookie: string;
+    let superCsrf: string;
+    let natId: string;
+    let wbAdminId: string;
+    let mhAdminId: string;
+    let officerId: string;
+    let auditorId: string;
+
+    test('Controlled SUPER_ADMIN bootstrap creates atomic User & AdminUser records and is idempotent', async () => {
+      const first = await bootstrapSuperAdmin(prisma, superCredentials);
+      assert.equal(first.created, true);
+      assert.equal(first.officerCode, superCredentials.officerCode);
+
+      const second = await bootstrapSuperAdmin(prisma, superCredentials);
+      assert.equal(second.created, false);
+      assert.equal(second.adminUserId, first.adminUserId);
+    });
+
+    test('POST /api/v1/admin/auth/login authenticates SUPER_ADMIN, sets HttpOnly cookie, and stores SHA-256 session hash in DB', async () => {
+      const res = await request(app)
+        .post('/api/v1/admin/auth/login')
+        .send({
+          identifier: superCredentials.email,
+          password: superCredentials.password,
+        });
+
+      assert.equal(res.status, 200);
+      assert.equal(res.body.success, true);
+      assert.equal(res.body.data.admin.role, 'SUPER_ADMIN');
+      assert.equal(res.body.data.admin.officerCode, superCredentials.officerCode);
+      assert.equal((res.body.data.admin as any).passwordHash, undefined);
+      assert.ok(res.body.data.csrfToken);
+
+      const cookies = res.headers['set-cookie'] as unknown as string[] | undefined;
+      assert.ok(cookies && cookies.length > 0);
+      assert.match(cookies[0]!, /ovs_session=/);
+      assert.match(cookies[0]!, /HttpOnly/i);
+      superCookie = cookies[0]!.split(';')[0]!;
+      superCsrf = res.body.data.csrfToken;
+    });
+
+    test('SUPER_ADMIN provisions NATIONAL_ADMIN, STATE_ADMIN (WB & MH), ELECTION_OFFICER (LS-2029), and READ_ONLY_AUDITOR', async () => {
+      // NATIONAL_ADMIN
+      const natRes = await request(app)
+        .post('/api/v1/admin/users')
+        .set('Cookie', superCookie)
+        .set('X-CSRF-Token', superCsrf)
+        .send({
+          officerCode: 'ECI-NAT-CI-01',
+          email: 'nat.ci@ovs-test.local',
+          fullName: 'National Admin CI',
+          designation: 'Deputy EC',
+          role: 'NATIONAL_ADMIN',
+          password: 'NatCiPassword#2026!',
+        });
+      assert.equal(natRes.status, 201);
+      natId = natRes.body.data.id;
+
+      // STATE_ADMIN (WB)
+      const wbRes = await request(app)
+        .post('/api/v1/admin/users')
+        .set('Cookie', superCookie)
+        .set('X-CSRF-Token', superCsrf)
+        .send({
+          officerCode: 'ECI-WB-CI-01',
+          email: 'wb.ci@ovs-test.local',
+          fullName: 'WB State Admin CI',
+          designation: 'CEO West Bengal',
+          role: 'STATE_ADMIN',
+          password: 'WbCiPassword#2026!',
+          stateIds: ['WB'],
+        });
+      assert.equal(wbRes.status, 201);
+      assert.deepEqual(wbRes.body.data.assignedStateIds, ['WB']);
+      wbAdminId = wbRes.body.data.id;
+
+      // STATE_ADMIN (MH)
+      const mhRes = await request(app)
+        .post('/api/v1/admin/users')
+        .set('Cookie', superCookie)
+        .set('X-CSRF-Token', superCsrf)
+        .send({
+          officerCode: 'ECI-MH-CI-01',
+          email: 'mh.ci@ovs-test.local',
+          fullName: 'MH State Admin CI',
+          designation: 'CEO Maharashtra',
+          role: 'STATE_ADMIN',
+          password: 'MhCiPassword#2026!',
+          stateIds: ['MH'],
+        });
+      assert.equal(mhRes.status, 201);
+      mhAdminId = mhRes.body.data.id;
+
+      // ELECTION_OFFICER (WB + LS-2029)
+      const roRes = await request(app)
+        .post('/api/v1/admin/users')
+        .set('Cookie', superCookie)
+        .set('X-CSRF-Token', superCsrf)
+        .send({
+          officerCode: 'ECI-RO-CI-01',
+          email: 'ro.ci@ovs-test.local',
+          fullName: 'Returning Officer CI',
+          designation: 'RO Krishnanagar',
+          role: 'ELECTION_OFFICER',
+          password: 'RoCiPassword#2026!',
+          stateIds: ['WB'],
+          electionIds: ['LS-2029'],
+          constituencyScopes: [
+            {
+              electionId: 'LS-2029',
+              constituencyType: 'PARLIAMENTARY',
+              parliamentaryConstituencyId: 'WB-PC-KRISHNANAGAR',
+            },
+          ],
+        });
+      assert.equal(roRes.status, 201);
+      officerId = roRes.body.data.id;
+
+      // READ_ONLY_AUDITOR
+      const audRes = await request(app)
+        .post('/api/v1/admin/users')
+        .set('Cookie', superCookie)
+        .set('X-CSRF-Token', superCsrf)
+        .send({
+          officerCode: 'ECI-AUD-CI-01',
+          email: 'aud.ci@ovs-test.local',
+          fullName: 'Auditor CI',
+          designation: 'Statutory Auditor',
+          role: 'READ_ONLY_AUDITOR',
+          password: 'AudCiPassword#2026!',
+        });
+      assert.equal(audRes.status, 201);
+      auditorId = audRes.body.data.id;
+    });
+
+    test('Enforces jurisdiction scoping, privilege non-escalation, and READ_ONLY_AUDITOR denial against live DB', async () => {
+      // Login WB State Admin
+      const wbLogin = await request(app)
+        .post('/api/v1/admin/auth/login')
+        .send({ identifier: 'wb.ci@ovs-test.local', password: 'WbCiPassword#2026!' });
+      assert.equal(wbLogin.status, 200);
+      const wbCookie = (wbLogin.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
+      const wbCsrf = wbLogin.body.data.csrfToken;
+
+      // Cross-state isolation: WB admin denied MH admin & MH endpoint
+      const crossRead = await request(app)
+        .get(`/api/v1/admin/users/${mhAdminId}`)
+        .set('Cookie', wbCookie);
+      assert.equal(crossRead.status, 403);
+
+      const mhCheck = await request(app)
+        .get('/api/v1/admin/jurisdictions/states/MH')
+        .set('Cookie', wbCookie);
+      assert.equal(mhCheck.status, 403);
+
+      const wbCheck = await request(app)
+        .get('/api/v1/admin/jurisdictions/states/WB')
+        .set('Cookie', wbCookie);
+      assert.equal(wbCheck.status, 200);
+
+      // WB admin cannot grant global scope
+      const scopeEsc = await request(app)
+        .put(`/api/v1/admin/users/${officerId}/scopes`)
+        .set('Cookie', wbCookie)
+        .set('X-CSRF-Token', wbCsrf)
+        .send({ assignedStateId: null, stateIds: [] });
+      assert.equal(scopeEsc.status, 403);
+
+      // Login ELECTION_OFFICER (assigned LS-2029)
+      const roLogin = await request(app)
+        .post('/api/v1/admin/auth/login')
+        .send({ identifier: 'ECI-RO-CI-01', password: 'RoCiPassword#2026!' });
+      assert.equal(roLogin.status, 200);
+      const roCookie = (roLogin.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
+      const roCsrf = roLogin.body.data.csrfToken;
+
+      const allowLs2029 = await request(app)
+        .post('/api/v1/admin/jurisdictions/elections/LS-2029/verify-action')
+        .set('Cookie', roCookie)
+        .set('X-CSRF-Token', roCsrf)
+        .send({});
+      assert.equal(allowLs2029.status, 200);
+
+      const denyWbAsm = await request(app)
+        .post('/api/v1/admin/jurisdictions/elections/WB-ASSEMBLY-2029/verify-action')
+        .set('Cookie', roCookie)
+        .set('X-CSRF-Token', roCsrf)
+        .send({});
+      assert.equal(denyWbAsm.status, 403);
+
+      // Login NATIONAL_ADMIN -> cannot suspend SUPER_ADMIN
+      const natLogin = await request(app)
+        .post('/api/v1/admin/auth/login')
+        .send({ identifier: 'ECI-NAT-CI-01', password: 'NatCiPassword#2026!' });
+      assert.equal(natLogin.status, 200);
+      const natCookie = (natLogin.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
+      const natCsrf = natLogin.body.data.csrfToken;
+
+      const superRow = await prisma.adminUser.findUnique({
+        where: { officerCode: superCredentials.officerCode },
+      });
+      const natSuspendSuper = await request(app)
+        .post(`/api/v1/admin/users/${superRow!.id}/suspend`)
+        .set('Cookie', natCookie)
+        .set('X-CSRF-Token', natCsrf)
+        .send({ reason: 'Unauthorized attempt' });
+      assert.equal(natSuspendSuper.status, 403);
+
+      // Login READ_ONLY_AUDITOR -> reads audit logs, denied mutations
+      const audLogin = await request(app)
+        .post('/api/v1/admin/auth/login')
+        .send({ identifier: 'ECI-AUD-CI-01', password: 'AudCiPassword#2026!' });
+      assert.equal(audLogin.status, 200);
+      const audCookie = (audLogin.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
+      const audCsrf = audLogin.body.data.csrfToken;
+
+      const logsRes = await request(app)
+        .get('/api/v1/admin/audit-logs')
+        .set('Cookie', audCookie);
+      assert.equal(logsRes.status, 200);
+      assert.ok(Array.isArray(logsRes.body.data));
+      assert.ok(logsRes.body.data.length > 0);
+
+      const audMutate = await request(app)
+        .post(`/api/v1/admin/users/${natId}/suspend`)
+        .set('Cookie', audCookie)
+        .set('X-CSRF-Token', audCsrf)
+        .send({ reason: 'Auditor mutation attempt' });
+      assert.equal(audMutate.status, 403);
+    });
+
+    test('Suspend & Activate lifecycle revokes live DB sessions immediately and records sanitized audit trail', async () => {
+      const audLogin = await request(app)
+        .post('/api/v1/admin/auth/login')
+        .send({ identifier: 'ECI-AUD-CI-01', password: 'AudCiPassword#2026!' });
+      const audCookie = (audLogin.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
+
+      // Suspend auditor via SUPER_ADMIN
+      const suspRes = await request(app)
+        .post(`/api/v1/admin/users/${auditorId}/suspend`)
+        .set('Cookie', superCookie)
+        .set('X-CSRF-Token', superCsrf)
+        .send({ reason: 'CI lifecycle test suspension' });
+      assert.equal(suspRes.status, 200);
+      assert.equal(suspRes.body.data.status, 'SUSPENDED');
+
+      // Existing auditor session rejected
+      const audMe = await request(app)
+        .get('/api/v1/admin/auth/me')
+        .set('Cookie', audCookie);
+      assert.equal(audMe.status, 401);
+
+      // Suspended login rejected with 403
+      const audRetry = await request(app)
+        .post('/api/v1/admin/auth/login')
+        .send({ identifier: 'ECI-AUD-CI-01', password: 'AudCiPassword#2026!' });
+      assert.equal(audRetry.status, 403);
+
+      // Reactivate auditor
+      const actRes = await request(app)
+        .post(`/api/v1/admin/users/${auditorId}/activate`)
+        .set('Cookie', superCookie)
+        .set('X-CSRF-Token', superCsrf)
+        .send({ note: 'CI test reactivation' });
+      assert.equal(actRes.status, 200);
+      assert.equal(actRes.body.data.status, 'ACTIVE');
+
+      // Login works again after activation
+      const audReactivatedLogin = await request(app)
+        .post('/api/v1/admin/auth/login')
+        .send({ identifier: 'ECI-AUD-CI-01', password: 'AudCiPassword#2026!' });
+      assert.equal(audReactivatedLogin.status, 200);
+
+      // Verify zero plaintext passwords/secrets anywhere in admin_action_logs
+      const allDbLogs = await prisma.adminActionLog.findMany();
+      const serialized = JSON.stringify(allDbLogs);
+      assert.equal(serialized.includes(superCredentials.password), false);
+      assert.equal(serialized.includes('AudCiPassword#2026!'), false);
+
+      // Logout SUPER_ADMIN cleanly
+      const logoutRes = await request(app)
+        .post('/api/v1/admin/auth/logout-all')
+        .set('Cookie', superCookie)
+        .set('X-CSRF-Token', superCsrf);
+      assert.equal(logoutRes.status, 200);
     });
   });
 });

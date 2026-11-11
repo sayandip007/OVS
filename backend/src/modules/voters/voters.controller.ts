@@ -1,4 +1,5 @@
 import type { Response, NextFunction } from 'express';
+import { sendSuccess } from '../../common/utils/response.js';
 import type { AuthenticatedRequest } from '../auth/auth.types.js';
 import { VotersService } from './voters.service.js';
 
@@ -12,9 +13,7 @@ export class VotersController {
   ): Promise<void> => {
     try {
       const profile = await this.votersService.getProfile(req.user!.id);
-      res.status(200).json({
-        data: profile,
-      });
+      sendSuccess(req, res, profile);
     } catch (err) {
       next(err);
     }
@@ -27,11 +26,8 @@ export class VotersController {
   ): Promise<void> => {
     try {
       const updated = await this.votersService.updateProfile(req.user!.id, req.body);
-      res.status(200).json({
-        data: updated,
-        meta: {
-          message: 'Voter profile updated successfully.',
-        },
+      sendSuccess(req, res, updated, {
+        message: 'Voter profile updated successfully.',
       });
     } catch (err) {
       next(err);
@@ -45,12 +41,9 @@ export class VotersController {
   ): Promise<void> => {
     try {
       const constituencies = await this.votersService.getConstituencies(req.user!.id);
-      res.status(200).json({
-        data: constituencies,
-      });
+      sendSuccess(req, res, constituencies);
     } catch (err) {
       next(err);
     }
   };
 }
-

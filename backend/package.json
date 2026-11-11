@@ -17,6 +17,7 @@
     "prisma:generate": "prisma generate --schema=prisma/schema.prisma",
     "prisma:migrate:deploy": "prisma migrate deploy --schema=prisma/schema.prisma",
     "prisma:seed": "tsx prisma/seed.ts",
+    "admin:bootstrap": "tsx src/modules/admin/bootstrapSuperAdmin.ts",
     "test:unit": "node --import tsx --test tests/unit/*.test.ts",
     "test:integration": "node --import tsx --test tests/integration/*.test.ts",
     "test": "npm run test:unit && npm run test:integration"

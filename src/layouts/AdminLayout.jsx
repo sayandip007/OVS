@@ -24,14 +24,16 @@ const ROUTE_TITLES = {
   monitoring: 'Election Monitoring',
   announcements: 'Public Announcements',
   results: 'Results Management',
+  'admin-users': 'Administrators & Scopes',
   'audit-logs': 'Audit Logs',
+  profile: 'My Profile & Sessions',
   settings: 'Admin Settings',
 };
 
 export default function AdminLayout() {
   const [confirmResetOpen, setConfirmResetOpen] = useState(false);
   const { resetDemoData, demoLifecycleMode, setDemoLifecycleMode, appendAuditLog } = useElection();
-  const { currentAdmin, adminOfficers, switchActiveAdmin, logoutAdmin } = useAuth();
+  const { currentAdmin, adminOfficers, switchActiveAdmin, logoutAdmin, isBackendApiMode } = useAuth();
   const { notify } = useNotification();
   const location = useLocation();
   const navigate = useNavigate();
@@ -66,15 +68,17 @@ export default function AdminLayout() {
     }
   };
 
-  const handleLogout = () => {
-    appendAuditLog({
-      adminUser: currentAdmin,
-      actionType: 'ADMIN_LOGOUT',
-      targetEntity: 'ADMIN_SESSION',
-      targetId: currentAdmin?.id || 'ADMIN',
-      summary: `ECI officer ${currentAdmin?.fullName || 'Admin'} signed out of console.`,
-    });
-    logoutAdmin();
+  const handleLogout = async () => {
+    if (!isBackendApiMode) {
+      appendAuditLog({
+        adminUser: currentAdmin,
+        actionType: 'ADMIN_LOGOUT',
+        targetEntity: 'ADMIN_SESSION',
+        targetId: currentAdmin?.id || 'ADMIN',
+        summary: `ECI officer ${currentAdmin?.fullName || 'Admin'} signed out of console.`,
+      });
+    }
+    await logoutAdmin();
     navigate('/eci/login');
   };
 
@@ -123,8 +127,8 @@ export default function AdminLayout() {
                 Demo Lifecycle: {demoLifecycleMode ? 'Flexible' : 'Strict'}
               </button>
 
-              {/* Quick Demo Role Switcher */}
-              {currentAdmin && (
+              {/* Quick Demo Role Switcher (LOCAL_DEMO only) or Live Admin Badge (BACKEND_API) */}
+              {currentAdmin && !isBackendApiMode && (
                 <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1">
                   <ShieldCheck className="w-3.5 h-3.5 text-[#002868] shrink-0" />
                   <span className="text-[11px] font-semibold text-slate-500 hidden sm:inline">
@@ -143,6 +147,18 @@ export default function AdminLayout() {
                     ))}
                   </select>
                 </div>
+              )}
+
+              {currentAdmin && isBackendApiMode && (
+                <Link
+                  to="/eci/profile"
+                  className="inline-flex items-center gap-1.5 bg-blue-50 border border-blue-200 rounded-lg px-2.5 py-1 text-xs font-bold text-[#002868] hover:bg-blue-100"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+                  <span>
+                    {ADMIN_ROLE_LABELS[currentAdmin.role] || currentAdmin.role} ({currentAdmin.officerCode})
+                  </span>
+                </Link>
               )}
 
               <button

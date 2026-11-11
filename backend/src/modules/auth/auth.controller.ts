@@ -1,10 +1,13 @@
 import type { Response, NextFunction } from 'express';
+import { sendSuccess } from '../../common/utils/response.js';
 import type { AuthenticatedRequest } from './auth.types.js';
 import type { AuthService } from './auth.service.js';
 import type { SessionService } from './session.service.js';
+import { extractSessionToken } from './auth.middleware.js';
 import {
   ForbiddenProblemError,
   NotFoundProblemError,
+  ValidationProblemError,
 } from '../../common/errors/problemDetails.js';
 
 export class AuthController {
@@ -20,12 +23,25 @@ export class AuthController {
   ): Promise<void> => {
     try {
       const user = await this.authService.registerVoter(req.body);
-      res.status(201).json({
-        data: user,
-        meta: {
-          message: 'Voter registration successful. You can now log in via simulated OTP verification.',
+      const profile = user.voterProfile;
+      sendSuccess(
+        req,
+        res,
+        {
+          id: profile?.id ?? user.id,
+          userId: user.id,
+          epicNumber: profile?.epicNumber ?? user.identifier,
+          fullName: profile?.fullName ?? '',
+          role: 'VOTER',
+          accountStatus: 'UNVERIFIED',
+          user,
         },
-      });
+        {
+          message:
+            'Voter registration successful. You can now log in via simulated OTP verification.',
+        },
+        201
+      );
     } catch (err) {
       next(err);
     }
@@ -45,9 +61,7 @@ export class AuthController {
         req.headers['user-agent']
       );
 
-      res.status(200).json({
-        data: result,
-      });
+      sendSuccess(req, res, result);
     } catch (err) {
       next(err);
     }
@@ -60,25 +74,30 @@ export class AuthController {
   ): Promise<void> => {
     try {
       const { challengeId, otp } = req.body;
+      const existingToken = extractSessionToken(req);
       const result = await this.authService.verifyOtp(
         challengeId,
         otp,
         req.headers['user-agent'],
-        req.ip
+        req.ip,
+        existingToken
       );
 
       // Set HttpOnly session cookie
       this.sessionService.setSessionCookie(res, result.sessionToken);
 
-      res.status(200).json({
-        data: {
+      sendSuccess(
+        req,
+        res,
+        {
           user: result.user,
+          voterProfile: result.user.voterProfile,
           csrfToken: result.csrfToken,
         },
-        meta: {
+        {
           message: 'Authentication successful. Active session established.',
-        },
-      });
+        }
+      );
     } catch (err) {
       next(err);
     }
@@ -90,12 +109,17 @@ export class AuthController {
     next: NextFunction
   ): Promise<void> => {
     try {
-      res.status(200).json({
-        data: req.user,
-        meta: {
-          csrfToken: req.csrfToken,
+      sendSuccess(
+        req,
+        res,
+        {
+          ...req.user,
+          user: req.user,
         },
-      });
+        {
+          csrfToken: req.csrfToken,
+        }
+      );
     } catch (err) {
       next(err);
     }
@@ -108,11 +132,7 @@ export class AuthController {
   ): Promise<void> => {
     try {
       const csrfToken = this.authService.getCsrfToken(req.sessionToken);
-      res.status(200).json({
-        data: {
-          csrfToken,
-        },
-      });
+      sendSuccess(req, res, { csrfToken });
     } catch (err) {
       next(err);
     }
@@ -128,9 +148,7 @@ export class AuthController {
         req.user!.id,
         req.sessionId
       );
-      res.status(200).json({
-        data: sessions,
-      });
+      sendSuccess(req, res, sessions);
     } catch (err) {
       next(err);
     }
@@ -144,10 +162,8 @@ export class AuthController {
     try {
       const sessionId = String(req.params.sessionId || '');
       await this.authService.revokeSession(req.user!.id, sessionId);
-      res.status(200).json({
-        data: {
-          message: `Session '${sessionId}' has been revoked.`,
-        },
+      sendSuccess(req, res, {
+        message: `Session '${sessionId}' has been revoked.`,
       });
     } catch (err) {
       next(err);
@@ -165,10 +181,8 @@ export class AuthController {
       }
       this.sessionService.clearSessionCookie(res);
 
-      res.status(200).json({
-        data: {
-          message: 'Successfully logged out.',
-        },
+      sendSuccess(req, res, {
+        message: 'Successfully logged out.',
       });
     } catch (err) {
       next(err);
@@ -184,10 +198,9 @@ export class AuthController {
       const revokedCount = await this.authService.logoutAll(req.user!.id);
       this.sessionService.clearSessionCookie(res);
 
-      res.status(200).json({
-        data: {
-          message: `Successfully revoked ${revokedCount} active session(s).`,
-        },
+      sendSuccess(req, res, {
+        revokedCount,
+        message: `Successfully revoked ${revokedCount} active session(s).`,
       });
     } catch (err) {
       next(err);
@@ -208,19 +221,24 @@ export class AuthController {
         throw new ForbiddenProblemError('Development inspector is disabled in production.');
       }
 
-      const identifier = String(req.params.identifier || '');
+      const identifier = String(
+        req.params.identifier || req.query.identifier || ''
+      ).trim();
+
+      if (!identifier) {
+        throw new ValidationProblemError('Identifier parameter is required.');
+      }
+
       const otp = this.authService['otpService'].getProvider().getLastOtp?.(identifier);
 
       if (!otp) {
         throw new NotFoundProblemError('Development OTP for identifier', identifier);
       }
 
-      res.status(200).json({
-        data: {
-          identifier,
-          otp,
-          note: 'This development inspection endpoint is strictly disabled in production builds.',
-        },
+      sendSuccess(req, res, {
+        identifier,
+        otp,
+        note: 'This development inspection endpoint is strictly disabled in production builds.',
       });
     } catch (err) {
       next(err);

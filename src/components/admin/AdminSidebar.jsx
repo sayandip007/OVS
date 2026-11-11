@@ -10,6 +10,8 @@ import {
   Flag,
   Users,
   UserCheck,
+  UserCog,
+  Shield,
   Activity,
   Megaphone,
   BarChart3,
@@ -58,7 +60,9 @@ export default function AdminSidebar({ onResetDemo }) {
       items: [
         { to: '/eci/announcements', label: 'Announcements', icon: Megaphone },
         { to: '/eci/results', label: 'Results Management', icon: BarChart3 },
+        { to: '/eci/admin-users', label: 'Administrators & Scopes', icon: UserCog },
         { to: '/eci/audit-logs', label: 'Audit Logs', icon: FileText },
+        { to: '/eci/profile', label: 'My Profile & Sessions', icon: Shield },
         { to: '/eci/settings', label: 'Admin Settings', icon: Settings },
       ],
     },

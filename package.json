@@ -28,7 +28,8 @@
     "prisma:validate": "prisma validate --schema=backend/prisma/schema.prisma",
     "prisma:generate": "prisma generate --schema=backend/prisma/schema.prisma",
     "prisma:migrate:deploy": "prisma migrate deploy --schema=backend/prisma/schema.prisma",
-    "prisma:seed": "tsx backend/prisma/seed.ts"
+    "prisma:seed": "tsx backend/prisma/seed.ts",
+    "backend:admin:bootstrap": "tsx backend/src/modules/admin/bootstrapSuperAdmin.ts"
   },
   "dependencies": {
     "@prisma/client": "6.4.1",
