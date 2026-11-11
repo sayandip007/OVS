@@ -100,15 +100,18 @@ jobs:
       - name: 10. Backend unit tests
         run: npm run backend:test:unit
 
-      - name: 11. Apply Prisma migrations (base DDL + CUSTOM_DATABASE_INTEGRITY.sql triggers/constraints)
-        run: npm run prisma:migrate:deploy
+      - name: 11. Bootstrap Phase 8.1.6 schema & apply CUSTOM_DATABASE_INTEGRITY.sql triggers/constraints
+        run: |
+          npx prisma db push --schema=docs/backend-architecture/PRISMA_SCHEMA_DRAFT.prisma --skip-generate
+          PG_URI="${DATABASE_URL%\?*}"
+          psql "$PG_URI" -v ON_ERROR_STOP=1 -f docs/backend-architecture/CUSTOM_DATABASE_INTEGRITY.sql
 
       - name: 12. Execute Phase 8.1.6 PostgreSQL 31-scenario validation suite on live PostgreSQL 16
         run: |
           PG_URI="${DATABASE_URL%\?*}"
           psql "$PG_URI" -v ON_ERROR_STOP=1 -f tests/postgresql-validation.sql
 
-      - name: 13. Reset schema & re-apply migrations for clean DEMO_SAMPLE seed verification
+      - name: 13. Reset schema & apply full Prisma migrations (Phases 8.2-8.4) for seeded verification
         run: |
           PG_URI="${DATABASE_URL%\?*}"
           psql "$PG_URI" -v ON_ERROR_STOP=1 -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
@@ -121,3 +124,13 @@ jobs:
 
       - name: 15. Execute Backend API Supertest integration tests against live seeded PostgreSQL 16
         run: npm run backend:test:integration
+
+      - name: 16. Verify controlled SUPER_ADMIN bootstrap CLI idempotency against PostgreSQL 16
+        env:
+          BOOTSTRAP_SUPER_ADMIN_CODE: ECI-SUPER-BOOT-01
+          BOOTSTRAP_SUPER_ADMIN_EMAIL: super.boot@ovs-ci.local
+          BOOTSTRAP_SUPER_ADMIN_NAME: CI Bootstrapped Super Admin
+          BOOTSTRAP_SUPER_ADMIN_PASSWORD: CiBootstrap#2026Strong!
+        run: |
+          npm run backend:admin:bootstrap
+          npm run backend:admin:bootstrap

@@ -64,7 +64,6 @@
     "eslint-plugin-react-hooks": "^5.1.0",
     "eslint-plugin-react-refresh": "^0.4.19",
     "globals": "^15.15.0",
-    "lightningcss-win32-x64-msvc": "^1.33.0",
     "postcss": "^8.5.3",
     "prisma": "6.4.1",
     "supertest": "7.0.0",
