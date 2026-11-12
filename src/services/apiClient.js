@@ -413,6 +413,18 @@ export function createOvsApiClient(options = {}) {
             `/admin/elections/${encodeURIComponent(electionId)}/configuration/return`,
             { method: 'POST', body: data, csrfToken }
           ),
+        participationSummary: (electionId) =>
+          request(
+            `/admin/elections/${encodeURIComponent(electionId)}/participation/summary`
+          ),
+        participationConstituencies: (electionId) =>
+          request(
+            `/admin/elections/${encodeURIComponent(electionId)}/participation/constituencies`
+          ),
+        participationTimeline: (electionId) =>
+          request(
+            `/admin/elections/${encodeURIComponent(electionId)}/participation/timeline`
+          ),
       },
       candidates: {
         list: (query) => request('/admin/candidates', { query }),
@@ -488,6 +500,29 @@ export function createOvsApiClient(options = {}) {
             { query }
           ),
       },
+    },
+
+    // Phase 8.8 Voter Demo Voting & Participation (Zero Candidate-Choice Transmission)
+    voter: {
+      listElections: () => request('/voter/elections'),
+      getElection: (electionId) =>
+        request(`/voter/elections/${encodeURIComponent(electionId)}`),
+      getEligibility: (electionId) =>
+        request(
+          `/voter/elections/${encodeURIComponent(electionId)}/eligibility`
+        ),
+      getBallot: (electionId) =>
+        request(`/voter/elections/${encodeURIComponent(electionId)}/ballot`),
+      confirmParticipation: (electionId, csrfToken) =>
+        request(
+          `/voter/elections/${encodeURIComponent(electionId)}/participation`,
+          { method: 'POST', body: {}, csrfToken }
+        ),
+      listParticipation: () => request('/voter/participation'),
+      getElectionParticipation: (electionId) =>
+        request(
+          `/voter/elections/${encodeURIComponent(electionId)}/participation`
+        ),
     },
   };
 }

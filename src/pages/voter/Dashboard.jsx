@@ -1,14 +1,184 @@
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useVoter } from '../../context/VoterContext';
 import { useElection } from '../../context/ElectionContext';
 import { useNotification } from '../../context/NotificationContext';
+import { frontendEnv } from '../../config/env';
+import { apiClient } from '../../services/apiClient';
 import VotingStatus from '../../components/voter/VotingStatus';
 import ElectionCard from '../../components/voter/ElectionCard';
 import { ELECTION_TYPES, NOTIFICATION_TYPE_LABELS } from '../../utils/constants';
 import { defaultAvatar } from '../../assets';
 
+function BackendVoterDashboard() {
+  const { notifyError } = useNotification();
+  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState(null);
+
+  const loadDiscovery = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await apiClient.voter.listElections();
+      setData(res?.data || null);
+    } catch (err) {
+      notifyError(err?.message || 'Failed to load demo elections.');
+    } finally {
+      setLoading(false);
+    }
+  }, [notifyError]);
+
+  useEffect(() => {
+    loadDiscovery();
+  }, [loadDiscovery]);
+
+  if (loading) {
+    return (
+      <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-sm text-slate-500">
+        Loading your eligible demo elections...
+      </div>
+    );
+  }
+
+  const voter = data?.voter;
+  const elections = data?.elections || [];
+  const lokSabhaElections = elections.filter((e) => e.type === 'LOK_SABHA');
+  const assemblyElections = elections.filter((e) => e.type === 'STATE_ASSEMBLY');
+
+  const renderElectionSection = (title, items, badgeClass) => (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-4">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <span className={`px-2.5 py-0.5 rounded text-[11px] font-bold uppercase ${badgeClass}`}>
+            {title}
+          </span>
+          <h2 className="text-lg font-extrabold text-slate-900 mt-1">
+            {title} ({items.length})
+          </h2>
+        </div>
+      </div>
+
+      {items.length === 0 ? (
+        <p className="text-xs text-slate-500">No demo elections available in this category.</p>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {items.map((el) => (
+            <div
+              key={el.id}
+              className="p-4 rounded-xl border border-slate-200 bg-slate-50 space-y-2.5 text-xs"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="font-extrabold text-sm text-slate-900">{el.name}</p>
+                  <p className="text-slate-600">
+                    Constituency:{' '}
+                    <strong>{el.constituency?.name || el.constituency?.id || 'Not Mapped'}</strong>
+                  </p>
+                </div>
+                <span className="px-2 py-0.5 rounded-full bg-white border border-slate-200 font-bold text-[11px]">
+                  {el.status}
+                </span>
+              </div>
+
+              {el.pollingWindow?.startAt && el.pollingWindow?.endAt && (
+                <p className="text-slate-600">
+                  Polling Window ({el.scheduleTimezone || 'Asia/Kolkata'}):{' '}
+                  {new Date(el.pollingWindow.startAt).toLocaleString()} –{' '}
+                  {new Date(el.pollingWindow.endAt).toLocaleString()}
+                </p>
+              )}
+
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200">
+                {el.hasParticipated ? (
+                  <>
+                    <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 font-bold">
+                      PARTICIPATED • {el.participation?.demoReference}
+                    </span>
+                    <Link
+                      to={`/voter/elections/${el.id}/receipt`}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-700 text-white font-bold"
+                    >
+                      View Confirmation
+                    </Link>
+                  </>
+                ) : el.eligible ? (
+                  <>
+                    <span className="text-emerald-700 font-bold">
+                      Eligible ({el.approvedCandidatesCount} approved candidates)
+                    </span>
+                    <Link
+                      to={`/voter/elections/${el.id}/ballot`}
+                      className="px-3.5 py-1.5 rounded-lg bg-[#002868] text-white font-bold"
+                    >
+                      Open Demo Ballot
+                    </Link>
+                  </>
+                ) : (
+                  <span className="text-amber-800 font-semibold">
+                    {el.ineligibilityReason || el.ineligibilityCode || 'Not currently open'}
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <span className="px-2.5 py-0.5 rounded bg-blue-100 text-[#002868] text-xs font-bold font-mono">
+              EPIC: {voter?.epicNumber}
+            </span>
+            <h1 className="text-2xl font-extrabold text-slate-900 mt-1">
+              Namaste, {voter?.fullName}
+            </h1>
+            <p className="text-xs text-slate-600">
+              State: <strong>{voter?.stateName}</strong> • District:{' '}
+              <strong>{voter?.districtName}</strong> • PC:{' '}
+              <strong>{voter?.parliamentaryConstituency?.name}</strong> • AC:{' '}
+              <strong>{voter?.assemblyConstituency?.name}</strong>
+            </p>
+          </div>
+          <Link
+            to="/voter/history"
+            className="px-4 py-2 rounded-xl bg-slate-100 text-slate-800 text-xs font-bold"
+          >
+            Participation History
+          </Link>
+        </div>
+        <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          Educational Demo Simulation: Lok Sabha (PC) and State Assembly (AC) elections operate
+          independently. Candidate choices stay strictly in temporary browser memory and are never
+          sent to the server.
+        </p>
+      </div>
+
+      {renderElectionSection(
+        'Lok Sabha (Parliamentary Constituency)',
+        lokSabhaElections,
+        'bg-blue-100 text-[#002868]'
+      )}
+      {renderElectionSection(
+        'State Legislative Assembly (Assembly Constituency)',
+        assemblyElections,
+        'bg-indigo-100 text-indigo-900'
+      )}
+    </div>
+  );
+}
+
 export default function VoterDashboard() {
+  if (frontendEnv.isBackendApiMode) {
+    return <BackendVoterDashboard />;
+  }
+  return <LocalDemoVoterDashboard />;
+}
+
+function LocalDemoVoterDashboard() {
   const navigate = useNavigate();
   const {
     currentVoter,

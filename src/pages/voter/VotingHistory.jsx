@@ -1,12 +1,133 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useVoter } from '../../context/VoterContext';
+import { frontendEnv } from '../../config/env';
+import { apiClient } from '../../services/apiClient';
 import {
   ELECTION_TYPES,
   PARTICIPATION_STATUS_STYLES,
 } from '../../utils/constants';
 
+function BackendVotingHistory() {
+  const [loading, setLoading] = useState(true);
+  const [records, setRecords] = useState([]);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await apiClient.voter.listParticipation();
+        if (active) setRecords(res?.data || []);
+      } catch (err) {
+        if (active) setError(err?.message || 'Failed to load participation history.');
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-sm text-slate-500">
+        Loading demo participation history...
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="bg-white rounded-2xl border border-rose-200 p-8 text-center text-sm text-rose-700">
+        {error}
+      </div>
+    );
+  }
+
+  const lokSabha = records.filter((r) => r.electionType === 'LOK_SABHA');
+  const stateAssembly = records.filter((r) => r.electionType === 'STATE_ASSEMBLY');
+
+  const renderTable = (items, title, badgeClass) => (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+      <div className="p-5 border-b border-slate-200">
+        <span className={`px-2.5 py-0.5 rounded text-[11px] font-bold uppercase ${badgeClass}`}>
+          {title}
+        </span>
+        <h2 className="text-lg font-extrabold text-slate-900 mt-1">
+          {title} Participation Records ({items.length})
+        </h2>
+      </div>
+      {items.length === 0 ? (
+        <p className="p-5 text-xs text-slate-500">No participation records in this category yet.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase tracking-wider font-bold">
+                <th className="py-3 px-4">Election</th>
+                <th className="py-3 px-4">Constituency</th>
+                <th className="py-3 px-4">Status</th>
+                <th className="py-3 px-4">Timestamp</th>
+                <th className="py-3 px-4">Demo Reference</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200">
+              {items.map((row) => (
+                <tr key={row.id}>
+                  <td className="py-3 px-4 font-bold text-slate-900">{row.electionName}</td>
+                  <td className="py-3 px-4">{row.constituency?.name || row.constituency?.id || 'N/A'}</td>
+                  <td className="py-3 px-4">
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold">
+                      {row.status}
+                    </span>
+                  </td>
+                  <td className="py-3 px-4">{new Date(row.participatedAt).toLocaleString()}</td>
+                  <td className="py-3 px-4 font-mono">{row.demoReference}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-white rounded-2xl border border-slate-200 p-5 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-extrabold text-slate-900">
+            Demo Participation History
+          </h1>
+          <p className="text-xs text-slate-600">
+            Educational simulation records only. Candidate choices are never recorded or displayed.
+          </p>
+        </div>
+        <Link
+          to="/voter/dashboard"
+          className="px-4 py-2 rounded-xl bg-[#002868] text-white text-xs font-bold"
+        >
+          Back to Dashboard
+        </Link>
+      </div>
+      {renderTable(lokSabha, 'Lok Sabha (PC)', 'bg-blue-100 text-[#002868]')}
+      {renderTable(stateAssembly, 'State Legislative Assembly (AC)', 'bg-indigo-100 text-indigo-900')}
+    </div>
+  );
+}
+
 export default function VotingHistory() {
+  if (frontendEnv.isBackendApiMode) {
+    return <BackendVotingHistory />;
+  }
+  return <LocalDemoVotingHistory />;
+}
+
+function LocalDemoVotingHistory() {
   const {
     currentVoter,
     eligibleElections,

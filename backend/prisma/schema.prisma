@@ -98,6 +98,7 @@ enum ConfigurationReviewStatus {
 
 enum ParticipationStatus {
   PENDING
+  PARTICIPATED
   VOTED
   UPCOMING
   CLOSED
@@ -252,6 +253,7 @@ model ParliamentaryConstituency {
   countingSessions         CountingSession[]
   targetAnnouncements      Announcement[]
   adminConstituencyScopes  AdminConstituencyScope[]
+  demoParticipations       DemoParticipation[]
 
   @@unique([id, stateId]) // Composite key for geographic hierarchy integrity
   @@unique([stateId, constituencyNumber])
@@ -281,6 +283,7 @@ model AssemblyConstituency {
   countingSessions                  CountingSession[]
   targetAnnouncements               Announcement[]
   adminConstituencyScopes           AdminConstituencyScope[]
+  demoParticipations                DemoParticipation[]
 
   @@unique([id, stateId]) // Composite key for state integrity
   @@unique([id, parentParliamentaryConstituencyId]) // Inherent dual-mapping integrity key
@@ -835,23 +838,31 @@ model AdminActionLog {
 // ============================================================================
 
 model DemoParticipation {
-  id            String              @id @default(uuid()) @db.Uuid
-  voterId       String              @db.Uuid @map("voter_id")
-  electionId    String              @db.VarChar(50) @map("election_id")
-  status        ParticipationStatus @default(VOTED)
-  demoReference String              @db.VarChar(30) @map("demo_reference") // e.g. "DEMO-LS-000001"
-  referenceId   String              @db.VarChar(60) @map("reference_id") // e.g. "DEMO-REF-LS2029-VOTER001"
-  participatedAt DateTime           @db.Timestamptz(6) @map("participated_at") // Centralized demo clock timestamp
-  recordedAt    DateTime            @default(now()) @db.Timestamptz(6) @map("recorded_at") // Host wall-clock timestamp
-  metadata      Json                @default("{}")
+  id                          String                    @id @default(uuid()) @db.Uuid
+  voterId                     String                    @db.Uuid @map("voter_id")
+  electionId                  String                    @db.VarChar(50) @map("election_id")
+  constituencyType            ConstituencyType?         @map("constituency_type")
+  parliamentaryConstituencyId String?                   @db.VarChar(50) @map("parliamentary_constituency_id")
+  assemblyConstituencyId      String?                   @db.VarChar(50) @map("assembly_constituency_id")
+  status                      ParticipationStatus       @default(PARTICIPATED)
+  demoReference               String                    @db.VarChar(30) @map("demo_reference") // e.g. "DEMO-LS-000001"
+  referenceId                 String                    @db.VarChar(60) @map("reference_id") // e.g. "DEMO-REF-LS2029-VOTER001"
+  participatedAt              DateTime                  @db.Timestamptz(6) @map("participated_at") // Centralized demo clock timestamp
+  recordedAt                  DateTime                  @default(now()) @db.Timestamptz(6) @map("recorded_at") // Host wall-clock timestamp
+  metadata                    Json                      @default("{}")
 
-  voter         VoterProfile        @relation(fields: [voterId], references: [id], onDelete: Cascade)
-  election      Election            @relation(fields: [electionId], references: [id], onDelete: Cascade)
+  voter                       VoterProfile              @relation(fields: [voterId], references: [id], onDelete: Cascade)
+  election                    Election                  @relation(fields: [electionId], references: [id], onDelete: Cascade)
+  parliamentaryConstituency   ParliamentaryConstituency? @relation(fields: [parliamentaryConstituencyId], references: [id], onDelete: Restrict)
+  assemblyConstituency        AssemblyConstituency?     @relation(fields: [assemblyConstituencyId], references: [id], onDelete: Restrict)
 
   // STRICT INVARIANT: Exactly one participation record per voter per election.
   // STRICT INVARIANT: ZERO candidate or party columns exist in this table!
   @@unique([voterId, electionId])
   @@index([voterId, electionId])
+  @@index([electionId, constituencyType])
+  @@index([electionId, parliamentaryConstituencyId])
+  @@index([electionId, assemblyConstituencyId])
   @@map("demo_participations")
 }
 

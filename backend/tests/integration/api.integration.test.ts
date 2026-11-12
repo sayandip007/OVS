@@ -1481,4 +1481,153 @@ describe('OVS Phase 8.2–8.4 — Live PostgreSQL & Supertest API Integration Su
       assert.equal(lsPubRes.body.data.milestones[0].note, undefined);
     });
   });
+
+  describe('13. Phase 8.8 — Demo Voting, PC/AC Ballot Isolation, Privacy & Concurrent Participation (Live PostgreSQL)', () => {
+    let voterCookie: string;
+    let voterCsrf: string;
+    let superCookie: string;
+    let wbCookie: string;
+    let audCookie: string;
+
+    test('Registers and authenticates a demo voter and admin accounts for Phase 8.8 integration verification', async () => {
+      const regRes = await request(app)
+        .post('/api/v1/auth/register')
+        .send({
+          epicNumber: 'DEMO-EPIC-88CI',
+          fullName: 'Phase 88 CI Voter',
+          dateOfBirth: '1994-06-15',
+          gender: 'Female',
+          mobile: '9800088111',
+          email: 'voter88ci@ovs-test.local',
+          address: '10 Demo Street, Kolkata',
+          pinCode: '700025',
+          stateId: 'WB',
+          districtId: 'WB-DIST-KOLKATA',
+          parliamentaryConstituencyId: 'WB-PC-KOLKATA-SOUTH',
+          assemblyConstituencyId: 'WB-AC-BHABANIPUR',
+        });
+      assert.equal(regRes.status, 201);
+
+      const otpReq = await request(app)
+        .post('/api/v1/auth/otp/request')
+        .send({ identifier: 'DEMO-EPIC-88CI' });
+      assert.equal(otpReq.status, 200);
+
+      const otpVer = await request(app)
+        .post('/api/v1/auth/otp/verify')
+        .send({
+          challengeId: otpReq.body.data.challengeId,
+          otp: otpReq.body.data.devOtp,
+        });
+      assert.equal(otpVer.status, 200);
+      voterCookie = (otpVer.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
+      voterCsrf = otpVer.body.data.csrfToken;
+
+      const s = await request(app)
+        .post('/api/v1/admin/auth/login')
+        .send({ identifier: 'super.ci@ovs-test.local', password: 'SuperCiSecret#2026!' });
+      superCookie = (s.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
+
+      const wb = await request(app)
+        .post('/api/v1/admin/auth/login')
+        .send({ identifier: 'wb.ci@ovs-test.local', password: 'WbCiPassword#2026!' });
+      wbCookie = (wb.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
+
+      const aud = await request(app)
+        .post('/api/v1/admin/auth/login')
+        .send({ identifier: 'ECI-AUD-CI-01', password: 'AudCiPassword#2026!' });
+      audCookie = (aud.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
+    });
+
+    test('Enforces PC/AC ballot isolation, rejects candidateId in participation body, prevents concurrent duplicates, and exposes safe admin aggregates', async () => {
+      // 1. Voter election discovery shows LS-2029 (PC) and WB-ASSEMBLY-2029 (AC) independently
+      const discRes = await request(app)
+        .get('/api/v1/voter/elections')
+        .set('Cookie', voterCookie);
+      assert.equal(discRes.status, 200);
+      const lsItem = discRes.body.data.elections.find((e: any) => e.id === 'LS-2029');
+      const wbItem = discRes.body.data.elections.find((e: any) => e.id === 'WB-ASSEMBLY-2029');
+      assert.equal(lsItem.eligible, true);
+      assert.equal(lsItem.constituency.id, 'WB-PC-KOLKATA-SOUTH');
+      assert.equal(wbItem.eligible, true);
+      assert.equal(wbItem.constituency.id, 'WB-AC-BHABANIPUR');
+
+      // 2. Ballot retrieval returns only approved PC candidates for LS-2029 without internal notes
+      const lsBallotRes = await request(app)
+        .get('/api/v1/voter/elections/LS-2029/ballot')
+        .set('Cookie', voterCookie);
+      assert.equal(lsBallotRes.status, 200);
+      assert.equal(lsBallotRes.body.data.constituency.id, 'WB-PC-KOLKATA-SOUTH');
+      assert.ok(lsBallotRes.body.data.candidates.length >= 1);
+      assert.equal(lsBallotRes.body.data.candidates[0].scrutinyNote, undefined);
+
+      // 3. Rejects unexpected candidateId in participation confirmation (400)
+      const badPartRes = await request(app)
+        .post('/api/v1/voter/elections/LS-2029/participation')
+        .set('Cookie', voterCookie)
+        .set('X-CSRF-Token', voterCsrf)
+        .send({ candidateId: lsBallotRes.body.data.candidates[0].candidateId });
+      assert.equal(badPartRes.status, 400);
+
+      // 4. Concurrent duplicate participation requests -> exactly one 201 and one 409
+      const [p1, p2] = await Promise.all([
+        request(app)
+          .post('/api/v1/voter/elections/LS-2029/participation')
+          .set('Cookie', voterCookie)
+          .set('X-CSRF-Token', voterCsrf)
+          .send({}),
+        request(app)
+          .post('/api/v1/voter/elections/LS-2029/participation')
+          .set('Cookie', voterCookie)
+          .set('X-CSRF-Token', voterCsrf)
+          .send({}),
+      ]);
+      const statuses = [p1.status, p2.status].sort((a, b) => a - b);
+      assert.deepEqual(statuses, [201, 409]);
+
+      // 5. Lok Sabha participation does NOT complete WB Assembly election
+      const wbBallotRes = await request(app)
+        .get('/api/v1/voter/elections/WB-ASSEMBLY-2029/ballot')
+        .set('Cookie', voterCookie);
+      assert.equal(wbBallotRes.status, 200);
+      assert.equal(wbBallotRes.body.data.constituency.id, 'WB-AC-BHABANIPUR');
+
+      const wbPartRes = await request(app)
+        .post('/api/v1/voter/elections/WB-ASSEMBLY-2029/participation')
+        .set('Cookie', voterCookie)
+        .set('X-CSRF-Token', voterCsrf)
+        .send({});
+      assert.equal(wbPartRes.status, 201);
+      assert.equal(wbPartRes.body.data.status, 'PARTICIPATED');
+
+      // 6. Voter participation history shows both independent records with zero candidate data
+      const histRes = await request(app)
+        .get('/api/v1/voter/participation')
+        .set('Cookie', voterCookie);
+      assert.equal(histRes.status, 200);
+      assert.equal(histRes.body.data.length, 2);
+      for (const row of histRes.body.data) {
+        assert.equal(row.candidateId, undefined);
+        assert.equal(row.partyId, undefined);
+      }
+
+      // 7. Admin aggregate participation reporting & jurisdiction enforcement
+      const audSummary = await request(app)
+        .get('/api/v1/admin/elections/LS-2029/participation/summary')
+        .set('Cookie', audCookie);
+      assert.equal(audSummary.status, 200);
+      assert.ok(audSummary.body.data.totalParticipated >= 1);
+
+      const wbOutOfScope = await request(app)
+        .get('/api/v1/admin/elections/MH-ASSEMBLY-2029/participation/summary')
+        .set('Cookie', wbCookie);
+      assert.equal(wbOutOfScope.status, 403);
+
+      const constAgg = await request(app)
+        .get('/api/v1/admin/elections/LS-2029/participation/constituencies')
+        .set('Cookie', superCookie);
+      assert.equal(constAgg.status, 200);
+      assert.ok(constAgg.body.data.items.length >= 1);
+    });
+  });
 });

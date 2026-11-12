@@ -5,9 +5,12 @@ import {
   useSearchParams,
   Link,
 } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 import { useVoter } from '../../context/VoterContext';
 import { useElection } from '../../context/ElectionContext';
 import { useNotification } from '../../context/NotificationContext';
+import { frontendEnv } from '../../config/env';
+import { apiClient } from '../../services/apiClient';
 import BallotHeader from '../../components/ballot/BallotHeader';
 import BallotCandidateCard from '../../components/ballot/BallotCandidateCard';
 import NOTACard from '../../components/ballot/NOTACard';
@@ -21,6 +24,269 @@ import {
   resolveTemporaryBallotSelection,
 } from '../../services/ballotValidationService';
 
+function BackendBallotPage() {
+  const { electionId } = useParams();
+  const navigate = useNavigate();
+  const { csrfToken } = useAuth();
+  const { notifySuccess, notifyError } = useNotification();
+
+  // STRICT PRIVACY: Temporary candidate selection exists ONLY in volatile React state.
+  // Never stored in localStorage, sessionStorage, IndexedDB, cookies, URL, or sent to backend.
+  const [selectedCandidateId, setSelectedCandidateId] = useState(null);
+  const [step, setStep] = useState('BALLOT'); // 'BALLOT' | 'REVIEW'
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [ballotError, setBallotError] = useState(null);
+  const [ballot, setBallot] = useState(null);
+
+  useEffect(() => {
+    setSelectedCandidateId(null);
+    setStep('BALLOT');
+    setConfirmOpen(false);
+    return () => {
+      setSelectedCandidateId(null);
+    };
+  }, [electionId]);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      setLoading(true);
+      setBallotError(null);
+      try {
+        const res = await apiClient.voter.getBallot(electionId);
+        if (active) setBallot(res?.data || null);
+      } catch (err) {
+        if (active) {
+          setBallotError(err?.detail || err?.message || 'Unable to load demo ballot.');
+        }
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [electionId]);
+
+  const selectedCandidate = useMemo(
+    () =>
+      (ballot?.candidates || []).find((c) => c.candidateId === selectedCandidateId) ||
+      null,
+    [ballot, selectedCandidateId]
+  );
+
+  const handleConfirmParticipation = async () => {
+    setSubmitting(true);
+    try {
+      // STRICT PRIVACY: Empty body only — candidateId is NEVER transmitted.
+      await apiClient.voter.confirmParticipation(electionId, csrfToken);
+      setSelectedCandidateId(null);
+      setConfirmOpen(false);
+      notifySuccess('Demo participation recorded. Candidate choice was not transmitted.');
+      navigate(`/voter/elections/${encodeURIComponent(electionId)}/receipt`);
+    } catch (err) {
+      if (err?.status === 401) {
+        setSelectedCandidateId(null);
+        notifyError('Your session has expired. Please sign in again.');
+        navigate('/voter/login');
+        return;
+      }
+      notifyError(err?.detail || err?.message || 'Could not record participation.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-sm text-slate-500">
+        Loading demo ballot...
+      </div>
+    );
+  }
+
+  if (ballotError || !ballot) {
+    return (
+      <div className="bg-white rounded-2xl border border-amber-200 p-8 text-center space-y-4">
+        <h1 className="text-xl font-extrabold text-slate-900">Ballot Unavailable</h1>
+        <p className="text-sm text-slate-600">{ballotError || 'Ballot could not be loaded.'}</p>
+        <Link
+          to="/voter/dashboard"
+          className="inline-block px-4 py-2 rounded-xl bg-[#002868] text-white text-xs font-bold"
+        >
+          Back to Voter Dashboard
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <span className="px-2.5 py-0.5 rounded bg-blue-100 text-[#002868] text-[11px] font-bold uppercase">
+              {ballot.election.type.replace('_', ' ')} DEMO BALLOT
+            </span>
+            <h1 className="text-xl font-extrabold text-slate-900 mt-1">
+              {ballot.election.name}
+            </h1>
+            <p className="text-xs text-slate-600">
+              Constituency: <strong>{ballot.constituency.name}</strong> ({ballot.constituency.id})
+              {ballot.election.state?.name ? ` • ${ballot.election.state.name}` : ''}
+            </p>
+          </div>
+          <Link
+            to="/voter/dashboard"
+            onClick={() => setSelectedCandidateId(null)}
+            className="px-3 py-1.5 rounded-xl bg-slate-100 text-slate-700 text-xs font-bold"
+          >
+            Cancel & Clear Selection
+          </Link>
+        </div>
+        <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+          {ballot.disclaimer}
+        </p>
+      </div>
+
+      {step === 'BALLOT' ? (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {ballot.candidates.map((cand) => {
+              const isSelected = selectedCandidateId === cand.candidateId;
+              return (
+                <button
+                  key={cand.nominationId}
+                  type="button"
+                  onClick={() => setSelectedCandidateId(cand.candidateId)}
+                  className={`text-left p-4 rounded-2xl border-2 transition space-y-2 ${
+                    isSelected
+                      ? 'border-[#002868] bg-blue-50'
+                      : 'border-slate-200 bg-white hover:border-slate-300'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      {cand.photoUrl && (
+                        <img
+                          src={cand.photoUrl}
+                          alt={cand.fullName}
+                          className="w-12 h-12 rounded-xl object-cover border border-slate-200"
+                        />
+                      )}
+                      <div>
+                        <p className="font-extrabold text-slate-900 text-sm">
+                          {cand.ballotOrder}. {cand.fullName}
+                        </p>
+                        <p className="text-xs text-slate-600">
+                          {cand.isIndependent
+                            ? 'Independent Candidate'
+                            : `${cand.party?.name} (${cand.party?.abbreviation})`}
+                        </p>
+                      </div>
+                    </div>
+                    {cand.party?.symbolUrl && (
+                      <img
+                        src={cand.party.symbolUrl}
+                        alt={cand.party.symbolName || cand.party.name}
+                        className="w-8 h-8 object-contain"
+                      />
+                    )}
+                  </div>
+                  {(cand.education || cand.profession || cand.bio) && (
+                    <p className="text-[11px] text-slate-600">
+                      {[cand.profession, cand.education, cand.bio].filter(Boolean).join(' • ')}
+                    </p>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex justify-end">
+            <button
+              type="button"
+              disabled={!selectedCandidate}
+              onClick={() => setStep('REVIEW')}
+              className="px-5 py-2.5 rounded-xl bg-[#002868] text-white text-sm font-bold disabled:opacity-40"
+            >
+              Review Selection
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-4">
+          <h2 className="text-lg font-extrabold text-slate-900">
+            Review Temporary Selection (Browser Memory Only)
+          </h2>
+          <p className="text-sm text-slate-700">
+            Selected Candidate: <strong>{selectedCandidate?.fullName}</strong> (
+            {selectedCandidate?.isIndependent
+              ? 'Independent'
+              : selectedCandidate?.party?.name}
+            )
+          </p>
+          <p className="text-xs text-slate-600">
+            When you confirm, only your participation status is sent to the server. Your candidate
+            selection stays strictly in local memory and is cleared immediately after confirmation.
+          </p>
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => setStep('BALLOT')}
+              className="px-4 py-2 rounded-xl bg-slate-100 text-slate-800 text-xs font-bold"
+            >
+              Change Selection
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmOpen(true)}
+              className="px-5 py-2 rounded-xl bg-emerald-700 text-white text-xs font-bold"
+            >
+              Proceed to Final Confirmation
+            </button>
+          </div>
+        </div>
+      )}
+
+      {confirmOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-xl">
+            <h3 className="text-lg font-extrabold text-slate-900">
+              Confirm Educational Demo Participation
+            </h3>
+            <p className="text-xs text-slate-600">
+              This action records that you participated in{' '}
+              <strong>{ballot.election.name}</strong> ({ballot.constituency.name}). Your candidate
+              selection is <strong>not</strong> transmitted or stored.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={() => setConfirmOpen(false)}
+                className="px-4 py-2 rounded-xl bg-slate-100 text-slate-800 text-xs font-bold"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={handleConfirmParticipation}
+                className="px-4 py-2 rounded-xl bg-[#002868] text-white text-xs font-bold"
+              >
+                {submitting ? 'Recording...' : 'Confirm Participation'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
  * Phase 4 — Sections 6, 7, 8, 9, 10, 14, 17:
  * Dedicated Lok Sabha & State Assembly Ballot Interface.
@@ -33,6 +299,13 @@ import {
  *   or component unmounts.
  */
 export default function BallotPage() {
+  if (frontendEnv.isBackendApiMode) {
+    return <BackendBallotPage />;
+  }
+  return <LocalDemoBallotPage />;
+}
+
+function LocalDemoBallotPage() {
   const { electionId } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();

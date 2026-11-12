@@ -38,6 +38,8 @@ import {
 } from './election.config.schemas.js';
 import { ElectionConfigService } from './election.config.service.js';
 import { ElectionConfigController } from './election.config.controller.js';
+import { VotingService } from '../voting/voting.service.js';
+import { VotingController } from '../voting/voting.controller.js';
 import { prisma as defaultPrisma } from '../../config/database.js';
 
 export interface CreateAdminElectionsRouterOptions {
@@ -75,6 +77,7 @@ export function createAdminElectionsRouter(
   const configService =
     options.configService ?? new ElectionConfigService(defaultPrisma, auditService);
   const configController = new ElectionConfigController(configService);
+  const votingController = new VotingController(new VotingService(defaultPrisma));
 
   router.get(
     '/summary',
@@ -350,6 +353,36 @@ export function createAdminElectionsRouter(
     validateParams(adminElectionIdParamSchema),
     validateBody(configReturnSchema),
     configController.returnConfigurationForCorrection
+  );
+
+  // ---------------------------------------------------------------------------
+  // Phase 8.8: Administrative Participation Aggregate Reporting (Zero Candidate Data)
+  // ---------------------------------------------------------------------------
+  router.get(
+    '/:electionId/participation/summary',
+    authMiddleware.authenticate,
+    adminMiddleware.requireAdminAuth,
+    adminMiddleware.requirePermission(ADMIN_PERMISSIONS.PARTICIPATION_AGGREGATE_READ),
+    validateParams(adminElectionIdParamSchema),
+    votingController.getAdminParticipationSummary
+  );
+
+  router.get(
+    '/:electionId/participation/constituencies',
+    authMiddleware.authenticate,
+    adminMiddleware.requireAdminAuth,
+    adminMiddleware.requirePermission(ADMIN_PERMISSIONS.PARTICIPATION_AGGREGATE_READ),
+    validateParams(adminElectionIdParamSchema),
+    votingController.getAdminParticipationByConstituency
+  );
+
+  router.get(
+    '/:electionId/participation/timeline',
+    authMiddleware.authenticate,
+    adminMiddleware.requireAdminAuth,
+    adminMiddleware.requirePermission(ADMIN_PERMISSIONS.PARTICIPATION_AGGREGATE_READ),
+    validateParams(adminElectionIdParamSchema),
+    votingController.getAdminParticipationTimeline
   );
 
   return router;

@@ -33,6 +33,10 @@ import {
   type CreateVotersRouterOptions,
 } from './modules/voters/voters.routes.js';
 import {
+  createVoterVotingRouter,
+  type CreateVoterVotingRouterOptions,
+} from './modules/voting/voter.voting.routes.js';
+import {
   createAdminRouter,
   type CreateAdminRouterOptions,
 } from './modules/admin/admin.routes.js';
@@ -45,6 +49,7 @@ export interface CreateAppOptions {
   readinessCheck?: () => Promise<DatabaseReadinessResult>;
   authOptions?: CreateAuthRouterOptions;
   votersOptions?: CreateVotersRouterOptions;
+  voterVotingOptions?: CreateVoterVotingRouterOptions;
   adminOptions?: CreateAdminRouterOptions;
   adminElectionsOptions?: CreateAdminElectionsRouterOptions;
 }
@@ -86,6 +91,13 @@ export function createApp(options: CreateAppOptions = {}): Express {
     })
   );
   app.use('/api/v1/voters', createVotersRouter(options.votersOptions));
+  app.use(
+    '/api/v1/voter',
+    createVoterVotingRouter({
+      enableRateLimit: options.enableRateLimit,
+      ...options.voterVotingOptions,
+    })
+  );
   app.use(
     '/api/v1/admin/elections',
     createAdminElectionsRouter(options.adminElectionsOptions)

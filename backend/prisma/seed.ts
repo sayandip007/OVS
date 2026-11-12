@@ -586,7 +586,7 @@ export async function seedDatabase(
       simulationClockDate: new Date('2029-04-25'),
       demoSandboxMode: 'CONCURRENT_SIMULATION_SANDBOX',
       scheduleTimezone: 'Asia/Kolkata',
-      configReviewStatus: ConfigurationReviewStatus.SUBMITTED_FOR_REVIEW,
+      configReviewStatus: ConfigurationReviewStatus.APPROVED,
       description:
         'Educational simulation of the 2029 West Bengal Vidhan Sabha General Election.',
       metadataSource: MetadataSource.DEMO_SAMPLE,
@@ -1158,6 +1158,108 @@ export async function seedDatabase(
 }
 
 export const seedDemoDatabase = seedDatabase;
+
+/**
+ * Phase 8.8 — Optional idempotent synthetic demo voters & independent PC/AC
+ * participation scenarios (zero candidate-choice data).
+ */
+export async function seedDemoVotingScenarios(
+  client: PrismaClient = defaultPrisma
+) {
+  const demoVoters = [
+    {
+      userId: '88888888-8888-4888-8888-888888880001',
+      voterId: '88888888-8888-4888-8888-888888881001',
+      epicNumber: 'DEMO-EPIC-8801',
+      fullName: 'Aarav Chatterjee (DEMO_SAMPLE)',
+      email: 'voter8801@ovs-demo.local',
+      mobile: '9800008801',
+      stateId: 'WB',
+      districtId: 'WB-DIST-KOLKATA',
+      parliamentaryConstituencyId: 'WB-PC-KOLKATA-SOUTH',
+      assemblyConstituencyId: 'WB-AC-BHABANIPUR',
+      participatedElectionId: 'LS-2029',
+      participatedConstituencyType: ConstituencyType.PARLIAMENTARY,
+      participatedPcId: 'WB-PC-KOLKATA-SOUTH',
+      participatedAcId: null,
+    },
+    {
+      userId: '88888888-8888-4888-8888-888888880002',
+      voterId: '88888888-8888-4888-8888-888888881002',
+      epicNumber: 'DEMO-EPIC-8802',
+      fullName: 'Meera Sen (DEMO_SAMPLE)',
+      email: 'voter8802@ovs-demo.local',
+      mobile: '9800008802',
+      stateId: 'WB',
+      districtId: 'WB-DIST-KOLKATA',
+      parliamentaryConstituencyId: 'WB-PC-KOLKATA-NORTH',
+      assemblyConstituencyId: 'WB-AC-RASHBEHARI',
+      participatedElectionId: 'WB-ASSEMBLY-2029',
+      participatedConstituencyType: ConstituencyType.ASSEMBLY,
+      participatedPcId: null,
+      participatedAcId: 'WB-AC-RASHBEHARI',
+    },
+  ];
+
+  for (const v of demoVoters) {
+    await client.user.upsert({
+      where: { id: v.userId },
+      update: {},
+      create: {
+        id: v.userId,
+        userType: 'VOTER',
+        identifier: v.epicNumber,
+        passwordHash: '$scrypt$demo_placeholder_hash_not_for_prod',
+        isActive: true,
+      },
+    });
+
+    await client.voterProfile.upsert({
+      where: { id: v.voterId },
+      update: {},
+      create: {
+        id: v.voterId,
+        userId: v.userId,
+        epicNumber: v.epicNumber,
+        fullName: v.fullName,
+        dateOfBirth: new Date('1995-05-15'),
+        gender: 'Other',
+        mobile: v.mobile,
+        email: v.email,
+        address: 'Demo Simulation Ward, Kolkata (DEMO_SAMPLE)',
+        pinCode: '700025',
+        stateId: v.stateId,
+        districtId: v.districtId,
+        parliamentaryConstituencyId: v.parliamentaryConstituencyId,
+        assemblyConstituencyId: v.assemblyConstituencyId,
+        isVerified: true,
+        metadataSource: MetadataSource.DEMO_SAMPLE,
+      },
+    });
+
+    await client.demoParticipation.upsert({
+      where: {
+        voterId_electionId: {
+          voterId: v.voterId,
+          electionId: v.participatedElectionId,
+        },
+      },
+      update: {},
+      create: {
+        voterId: v.voterId,
+        electionId: v.participatedElectionId,
+        constituencyType: v.participatedConstituencyType,
+        parliamentaryConstituencyId: v.participatedPcId,
+        assemblyConstituencyId: v.participatedAcId,
+        status: 'PARTICIPATED',
+        demoReference: `DEMO-${v.epicNumber}`,
+        referenceId: `DEMO-REF-${v.participatedElectionId}-${v.epicNumber}`,
+        participatedAt: new Date('2029-04-25T06:00:00.000Z'),
+        metadata: { source: 'DEMO_SAMPLE_SEED' },
+      },
+    });
+  }
+}
 
 const isMainModule =
   process.argv[1] &&
