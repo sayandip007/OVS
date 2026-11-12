@@ -221,4 +221,19 @@ export class ElectionsRepository {
 
     return { items, total };
   }
+
+  async listElectionScheduleMilestones(electionId: string) {
+    return this.prisma.electionScheduleMilestone.findMany({
+      where: { electionId },
+      orderBy: [{ startAt: 'asc' }, { milestoneType: 'asc' }],
+      select: {
+        id: true,
+        milestoneType: true,
+        startAt: true,
+        endAt: true,
+        timezone: true,
+        status: true,
+      },
+    });
+  }
 }

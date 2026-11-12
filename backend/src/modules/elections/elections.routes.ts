@@ -127,5 +127,19 @@ export function createElectionsRouter(): Router {
     }
   );
 
+  router.get(
+    '/:electionId/schedule',
+    validateRequest({ params: electionIdParamSchema }),
+    async (req, res, next) => {
+      try {
+        const { electionId } = req.validated?.params as { electionId: string };
+        const schedule = await getService().getElectionSchedule(electionId);
+        sendSuccess(req, res, schedule);
+      } catch (err) {
+        next(err);
+      }
+    }
+  );
+
   return router;
 }

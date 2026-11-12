@@ -204,6 +204,8 @@ export function createOvsApiClient(options = {}) {
         request(`/elections/${encodeURIComponent(electionId)}/candidates`, {
           query,
         }),
+      getSchedule: (electionId) =>
+        request(`/elections/${encodeURIComponent(electionId)}/schedule`),
     },
     parties: {
       list: (query) => request('/parties', { query }),
@@ -329,6 +331,88 @@ export function createOvsApiClient(options = {}) {
           request(`/admin/elections/${encodeURIComponent(electionId)}/history`, {
             query,
           }),
+        // Phase 8.7 Constituency Assignment, Schedule & Configuration Review
+        listConstituencies: (electionId, query) =>
+          request(
+            `/admin/elections/${encodeURIComponent(electionId)}/constituencies`,
+            { query }
+          ),
+        listAvailableConstituencies: (electionId, query) =>
+          request(
+            `/admin/elections/${encodeURIComponent(electionId)}/available-constituencies`,
+            { query }
+          ),
+        assignConstituency: (electionId, data, csrfToken) =>
+          request(
+            `/admin/elections/${encodeURIComponent(electionId)}/constituencies`,
+            { method: 'POST', body: data, csrfToken }
+          ),
+        previewBulkConstituencies: (electionId, data, csrfToken) =>
+          request(
+            `/admin/elections/${encodeURIComponent(electionId)}/constituencies/preview`,
+            { method: 'POST', body: data, csrfToken }
+          ),
+        bulkAssignConstituencies: (electionId, data, csrfToken) =>
+          request(
+            `/admin/elections/${encodeURIComponent(electionId)}/constituencies/bulk`,
+            { method: 'POST', body: data, csrfToken }
+          ),
+        removeConstituency: (electionId, constituencyId, csrfToken) =>
+          request(
+            `/admin/elections/${encodeURIComponent(electionId)}/constituencies/${encodeURIComponent(constituencyId)}`,
+            { method: 'DELETE', csrfToken }
+          ),
+        constituencyHistory: (electionId, query) =>
+          request(
+            `/admin/elections/${encodeURIComponent(electionId)}/constituencies/history`,
+            { query }
+          ),
+        getSchedule: (electionId) =>
+          request(`/admin/elections/${encodeURIComponent(electionId)}/schedule`),
+        putSchedule: (electionId, data, csrfToken) =>
+          request(
+            `/admin/elections/${encodeURIComponent(electionId)}/schedule`,
+            { method: 'PUT', body: data, csrfToken }
+          ),
+        patchMilestone: (electionId, milestoneId, data, csrfToken) =>
+          request(
+            `/admin/elections/${encodeURIComponent(electionId)}/schedule/${encodeURIComponent(milestoneId)}`,
+            { method: 'PATCH', body: data, csrfToken }
+          ),
+        validateSchedule: (electionId, csrfToken) =>
+          request(
+            `/admin/elections/${encodeURIComponent(electionId)}/schedule/validate`,
+            { method: 'POST', body: {}, csrfToken }
+          ),
+        scheduleHistory: (electionId, query) =>
+          request(
+            `/admin/elections/${encodeURIComponent(electionId)}/schedule/history`,
+            { query }
+          ),
+        validateConfig: (electionId) =>
+          request(
+            `/admin/elections/${encodeURIComponent(electionId)}/configuration/validation`
+          ),
+        submitConfig: (electionId, data, csrfToken) =>
+          request(
+            `/admin/elections/${encodeURIComponent(electionId)}/configuration/submit`,
+            { method: 'POST', body: data || {}, csrfToken }
+          ),
+        reviewConfig: (electionId, data, csrfToken) =>
+          request(
+            `/admin/elections/${encodeURIComponent(electionId)}/configuration/review`,
+            { method: 'POST', body: data || {}, csrfToken }
+          ),
+        approveConfig: (electionId, data, csrfToken) =>
+          request(
+            `/admin/elections/${encodeURIComponent(electionId)}/configuration/approve`,
+            { method: 'POST', body: data || {}, csrfToken }
+          ),
+        returnConfig: (electionId, data, csrfToken) =>
+          request(
+            `/admin/elections/${encodeURIComponent(electionId)}/configuration/return`,
+            { method: 'POST', body: data, csrfToken }
+          ),
       },
       candidates: {
         list: (query) => request('/admin/candidates', { query }),

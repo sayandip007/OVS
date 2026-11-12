@@ -8,6 +8,7 @@ import {
   hasAdminPermission,
 } from '../../services/adminPermissionService';
 import Modal from '../common/Modal';
+import BackendElectionConfigPanel from './BackendElectionConfigPanel';
 import {
   PlusCircle,
   Search,
@@ -632,6 +633,18 @@ export default function BackendElectionManager() {
                   </div>
                 </form>
               </div>
+            )}
+
+            {/* Phase 8.7 Configuration Panel */}
+            {detail?.id && (
+              <BackendElectionConfigPanel
+                electionId={detail.id}
+                election={detail}
+                onConfigUpdated={() => {
+                  loadDetail(detail.id);
+                  loadListAndSummary();
+                }}
+              />
             )}
 
             {/* Lifecycle History */}

@@ -1,5 +1,6 @@
 import {
   CandidateNominationStatus,
+  ConfigurationReviewStatus,
   ConstituencyType,
   ElectionStatus,
   ElectionType,
@@ -9,6 +10,8 @@ import {
   PartyType,
   PrismaClient,
   ReservationType,
+  ScheduleMilestoneStatus,
+  ScheduleMilestoneType,
 } from '@prisma/client';
 
 const defaultPrisma = new PrismaClient();
@@ -23,6 +26,7 @@ export interface SeedSummary {
   electionsCount: number;
   electionConstituenciesCount: number;
   nominationsCount: number;
+  scheduleMilestonesCount: number;
 }
 
 export async function seedDatabase(
@@ -553,6 +557,8 @@ export async function seedDatabase(
       resultDate: new Date('2029-05-22'),
       simulationClockDate: new Date('2029-04-25'),
       demoSandboxMode: 'CONCURRENT_SIMULATION_SANDBOX',
+      scheduleTimezone: 'Asia/Kolkata',
+      configReviewStatus: ConfigurationReviewStatus.APPROVED,
       description:
         'Educational simulation of the 2029 General Election to the House of the People (Lok Sabha).',
       metadataSource: MetadataSource.DEMO_SAMPLE,
@@ -579,6 +585,8 @@ export async function seedDatabase(
       resultDate: new Date('2029-05-22'),
       simulationClockDate: new Date('2029-04-25'),
       demoSandboxMode: 'CONCURRENT_SIMULATION_SANDBOX',
+      scheduleTimezone: 'Asia/Kolkata',
+      configReviewStatus: ConfigurationReviewStatus.SUBMITTED_FOR_REVIEW,
       description:
         'Educational simulation of the 2029 West Bengal Vidhan Sabha General Election.',
       metadataSource: MetadataSource.DEMO_SAMPLE,
@@ -615,6 +623,8 @@ export async function seedDatabase(
       countingDate: new Date('2029-11-14'),
       resultDate: new Date('2029-11-16'),
       demoSandboxMode: 'CONCURRENT_SIMULATION_SANDBOX',
+      scheduleTimezone: 'Asia/Kolkata',
+      configReviewStatus: ConfigurationReviewStatus.DRAFT,
       description:
         'Synthetic DEMO_SAMPLE Delhi Assembly draft election (hidden from public portal until published).',
       metadataSource: MetadataSource.DEMO_SAMPLE,
@@ -931,6 +941,208 @@ export async function seedDatabase(
     });
   }
 
+  // 10. Seed Phase 8.7 Election Schedule Milestones (idempotent `update: {}`)
+  const scheduleMilestonesData = [
+    // LS-2029: Complete approved schedule
+    {
+      electionId: 'LS-2029',
+      milestoneType: ScheduleMilestoneType.NOMINATION_OPEN,
+      startAt: new Date('2029-03-20T04:30:00.000Z'),
+      endAt: null,
+      timezone: 'Asia/Kolkata',
+      status: ScheduleMilestoneStatus.COMPLETED,
+      note: 'DEMO_SAMPLE nomination open window.',
+    },
+    {
+      electionId: 'LS-2029',
+      milestoneType: ScheduleMilestoneType.NOMINATION_DEADLINE,
+      startAt: new Date('2029-03-28T09:30:00.000Z'),
+      endAt: null,
+      timezone: 'Asia/Kolkata',
+      status: ScheduleMilestoneStatus.COMPLETED,
+      note: 'DEMO_SAMPLE nomination close window.',
+    },
+    {
+      electionId: 'LS-2029',
+      milestoneType: ScheduleMilestoneType.NOMINATION_SCRUTINY,
+      startAt: new Date('2029-03-30T05:30:00.000Z'),
+      endAt: null,
+      timezone: 'Asia/Kolkata',
+      status: ScheduleMilestoneStatus.COMPLETED,
+      note: 'DEMO_SAMPLE nomination scrutiny.',
+    },
+    {
+      electionId: 'LS-2029',
+      milestoneType: ScheduleMilestoneType.WITHDRAWAL_DEADLINE,
+      startAt: new Date('2029-04-02T09:30:00.000Z'),
+      endAt: null,
+      timezone: 'Asia/Kolkata',
+      status: ScheduleMilestoneStatus.COMPLETED,
+      note: 'DEMO_SAMPLE withdrawal deadline.',
+    },
+    {
+      electionId: 'LS-2029',
+      milestoneType: ScheduleMilestoneType.CAMPAIGN_START,
+      startAt: new Date('2029-04-03T00:00:00.000Z'),
+      endAt: null,
+      timezone: 'Asia/Kolkata',
+      status: ScheduleMilestoneStatus.COMPLETED,
+      note: 'DEMO_SAMPLE campaign period start.',
+    },
+    {
+      electionId: 'LS-2029',
+      milestoneType: ScheduleMilestoneType.CAMPAIGN_END,
+      startAt: new Date('2029-04-18T12:30:00.000Z'),
+      endAt: null,
+      timezone: 'Asia/Kolkata',
+      status: ScheduleMilestoneStatus.COMPLETED,
+      note: 'DEMO_SAMPLE campaign silence period start.',
+    },
+    {
+      electionId: 'LS-2029',
+      milestoneType: ScheduleMilestoneType.POLLING_START,
+      startAt: new Date('2029-04-20T01:30:00.000Z'),
+      endAt: null,
+      timezone: 'Asia/Kolkata',
+      status: ScheduleMilestoneStatus.CONFIGURED,
+      note: 'DEMO_SAMPLE polling start.',
+    },
+    {
+      electionId: 'LS-2029',
+      milestoneType: ScheduleMilestoneType.POLLING_END,
+      startAt: new Date('2029-05-15T12:30:00.000Z'),
+      endAt: null,
+      timezone: 'Asia/Kolkata',
+      status: ScheduleMilestoneStatus.CONFIGURED,
+      note: 'DEMO_SAMPLE polling end.',
+    },
+    {
+      electionId: 'LS-2029',
+      milestoneType: ScheduleMilestoneType.COUNTING_START,
+      startAt: new Date('2029-05-20T02:30:00.000Z'),
+      endAt: null,
+      timezone: 'Asia/Kolkata',
+      status: ScheduleMilestoneStatus.CONFIGURED,
+      note: 'DEMO_SAMPLE counting start.',
+    },
+    {
+      electionId: 'LS-2029',
+      milestoneType: ScheduleMilestoneType.RESULT_PUBLICATION,
+      startAt: new Date('2029-05-22T06:30:00.000Z'),
+      endAt: null,
+      timezone: 'Asia/Kolkata',
+      status: ScheduleMilestoneStatus.CONFIGURED,
+      note: 'DEMO_SAMPLE result declaration.',
+    },
+
+    // WB-ASSEMBLY-2029: Complete schedule submitted for review
+    {
+      electionId: 'WB-ASSEMBLY-2029',
+      milestoneType: ScheduleMilestoneType.NOMINATION_OPEN,
+      startAt: new Date('2029-03-20T04:30:00.000Z'),
+      endAt: null,
+      timezone: 'Asia/Kolkata',
+      status: ScheduleMilestoneStatus.COMPLETED,
+      note: 'DEMO_SAMPLE WB nomination open.',
+    },
+    {
+      electionId: 'WB-ASSEMBLY-2029',
+      milestoneType: ScheduleMilestoneType.NOMINATION_DEADLINE,
+      startAt: new Date('2029-03-28T09:30:00.000Z'),
+      endAt: null,
+      timezone: 'Asia/Kolkata',
+      status: ScheduleMilestoneStatus.COMPLETED,
+      note: 'DEMO_SAMPLE WB nomination close.',
+    },
+    {
+      electionId: 'WB-ASSEMBLY-2029',
+      milestoneType: ScheduleMilestoneType.NOMINATION_SCRUTINY,
+      startAt: new Date('2029-03-30T05:30:00.000Z'),
+      endAt: null,
+      timezone: 'Asia/Kolkata',
+      status: ScheduleMilestoneStatus.COMPLETED,
+      note: 'DEMO_SAMPLE WB scrutiny.',
+    },
+    {
+      electionId: 'WB-ASSEMBLY-2029',
+      milestoneType: ScheduleMilestoneType.WITHDRAWAL_DEADLINE,
+      startAt: new Date('2029-04-02T09:30:00.000Z'),
+      endAt: null,
+      timezone: 'Asia/Kolkata',
+      status: ScheduleMilestoneStatus.COMPLETED,
+      note: 'DEMO_SAMPLE WB withdrawal deadline.',
+    },
+    {
+      electionId: 'WB-ASSEMBLY-2029',
+      milestoneType: ScheduleMilestoneType.POLLING_START,
+      startAt: new Date('2029-04-20T01:30:00.000Z'),
+      endAt: null,
+      timezone: 'Asia/Kolkata',
+      status: ScheduleMilestoneStatus.CONFIGURED,
+      note: 'DEMO_SAMPLE WB polling start.',
+    },
+    {
+      electionId: 'WB-ASSEMBLY-2029',
+      milestoneType: ScheduleMilestoneType.POLLING_END,
+      startAt: new Date('2029-05-10T12:30:00.000Z'),
+      endAt: null,
+      timezone: 'Asia/Kolkata',
+      status: ScheduleMilestoneStatus.CONFIGURED,
+      note: 'DEMO_SAMPLE WB polling end.',
+    },
+    {
+      electionId: 'WB-ASSEMBLY-2029',
+      milestoneType: ScheduleMilestoneType.COUNTING_START,
+      startAt: new Date('2029-05-20T02:30:00.000Z'),
+      endAt: null,
+      timezone: 'Asia/Kolkata',
+      status: ScheduleMilestoneStatus.CONFIGURED,
+      note: 'DEMO_SAMPLE WB counting start.',
+    },
+    {
+      electionId: 'WB-ASSEMBLY-2029',
+      milestoneType: ScheduleMilestoneType.RESULT_PUBLICATION,
+      startAt: new Date('2029-05-22T06:30:00.000Z'),
+      endAt: null,
+      timezone: 'Asia/Kolkata',
+      status: ScheduleMilestoneStatus.CONFIGURED,
+      note: 'DEMO_SAMPLE WB result declaration.',
+    },
+
+    // DL-ASSEMBLY-2029: Incomplete draft schedule
+    {
+      electionId: 'DL-ASSEMBLY-2029',
+      milestoneType: ScheduleMilestoneType.NOMINATION_OPEN,
+      startAt: new Date('2029-10-15T04:30:00.000Z'),
+      endAt: null,
+      timezone: 'Asia/Kolkata',
+      status: ScheduleMilestoneStatus.CONFIGURED,
+      note: 'DEMO_SAMPLE DL draft nomination open.',
+    },
+    {
+      electionId: 'DL-ASSEMBLY-2029',
+      milestoneType: ScheduleMilestoneType.POLLING_START,
+      startAt: new Date('2029-11-10T01:30:00.000Z'),
+      endAt: null,
+      timezone: 'Asia/Kolkata',
+      status: ScheduleMilestoneStatus.CONFIGURED,
+      note: 'DEMO_SAMPLE DL draft polling start.',
+    },
+  ];
+
+  for (const milestone of scheduleMilestonesData) {
+    await client.electionScheduleMilestone.upsert({
+      where: {
+        electionId_milestoneType: {
+          electionId: milestone.electionId,
+          milestoneType: milestone.milestoneType,
+        },
+      },
+      update: {},
+      create: milestone,
+    });
+  }
+
   return {
     statesCount: await client.state.count(),
     districtsCount: await client.district.count(),
@@ -941,6 +1153,7 @@ export async function seedDatabase(
     electionsCount: await client.election.count(),
     electionConstituenciesCount: await client.electionConstituency.count(),
     nominationsCount: await client.candidateNomination.count(),
+    scheduleMilestonesCount: await client.electionScheduleMilestone.count(),
   };
 }
 

@@ -157,4 +157,26 @@ export class ElectionsService {
       total: result.total,
     };
   }
+
+  async getElectionSchedule(electionId: string) {
+    const rawElection = await this.repo.findElectionById(electionId);
+    if (!rawElection || PUBLIC_HIDDEN_STATUSES.includes(rawElection.status)) {
+      throw new NotFoundProblemError('Election', electionId);
+    }
+    const milestones = await this.repo.listElectionScheduleMilestones(rawElection.id);
+    return {
+      electionId: rawElection.id,
+      name: rawElection.name,
+      type: rawElection.type,
+      status: rawElection.status,
+      timezone: rawElection.scheduleTimezone,
+      milestones: milestones.map((m) => ({
+        milestoneType: m.milestoneType,
+        startAt: m.startAt,
+        endAt: m.endAt,
+        timezone: m.timezone,
+        status: m.status,
+      })),
+    };
+  }
 }

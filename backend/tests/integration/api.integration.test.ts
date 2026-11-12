@@ -24,6 +24,9 @@ describe('OVS Phase 8.2–8.4 — Live PostgreSQL & Supertest API Integration Su
     await prisma.countingSession.deleteMany();
     await prisma.nominationLifecycleHistory.deleteMany();
     await prisma.candidateNomination.deleteMany();
+    await prisma.electionScheduleHistory.deleteMany();
+    await prisma.electionScheduleMilestone.deleteMany();
+    await prisma.electionConstituencyHistory.deleteMany();
     await prisma.electionConstituency.deleteMany();
     await prisma.electionLifecycleHistory.deleteMany();
     await prisma.demoParticipation.deleteMany();
@@ -63,6 +66,7 @@ describe('OVS Phase 8.2–8.4 — Live PostgreSQL & Supertest API Integration Su
       assert.equal(firstRun.electionsCount, 5);
       assert.equal(firstRun.electionConstituenciesCount, 12);
       assert.equal(firstRun.nominationsCount, 14);
+      assert.equal(firstRun.scheduleMilestonesCount, 20);
 
       // Run a second time to verify idempotency (zero duplicates, zero constraint errors)
       const secondRun = await seedDatabase(prisma);
@@ -1341,6 +1345,140 @@ describe('OVS Phase 8.2–8.4 — Live PostgreSQL & Supertest API Integration Su
         .set('Cookie', audCookie);
       assert.equal(histRes.status, 200);
       assert.ok(histRes.body.data.length >= 5);
+    });
+  });
+
+  describe('12. Phase 8.7 — Constituency Assignment, Schedule, Configuration Readiness & Review Workflow (Live PostgreSQL)', () => {
+    let superCookie: string;
+    let superCsrf: string;
+    let wbCookie: string;
+    let wbCsrf: string;
+
+    test('Authenticates SUPER_ADMIN and WB STATE_ADMIN for Phase 8.7 verification', async () => {
+      const s = await request(app)
+        .post('/api/v1/admin/auth/login')
+        .send({ identifier: 'super.ci@ovs-test.local', password: 'SuperCiSecret#2026!' });
+      superCookie = (s.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
+      superCsrf = s.body.data.csrfToken;
+
+      const wb = await request(app)
+        .post('/api/v1/admin/auth/login')
+        .send({ identifier: 'wb.ci@ovs-test.local', password: 'WbCiPassword#2026!' });
+      wbCookie = (wb.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
+      wbCsrf = wb.body.data.csrfToken;
+    });
+
+    test('Executes constituency bulk preview & commit, schedule UTC milestones, readiness, review separation of duties, and public schedule filtering', async () => {
+      // 1. Create a fresh DRAFT WB State Assembly election
+      const createRes = await request(app)
+        .post('/api/v1/admin/elections')
+        .set('Cookie', wbCookie)
+        .set('X-CSRF-Token', wbCsrf)
+        .send({
+          id: 'WB-CI-87',
+          name: 'WB Config CI Test 2031 (DEMO_SAMPLE)',
+          type: 'STATE_ASSEMBLY',
+          year: 2031,
+          stateId: 'WB',
+          pollingStartDate: '2031-04-20T01:30:00.000Z',
+          pollingEndDate: '2031-04-20T12:30:00.000Z',
+          countingDate: '2031-04-24T02:30:00.000Z',
+          resultDate: '2031-04-25T06:30:00.000Z',
+        });
+      assert.equal(createRes.status, 201);
+
+      // 2. Bulk preview with one valid WB AC and one invalid PC -> non-mutating
+      const previewRes = await request(app)
+        .post('/api/v1/admin/elections/WB-CI-87/constituencies/preview')
+        .set('Cookie', wbCookie)
+        .set('X-CSRF-Token', wbCsrf)
+        .send({ constituencyIds: ['WB-AC-BHABANIPUR', 'WB-PC-KOLKATA-NORTH'] });
+      assert.equal(previewRes.status, 200);
+      assert.equal(previewRes.body.data.allValid, false);
+      assert.equal(previewRes.body.data.validCount, 1);
+
+      // 3. Commit valid bulk assignment + verify assigned & history
+      const bulkRes = await request(app)
+        .post('/api/v1/admin/elections/WB-CI-87/constituencies/bulk')
+        .set('Cookie', wbCookie)
+        .set('X-CSRF-Token', wbCsrf)
+        .send({ constituencyIds: ['WB-AC-BHABANIPUR', 'WB-AC-RASHBEHARI'], note: 'CI bulk assign' });
+      assert.equal(bulkRes.status, 201);
+      assert.equal(bulkRes.body.data.assignedCount, 2);
+
+      // 4. Put complete chronological schedule in Asia/Kolkata -> stored UTC
+      const putSchedRes = await request(app)
+        .put('/api/v1/admin/elections/WB-CI-87/schedule')
+        .set('Cookie', wbCookie)
+        .set('X-CSRF-Token', wbCsrf)
+        .send({
+          timezone: 'Asia/Kolkata',
+          note: 'Initial complete schedule',
+          milestones: [
+            { milestoneType: 'NOMINATION_OPEN', startAt: '2031-03-20T04:30:00.000Z' },
+            { milestoneType: 'NOMINATION_DEADLINE', startAt: '2031-03-28T09:30:00.000Z' },
+            { milestoneType: 'NOMINATION_SCRUTINY', startAt: '2031-03-30T05:30:00.000Z' },
+            { milestoneType: 'WITHDRAWAL_DEADLINE', startAt: '2031-04-02T09:30:00.000Z' },
+            { milestoneType: 'POLLING_START', startAt: '2031-04-20T01:30:00.000Z' },
+            { milestoneType: 'POLLING_END', startAt: '2031-04-20T12:30:00.000Z' },
+            { milestoneType: 'COUNTING_START', startAt: '2031-04-24T02:30:00.000Z' },
+            { milestoneType: 'RESULT_PUBLICATION', startAt: '2031-04-25T06:30:00.000Z' },
+          ],
+        });
+      assert.equal(putSchedRes.status, 200);
+      assert.equal(putSchedRes.body.data.scheduleVersion, 2);
+
+      // 5. Readiness check passes; submit by WB admin -> self-approve 403 -> SUPER_ADMIN approves 200
+      const readyRes = await request(app)
+        .get('/api/v1/admin/elections/WB-CI-87/configuration/validation')
+        .set('Cookie', wbCookie);
+      assert.equal(readyRes.status, 200);
+      assert.equal(readyRes.body.data.ready, true);
+
+      const submitRes = await request(app)
+        .post('/api/v1/admin/elections/WB-CI-87/configuration/submit')
+        .set('Cookie', wbCookie)
+        .set('X-CSRF-Token', wbCsrf)
+        .send({ note: 'Ready for review' });
+      assert.equal(submitRes.status, 200);
+      assert.equal(submitRes.body.data.configReviewStatus, 'SUBMITTED_FOR_REVIEW');
+
+      const selfApproveRes = await request(app)
+        .post('/api/v1/admin/elections/WB-CI-87/configuration/approve')
+        .set('Cookie', wbCookie)
+        .set('X-CSRF-Token', wbCsrf)
+        .send({ note: 'Self-approve attempt' });
+      assert.equal(selfApproveRes.status, 403);
+
+      const approveRes = await request(app)
+        .post('/api/v1/admin/elections/WB-CI-87/configuration/approve')
+        .set('Cookie', superCookie)
+        .set('X-CSRF-Token', superCsrf)
+        .send({ note: 'CEC approved' });
+      assert.equal(approveRes.status, 200);
+      assert.equal(approveRes.body.data.configReviewStatus, 'APPROVED');
+
+      // 6. Modifying approved configuration resets review status back to DRAFT
+      const delRes = await request(app)
+        .delete('/api/v1/admin/elections/WB-CI-87/constituencies/WB-AC-RASHBEHARI')
+        .set('Cookie', wbCookie)
+        .set('X-CSRF-Token', wbCsrf);
+      assert.equal(delRes.status, 200);
+
+      const postEditReady = await request(app)
+        .get('/api/v1/admin/elections/WB-CI-87/configuration/validation')
+        .set('Cookie', wbCookie);
+      assert.equal(postEditReady.body.data.configReviewStatus, 'DRAFT');
+
+      // 7. Public schedule hides DRAFT elections (404) and exposes public elections cleanly
+      const draftPubRes = await request(app).get('/api/v1/elections/DL-ASSEMBLY-2029/schedule');
+      assert.equal(draftPubRes.status, 404);
+
+      const lsPubRes = await request(app).get('/api/v1/elections/LS-2029/schedule');
+      assert.equal(lsPubRes.status, 200);
+      assert.equal(lsPubRes.body.data.timezone, 'Asia/Kolkata');
+      assert.ok(lsPubRes.body.data.milestones.length >= 8);
+      assert.equal(lsPubRes.body.data.milestones[0].note, undefined);
     });
   });
 });

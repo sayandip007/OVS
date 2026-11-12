@@ -61,6 +61,41 @@ enum ElectionStatus {
   ARCHIVED
 }
 
+enum ConstituencyAssignmentStatus {
+  ACTIVE
+  REMOVED
+}
+
+enum ScheduleMilestoneType {
+  ELECTION_ANNOUNCEMENT
+  NOMINATION_OPEN
+  NOMINATION_DEADLINE
+  NOMINATION_SCRUTINY
+  WITHDRAWAL_DEADLINE
+  FINAL_CANDIDATE_LIST
+  CAMPAIGN_START
+  CAMPAIGN_END
+  POLLING_START
+  POLLING_END
+  COUNTING_START
+  RESULT_REVIEW
+  RESULT_PUBLICATION
+}
+
+enum ScheduleMilestoneStatus {
+  DRAFT
+  CONFIGURED
+  COMPLETED
+}
+
+enum ConfigurationReviewStatus {
+  DRAFT
+  SUBMITTED_FOR_REVIEW
+  UNDER_REVIEW
+  APPROVED
+  CHANGES_REQUESTED
+}
+
 enum ParticipationStatus {
   PENDING
   VOTED
@@ -378,6 +413,16 @@ model Election {
   archivedAt           DateTime?                 @db.Timestamptz(6) @map("archived_at")
   archivedByAdminId    String?                   @db.Uuid @map("archived_by_admin_id")
   archiveNote          String?                   @db.Text @map("archive_note")
+  scheduleTimezone     String                    @default("Asia/Kolkata") @db.VarChar(60) @map("schedule_timezone")
+  scheduleVersion      Int                       @default(1) @map("schedule_version")
+  configReviewStatus   ConfigurationReviewStatus @default(DRAFT) @map("config_review_status")
+  configSubmittedAt    DateTime?                 @db.Timestamptz(6) @map("config_submitted_at")
+  configSubmittedByAdminId String?               @db.Uuid @map("config_submitted_by_admin_id")
+  configReviewedAt     DateTime?                 @db.Timestamptz(6) @map("config_reviewed_at")
+  configReviewedByAdminId String?                @db.Uuid @map("config_reviewed_by_admin_id")
+  configApprovedAt     DateTime?                 @db.Timestamptz(6) @map("config_approved_at")
+  configApprovedByAdminId String?                @db.Uuid @map("config_approved_by_admin_id")
+  configReviewNote     String?                   @db.Text @map("config_review_note")
   createdAt            DateTime                  @default(now()) @db.Timestamptz(6) @map("created_at")
   updatedAt            DateTime                  @updatedAt @db.Timestamptz(6) @map("updated_at")
 
@@ -386,7 +431,13 @@ model Election {
   updatedByAdmin       AdminUser?                @relation("ElectionUpdater", fields: [updatedByAdminId], references: [id], onDelete: SetNull)
   cancelledByAdmin     AdminUser?                @relation("ElectionCanceller", fields: [cancelledByAdminId], references: [id], onDelete: SetNull)
   archivedByAdmin      AdminUser?                @relation("ElectionArchiver", fields: [archivedByAdminId], references: [id], onDelete: SetNull)
+  configSubmittedByAdmin AdminUser?              @relation("ElectionConfigSubmitter", fields: [configSubmittedByAdminId], references: [id], onDelete: SetNull)
+  configReviewedByAdmin AdminUser?               @relation("ElectionConfigReviewer", fields: [configReviewedByAdminId], references: [id], onDelete: SetNull)
+  configApprovedByAdmin AdminUser?               @relation("ElectionConfigApprover", fields: [configApprovedByAdminId], references: [id], onDelete: SetNull)
   constituencyMappings ElectionConstituency[]
+  constituencyHistory  ElectionConstituencyHistory[]
+  scheduleMilestones   ElectionScheduleMilestone[]
+  scheduleHistory      ElectionScheduleHistory[]
   lifecycleHistory     ElectionLifecycleHistory[]
   candidateNominations CandidateNomination[]
   demoParticipations   DemoParticipation[]
@@ -401,16 +452,21 @@ model Election {
 }
 
 model ElectionConstituency {
-  id                          String                     @id @default(uuid()) @db.Uuid
-  electionId                  String                     @db.VarChar(50) @map("election_id")
-  constituencyType            ConstituencyType           @map("constituency_type")
-  parliamentaryConstituencyId String?                    @db.VarChar(50) @map("parliamentary_constituency_id")
-  assemblyConstituencyId      String?                    @db.VarChar(50) @map("assembly_constituency_id")
-  createdAt                   DateTime                   @default(now()) @db.Timestamptz(6) @map("created_at")
+  id                          String                       @id @default(uuid()) @db.Uuid
+  electionId                  String                       @db.VarChar(50) @map("election_id")
+  constituencyType            ConstituencyType             @map("constituency_type")
+  parliamentaryConstituencyId String?                      @db.VarChar(50) @map("parliamentary_constituency_id")
+  assemblyConstituencyId      String?                      @db.VarChar(50) @map("assembly_constituency_id")
+  status                      ConstituencyAssignmentStatus @default(ACTIVE)
+  assignedByAdminId           String?                      @db.Uuid @map("assigned_by_admin_id")
+  metadata                    Json                         @default("{}")
+  createdAt                   DateTime                     @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt                   DateTime                     @default(now()) @updatedAt @db.Timestamptz(6) @map("updated_at")
 
-  election                    Election                   @relation(fields: [electionId], references: [id], onDelete: Cascade)
-  parliamentaryConstituency   ParliamentaryConstituency? @relation(fields: [parliamentaryConstituencyId], references: [id], onDelete: Cascade)
-  assemblyConstituency        AssemblyConstituency?      @relation(fields: [assemblyConstituencyId], references: [id], onDelete: Cascade)
+  election                    Election                     @relation(fields: [electionId], references: [id], onDelete: Cascade)
+  parliamentaryConstituency   ParliamentaryConstituency?   @relation(fields: [parliamentaryConstituencyId], references: [id], onDelete: Cascade)
+  assemblyConstituency        AssemblyConstituency?        @relation(fields: [assemblyConstituencyId], references: [id], onDelete: Cascade)
+  assignedByAdmin             AdminUser?                   @relation("ConstituencyAssigner", fields: [assignedByAdminId], references: [id], onDelete: SetNull)
 
   // NOTE: Partial unique indexes uq_election_constituency_pc and uq_election_constituency_ac
   // are created via custom SQL migrations to prevent duplicates with NULLs.
@@ -418,6 +474,65 @@ model ElectionConstituency {
   @@index([parliamentaryConstituencyId])
   @@index([assemblyConstituencyId])
   @@map("election_constituencies")
+}
+
+model ElectionConstituencyHistory {
+  id                          String           @id @default(uuid()) @db.Uuid
+  electionId                  String           @db.VarChar(50) @map("election_id")
+  action                      String           @db.VarChar(60)
+  constituencyType            ConstituencyType @map("constituency_type")
+  constituencyId              String           @db.VarChar(50) @map("constituency_id")
+  changedByAdminId            String?          @db.Uuid @map("changed_by_admin_id")
+  changedAt                   DateTime         @default(now()) @db.Timestamptz(6) @map("changed_at")
+  note                        String           @default("") @db.Text
+  requestId                   String?          @db.VarChar(100) @map("request_id")
+  metadata                    Json             @default("{}")
+
+  election                    Election         @relation(fields: [electionId], references: [id], onDelete: Cascade)
+  changedByAdmin              AdminUser?       @relation("ConstituencyHistoryActor", fields: [changedByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([electionId, changedAt])
+  @@map("election_constituency_history")
+}
+
+model ElectionScheduleMilestone {
+  id               String                  @id @default(uuid()) @db.Uuid
+  electionId       String                  @db.VarChar(50) @map("election_id")
+  milestoneType    ScheduleMilestoneType   @map("milestone_type")
+  startAt          DateTime?               @db.Timestamptz(6) @map("start_at")
+  endAt            DateTime?               @db.Timestamptz(6) @map("end_at")
+  timezone         String                  @default("Asia/Kolkata") @db.VarChar(60)
+  status           ScheduleMilestoneStatus @default(DRAFT)
+  note             String                  @default("") @db.Text
+  createdByAdminId String?                 @db.Uuid @map("created_by_admin_id")
+  updatedByAdminId String?                 @db.Uuid @map("updated_by_admin_id")
+  createdAt        DateTime                @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt        DateTime                @updatedAt @db.Timestamptz(6) @map("updated_at")
+
+  election         Election                @relation(fields: [electionId], references: [id], onDelete: Cascade)
+  createdByAdmin   AdminUser?              @relation("ScheduleCreator", fields: [createdByAdminId], references: [id], onDelete: SetNull)
+  updatedByAdmin   AdminUser?              @relation("ScheduleUpdater", fields: [updatedByAdminId], references: [id], onDelete: SetNull)
+
+  @@unique([electionId, milestoneType])
+  @@index([electionId])
+  @@map("election_schedule_milestones")
+}
+
+model ElectionScheduleHistory {
+  id               String     @id @default(uuid()) @db.Uuid
+  electionId       String     @db.VarChar(50) @map("election_id")
+  action           String     @db.VarChar(60)
+  changedByAdminId String?    @db.Uuid @map("changed_by_admin_id")
+  changedAt        DateTime   @default(now()) @db.Timestamptz(6) @map("changed_at")
+  note             String     @default("") @db.Text
+  requestId        String?    @db.VarChar(100) @map("request_id")
+  metadata         Json       @default("{}")
+
+  election         Election   @relation(fields: [electionId], references: [id], onDelete: Cascade)
+  changedByAdmin   AdminUser? @relation("ScheduleHistoryActor", fields: [changedByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([electionId, changedAt])
+  @@map("election_schedule_history")
 }
 
 model ElectionLifecycleHistory {
@@ -610,6 +725,14 @@ model AdminUser {
   updatedElections            Election[]                 @relation("ElectionUpdater")
   cancelledElections          Election[]                 @relation("ElectionCanceller")
   archivedElections           Election[]                 @relation("ElectionArchiver")
+  submittedElectionConfigs    Election[]                 @relation("ElectionConfigSubmitter")
+  reviewedElectionConfigs     Election[]                 @relation("ElectionConfigReviewer")
+  approvedElectionConfigs     Election[]                 @relation("ElectionConfigApprover")
+  assignedConstituencies      ElectionConstituency[]     @relation("ConstituencyAssigner")
+  constituencyHistoryChanges  ElectionConstituencyHistory[] @relation("ConstituencyHistoryActor")
+  createdScheduleMilestones   ElectionScheduleMilestone[] @relation("ScheduleCreator")
+  updatedScheduleMilestones   ElectionScheduleMilestone[] @relation("ScheduleUpdater")
+  scheduleHistoryChanges      ElectionScheduleHistory[]  @relation("ScheduleHistoryActor")
   scrutinizedNominations      CandidateNomination[]
   createdNominations          CandidateNomination[]      @relation("NominationCreator")
   submittedNominations        CandidateNomination[]      @relation("NominationSubmitter")

@@ -1,7 +1,10 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useElection } from '../../context/ElectionContext';
 import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
+import { frontendEnv } from '../../config/env';
+import { apiClient } from '../../services/apiClient';
+import BackendElectionConfigPanel from '../../components/admin/BackendElectionConfigPanel';
 import Modal from '../../components/common/Modal';
 import { ELECTION_TYPES, ELECTION_STATUS_LABELS } from '../../utils/constants';
 import { detectScheduleConflicts } from '../../services/adminPermissionService';
@@ -13,7 +16,90 @@ import {
   Save,
 } from 'lucide-react';
 
+function BackendScheduleManagement() {
+  const { notifyError } = useNotification();
+  const [electionsList, setElectionsList] = useState([]);
+  const [selectedId, setSelectedId] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const res = await apiClient.admin.elections.list({ limit: 50 });
+        if (!active) return;
+        const items = res?.data || [];
+        setElectionsList(items);
+        if (items.length > 0) {
+          setSelectedId((prev) => prev || items[0].id);
+        }
+      } catch (err) {
+        if (active) {
+          notifyError(err?.message || 'Failed to load elections for schedule configuration.');
+        }
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [notifyError]);
+
+  const selectedElection = electionsList.find((e) => e.id === selectedId) || null;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-extrabold text-slate-900">
+            Election Schedule & Configuration
+          </h1>
+          <p className="text-sm text-slate-600">
+            Manage UTC-normalized election milestones, constituency scope, and readiness review.
+          </p>
+        </div>
+        <select
+          value={selectedId}
+          onChange={(e) => setSelectedId(e.target.value)}
+          disabled={loading || electionsList.length === 0}
+          className="px-3.5 py-2 rounded-xl border border-slate-300 text-sm font-semibold bg-white"
+        >
+          {electionsList.map((el) => (
+            <option key={el.id} value={el.id}>
+              {el.name} ({el.id})
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {loading ? (
+        <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-sm text-slate-500">
+          Loading election schedules...
+        </div>
+      ) : !selectedId ? (
+        <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-sm text-slate-500">
+          No elections available in your administrative scope.
+        </div>
+      ) : (
+        <BackendElectionConfigPanel
+          electionId={selectedId}
+          election={selectedElection}
+          initialTab="SCHEDULE"
+        />
+      )}
+    </div>
+  );
+}
+
 export default function ScheduleManagement() {
+  if (frontendEnv.isBackendApi) {
+    return <BackendScheduleManagement />;
+  }
+  return <LocalDemoScheduleManagement />;
+}
+
+function LocalDemoScheduleManagement() {
   const { elections, updateElectionSchedule } = useElection();
   const { currentAdmin } = useAuth();
   const { notifySuccess, notifyError } = useNotification();
