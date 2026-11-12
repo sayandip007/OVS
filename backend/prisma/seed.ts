@@ -500,7 +500,8 @@ export async function seedDatabase(
     });
   }
 
-  // 7. Seed 2 Demo Elections (LS-2029 and WB-ASSEMBLY-2029)
+  // 7. Seed 5 Synthetic DEMO_SAMPLE Elections (LS, WB, MH, DL Draft, WB Archived)
+  // Note: `update: {}` ensures repeated seed runs never overwrite administrator modifications.
   const electionsData = [
     {
       id: 'LS-2029',
@@ -508,6 +509,8 @@ export async function seedDatabase(
       type: ElectionType.LOK_SABHA,
       year: 2029,
       stateId: null,
+      country: 'India',
+      targetJurisdiction: 'National (All Parliamentary Constituencies)',
       status: ElectionStatus.POLLING_ACTIVE,
       registrationDeadline: new Date('2029-03-15'),
       nominationStartDate: new Date('2029-03-20'),
@@ -532,6 +535,8 @@ export async function seedDatabase(
       type: ElectionType.STATE_ASSEMBLY,
       year: 2029,
       stateId: 'WB',
+      country: 'India',
+      targetJurisdiction: 'West Bengal (WB)',
       status: ElectionStatus.POLLING_ACTIVE,
       registrationDeadline: new Date('2029-03-15'),
       nominationStartDate: new Date('2029-03-20'),
@@ -550,12 +555,68 @@ export async function seedDatabase(
         'Educational simulation of the 2029 West Bengal Vidhan Sabha General Election.',
       metadataSource: MetadataSource.DEMO_SAMPLE,
     },
+    {
+      id: 'MH-ASSEMBLY-2029',
+      name: 'Maharashtra Legislative Assembly Election 2029 (DEMO_SAMPLE)',
+      type: ElectionType.STATE_ASSEMBLY,
+      year: 2029,
+      stateId: 'MH',
+      country: 'India',
+      targetJurisdiction: 'Maharashtra (MH)',
+      status: ElectionStatus.UPCOMING,
+      pollingStartDate: new Date('2029-10-15'),
+      pollingEndDate: new Date('2029-10-20'),
+      countingDate: new Date('2029-10-24'),
+      resultDate: new Date('2029-10-26'),
+      demoSandboxMode: 'CONCURRENT_SIMULATION_SANDBOX',
+      description:
+        'Synthetic DEMO_SAMPLE Maharashtra Legislative Assembly Election for state-scoped administrative testing.',
+      metadataSource: MetadataSource.DEMO_SAMPLE,
+    },
+    {
+      id: 'DL-ASSEMBLY-2029',
+      name: 'NCT of Delhi Legislative Assembly Election 2029 (DEMO_SAMPLE)',
+      type: ElectionType.STATE_ASSEMBLY,
+      year: 2029,
+      stateId: 'DL',
+      country: 'India',
+      targetJurisdiction: 'NCT of Delhi (DL)',
+      status: ElectionStatus.DRAFT,
+      pollingStartDate: new Date('2029-11-10'),
+      pollingEndDate: new Date('2029-11-10'),
+      countingDate: new Date('2029-11-14'),
+      resultDate: new Date('2029-11-16'),
+      demoSandboxMode: 'CONCURRENT_SIMULATION_SANDBOX',
+      description:
+        'Synthetic DEMO_SAMPLE Delhi Assembly draft election (hidden from public portal until published).',
+      metadataSource: MetadataSource.DEMO_SAMPLE,
+    },
+    {
+      id: 'WB-BYPOLL-2028-ARCHIVED',
+      name: 'West Bengal Assembly Bye-Election 2028 (DEMO_SAMPLE Archived)',
+      type: ElectionType.STATE_ASSEMBLY,
+      year: 2028,
+      stateId: 'WB',
+      country: 'India',
+      targetJurisdiction: 'West Bengal (WB)',
+      status: ElectionStatus.ARCHIVED,
+      pollingStartDate: new Date('2028-06-10'),
+      pollingEndDate: new Date('2028-06-10'),
+      countingDate: new Date('2028-06-14'),
+      resultDate: new Date('2028-06-15'),
+      archivedAt: new Date('2028-07-01T00:00:00.000Z'),
+      archiveNote: 'Synthetic archived demo election preserved for lifecycle testing.',
+      demoSandboxMode: 'CONCURRENT_SIMULATION_SANDBOX',
+      description:
+        'Synthetic DEMO_SAMPLE archived election record for historical preservation testing.',
+      metadataSource: MetadataSource.DEMO_SAMPLE,
+    },
   ];
 
   for (const election of electionsData) {
     await client.election.upsert({
       where: { id: election.id },
-      update: election,
+      update: {},
       create: election,
     });
   }

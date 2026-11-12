@@ -15,6 +15,10 @@ import {
 import { createHealthRouter } from './modules/health/health.routes.js';
 import { createGeographyRouter } from './modules/geography/geography.routes.js';
 import { createElectionsRouter } from './modules/elections/elections.routes.js';
+import {
+  createAdminElectionsRouter,
+  type CreateAdminElectionsRouterOptions,
+} from './modules/elections/admin.elections.routes.js';
 import { createPartiesRouter } from './modules/parties/parties.routes.js';
 import { createCandidatesRouter } from './modules/candidates/candidates.routes.js';
 import {
@@ -39,6 +43,7 @@ export interface CreateAppOptions {
   authOptions?: CreateAuthRouterOptions;
   votersOptions?: CreateVotersRouterOptions;
   adminOptions?: CreateAdminRouterOptions;
+  adminElectionsOptions?: CreateAdminElectionsRouterOptions;
 }
 
 export function createApp(options: CreateAppOptions = {}): Express {
@@ -78,6 +83,10 @@ export function createApp(options: CreateAppOptions = {}): Express {
     })
   );
   app.use('/api/v1/voters', createVotersRouter(options.votersOptions));
+  app.use(
+    '/api/v1/admin/elections',
+    createAdminElectionsRouter(options.adminElectionsOptions)
+  );
   app.use(
     '/api/v1/admin',
     createAdminRouter({

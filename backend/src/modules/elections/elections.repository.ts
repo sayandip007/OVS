@@ -5,6 +5,7 @@ import {
   ElectionType,
   PrismaClient,
 } from '@prisma/client';
+import { PUBLIC_HIDDEN_STATUSES } from './election.lifecycle.js';
 
 export class ElectionsRepository {
   constructor(private readonly prisma: PrismaClient) {}
@@ -17,9 +18,15 @@ export class ElectionsRepository {
     page: number;
     limit: number;
   }) {
+    if (filters.status && PUBLIC_HIDDEN_STATUSES.includes(filters.status)) {
+      return { items: [], total: 0 };
+    }
+
     const where = {
+      status: filters.status
+        ? filters.status
+        : { notIn: [...PUBLIC_HIDDEN_STATUSES] },
       ...(filters.type ? { type: filters.type } : {}),
-      ...(filters.status ? { status: filters.status } : {}),
       ...(filters.stateId ? { stateId: filters.stateId } : {}),
       ...(filters.year ? { year: filters.year } : {}),
     };

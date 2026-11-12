@@ -5,7 +5,36 @@ import type {
   ElectionType,
 } from '@prisma/client';
 import { NotFoundProblemError } from '../../common/errors/problemDetails.js';
+import { PUBLIC_HIDDEN_STATUSES } from './election.lifecycle.js';
 import type { ElectionsRepository } from './elections.repository.js';
+
+function toPublicElectionDto(election: any) {
+  return {
+    id: election.id,
+    name: election.name,
+    type: election.type,
+    year: election.year,
+    stateId: election.stateId,
+    status: election.status,
+    country: election.country,
+    targetJurisdiction: election.targetJurisdiction,
+    registrationDeadline: election.registrationDeadline,
+    nominationStartDate: election.nominationStartDate,
+    nominationEndDate: election.nominationEndDate,
+    scrutinyDate: election.scrutinyDate,
+    withdrawalDeadline: election.withdrawalDeadline,
+    campaignStartDate: election.campaignStartDate,
+    campaignEndDate: election.campaignEndDate,
+    pollingStartDate: election.pollingStartDate,
+    pollingEndDate: election.pollingEndDate,
+    countingDate: election.countingDate,
+    resultDate: election.resultDate,
+    description: election.description,
+    metadataSource: election.metadataSource,
+    state: election.state,
+    _count: election._count,
+  };
+}
 
 export class ElectionsService {
   constructor(private readonly repo: ElectionsRepository) {}
@@ -18,15 +47,19 @@ export class ElectionsService {
     page: number;
     limit: number;
   }) {
-    return this.repo.listElections(filters);
+    const result = await this.repo.listElections(filters);
+    return {
+      items: result.items.map(toPublicElectionDto),
+      total: result.total,
+    };
   }
 
   async getElectionById(electionId: string) {
     const election = await this.repo.findElectionById(electionId);
-    if (!election) {
+    if (!election || PUBLIC_HIDDEN_STATUSES.includes(election.status)) {
       throw new NotFoundProblemError('Election', electionId);
     }
-    return election;
+    return toPublicElectionDto(election);
   }
 
   async listElectionConstituencies(

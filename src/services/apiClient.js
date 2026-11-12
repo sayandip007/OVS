@@ -295,6 +295,41 @@ export function createOvsApiClient(options = {}) {
           csrfToken,
         }),
       listAuditLogs: (query) => request('/admin/audit-logs', { query }),
+      elections: {
+        summary: () => request('/admin/elections/summary'),
+        list: (query) => request('/admin/elections', { query }),
+        getById: (electionId) =>
+          request(`/admin/elections/${encodeURIComponent(electionId)}`),
+        create: (data, csrfToken) =>
+          request('/admin/elections', { method: 'POST', body: data, csrfToken }),
+        update: (electionId, data, csrfToken) =>
+          request(`/admin/elections/${encodeURIComponent(electionId)}`, {
+            method: 'PATCH',
+            body: data,
+            csrfToken,
+          }),
+        transition: (electionId, data, csrfToken) =>
+          request(
+            `/admin/elections/${encodeURIComponent(electionId)}/transition`,
+            { method: 'POST', body: data, csrfToken }
+          ),
+        cancel: (electionId, data, csrfToken) =>
+          request(`/admin/elections/${encodeURIComponent(electionId)}/cancel`, {
+            method: 'POST',
+            body: data,
+            csrfToken,
+          }),
+        archive: (electionId, data, csrfToken) =>
+          request(`/admin/elections/${encodeURIComponent(electionId)}/archive`, {
+            method: 'POST',
+            body: data || {},
+            csrfToken,
+          }),
+        history: (electionId, query) =>
+          request(`/admin/elections/${encodeURIComponent(electionId)}/history`, {
+            query,
+          }),
+      },
     },
   };
 }

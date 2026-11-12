@@ -59,7 +59,7 @@ describe('OVS Phase 8.2–8.4 — Live PostgreSQL & Supertest API Integration Su
       assert.equal(firstRun.assemblyCount, 8);
       assert.equal(firstRun.partiesCount, 5);
       assert.equal(firstRun.candidatesCount, 9);
-      assert.equal(firstRun.electionsCount, 2);
+      assert.equal(firstRun.electionsCount, 5);
       assert.equal(firstRun.electionConstituenciesCount, 10);
       assert.equal(firstRun.nominationsCount, 9);
 
@@ -273,10 +273,10 @@ describe('OVS Phase 8.2–8.4 — Live PostgreSQL & Supertest API Integration Su
   });
 
   describe('5. Election Endpoints (/api/v1/elections)', () => {
-    test('GET /api/v1/elections lists seeded elections and filters by type and stateId', async () => {
+    test('GET /api/v1/elections lists public non-draft/non-archived seeded elections and filters by type and stateId', async () => {
       const allRes = await request(app).get('/api/v1/elections');
       assert.equal(allRes.status, 200);
-      assert.equal(allRes.body.data.length, 2);
+      assert.equal(allRes.body.data.length, 3);
 
       const stateAssemblyRes = await request(app).get(
         '/api/v1/elections?type=STATE_ASSEMBLY&stateId=WB'
@@ -284,6 +284,12 @@ describe('OVS Phase 8.2–8.4 — Live PostgreSQL & Supertest API Integration Su
       assert.equal(stateAssemblyRes.status, 200);
       assert.equal(stateAssemblyRes.body.data.length, 1);
       assert.equal(stateAssemblyRes.body.data[0].id, 'WB-ASSEMBLY-2029');
+
+      // Draft and Archived seeded elections must not leak via public detail API
+      const draftRes = await request(app).get('/api/v1/elections/DL-ASSEMBLY-2029');
+      assert.equal(draftRes.status, 404);
+      const archivedRes = await request(app).get('/api/v1/elections/WB-BYPOLL-2028-ARCHIVED');
+      assert.equal(archivedRes.status, 404);
     });
 
     test('GET /api/v1/elections/:electionId returns election metadata and 404 for unknown election', async () => {
@@ -993,6 +999,182 @@ describe('OVS Phase 8.2–8.4 — Live PostgreSQL & Supertest API Integration Su
         .set('Cookie', superCookie)
         .set('X-CSRF-Token', superCsrf);
       assert.equal(logoutRes.status, 200);
+    });
+  });
+
+  describe('10. Phase 8.5 — Admin Election Creation, Lifecycle State Machine, Concurrency & Scoping (Live PostgreSQL)', () => {
+    let superCookie: string;
+    let superCsrf: string;
+    let wbCookie: string;
+    let wbCsrf: string;
+    let audCookie: string;
+    let audCsrf: string;
+
+    test('Authenticates SUPER_ADMIN, WB STATE_ADMIN, and READ_ONLY_AUDITOR for election management checks', async () => {
+      const superLogin = await request(app)
+        .post('/api/v1/admin/auth/login')
+        .send({ identifier: 'super.ci@ovs-test.local', password: 'SuperCiSecret#2026!' });
+      assert.equal(superLogin.status, 200);
+      superCookie = (superLogin.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
+      superCsrf = superLogin.body.data.csrfToken;
+
+      const wbLogin = await request(app)
+        .post('/api/v1/admin/auth/login')
+        .send({ identifier: 'wb.ci@ovs-test.local', password: 'WbCiPassword#2026!' });
+      assert.equal(wbLogin.status, 200);
+      wbCookie = (wbLogin.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
+      wbCsrf = wbLogin.body.data.csrfToken;
+
+      const audLogin = await request(app)
+        .post('/api/v1/admin/auth/login')
+        .send({ identifier: 'ECI-AUD-CI-01', password: 'AudCiPassword#2026!' });
+      assert.equal(audLogin.status, 200);
+      audCookie = (audLogin.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
+      audCsrf = audLogin.body.data.csrfToken;
+    });
+
+    test('Creates Lok Sabha and State Assembly elections, enforces type/state DB rules, and prevents WB STATE_ADMIN cross-state access', async () => {
+      const lsRes = await request(app)
+        .post('/api/v1/admin/elections')
+        .set('Cookie', superCookie)
+        .set('X-CSRF-Token', superCsrf)
+        .send({
+          id: 'LS-2034-DEMO',
+          name: 'Lok Sabha General Election 2034 (DEMO_SAMPLE)',
+          type: 'LOK_SABHA',
+          year: 2034,
+          description: 'Synthetic Lok Sabha election for Phase 8.5 integration test.',
+        });
+      assert.equal(lsRes.status, 201);
+      assert.equal(lsRes.body.data.status, 'DRAFT');
+      assert.equal(lsRes.body.data.stateId, null);
+
+      // WB STATE_ADMIN cannot create LOK_SABHA or MH election
+      const wbLs = await request(app)
+        .post('/api/v1/admin/elections')
+        .set('Cookie', wbCookie)
+        .set('X-CSRF-Token', wbCsrf)
+        .send({
+          id: 'LS-WB-TAMPER',
+          name: 'Unauthorized Lok Sabha',
+          type: 'LOK_SABHA',
+          year: 2034,
+        });
+      assert.equal(wbLs.status, 403);
+
+      const wbMh = await request(app)
+        .post('/api/v1/admin/elections')
+        .set('Cookie', wbCookie)
+        .set('X-CSRF-Token', wbCsrf)
+        .send({
+          id: 'MH-2034-TAMPER',
+          name: 'Unauthorized MH Assembly',
+          type: 'STATE_ASSEMBLY',
+          stateId: 'MH',
+          year: 2034,
+        });
+      assert.equal(wbMh.status, 403);
+
+      // WB STATE_ADMIN can create WB State Assembly election
+      const wbCreate = await request(app)
+        .post('/api/v1/admin/elections')
+        .set('Cookie', wbCookie)
+        .set('X-CSRF-Token', wbCsrf)
+        .send({
+          id: 'WB-2034-DEMO',
+          name: 'West Bengal Assembly Election 2034 (DEMO_SAMPLE)',
+          type: 'STATE_ASSEMBLY',
+          stateId: 'WB',
+          year: 2034,
+        });
+      assert.equal(wbCreate.status, 201);
+      assert.equal(wbCreate.body.data.stateId, 'WB');
+
+      // WB STATE_ADMIN IDOR read of MH-ASSEMBLY-2029 denied with 403
+      const idorRes = await request(app)
+        .get('/api/v1/admin/elections/MH-ASSEMBLY-2029')
+        .set('Cookie', wbCookie);
+      assert.equal(idorRes.status, 403);
+    });
+
+    test('Enforces lifecycle transitions, optimistic concurrency conflict, cancellation reason, archival immutability, and audit history', async () => {
+      // Update metadata on DRAFT election (v1 -> v2)
+      const patchRes = await request(app)
+        .patch('/api/v1/admin/elections/WB-2034-DEMO')
+        .set('Cookie', wbCookie)
+        .set('X-CSRF-Token', wbCsrf)
+        .send({
+          name: 'West Bengal Assembly Election 2034 Updated (DEMO_SAMPLE)',
+          expectedVersion: 1,
+        });
+      assert.equal(patchRes.status, 200);
+      assert.equal(patchRes.body.data.version, 2);
+
+      // Stale expectedVersion returns 409 Conflict
+      const staleRes = await request(app)
+        .patch('/api/v1/admin/elections/WB-2034-DEMO')
+        .set('Cookie', wbCookie)
+        .set('X-CSRF-Token', wbCsrf)
+        .send({ name: 'Stale Write', expectedVersion: 1 });
+      assert.equal(staleRes.status, 409);
+
+      // Transition DRAFT -> UPCOMING
+      const upcRes = await request(app)
+        .post('/api/v1/admin/elections/WB-2034-DEMO/transition')
+        .set('Cookie', wbCookie)
+        .set('X-CSRF-Token', wbCsrf)
+        .send({ targetStatus: 'UPCOMING', expectedVersion: 2 });
+      assert.equal(upcRes.status, 200);
+      assert.equal(upcRes.body.data.status, 'UPCOMING');
+
+      // Invalid transition UPCOMING -> RESULTS_DECLARED returns 409
+      const badTrans = await request(app)
+        .post('/api/v1/admin/elections/WB-2034-DEMO/transition')
+        .set('Cookie', wbCookie)
+        .set('X-CSRF-Token', wbCsrf)
+        .send({ targetStatus: 'RESULTS_DECLARED' });
+      assert.equal(badTrans.status, 409);
+
+      // Auditor cannot cancel
+      const audCancel = await request(app)
+        .post('/api/v1/admin/elections/WB-2034-DEMO/cancel')
+        .set('Cookie', audCookie)
+        .set('X-CSRF-Token', audCsrf)
+        .send({ reason: 'Auditor cannot mutate' });
+      assert.equal(audCancel.status, 403);
+
+      // Cancel with valid reason
+      const cancelRes = await request(app)
+        .post('/api/v1/admin/elections/WB-2034-DEMO/cancel')
+        .set('Cookie', wbCookie)
+        .set('X-CSRF-Token', wbCsrf)
+        .send({ reason: 'CI integration test cancellation workflow.' });
+      assert.equal(cancelRes.status, 200);
+      assert.equal(cancelRes.body.data.status, 'CANCELLED');
+
+      // Archive cancelled election
+      const archRes = await request(app)
+        .post('/api/v1/admin/elections/WB-2034-DEMO/archive')
+        .set('Cookie', wbCookie)
+        .set('X-CSRF-Token', wbCsrf)
+        .send({ note: 'Archived after CI cancellation.' });
+      assert.equal(archRes.status, 200);
+      assert.equal(archRes.body.data.status, 'ARCHIVED');
+
+      // Archived election cannot be reopened or edited
+      const reopenRes = await request(app)
+        .post('/api/v1/admin/elections/WB-2034-DEMO/transition')
+        .set('Cookie', superCookie)
+        .set('X-CSRF-Token', superCsrf)
+        .send({ targetStatus: 'DRAFT' });
+      assert.equal(reopenRes.status, 409);
+
+      // Auditor can read immutable lifecycle history
+      const histRes = await request(app)
+        .get('/api/v1/admin/elections/WB-2034-DEMO/history')
+        .set('Cookie', audCookie);
+      assert.equal(histRes.status, 200);
+      assert.ok(histRes.body.data.length >= 5);
     });
   });
 });

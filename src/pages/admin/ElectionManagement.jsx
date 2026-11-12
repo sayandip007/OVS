@@ -5,6 +5,8 @@ import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
 import SearchBar from '../../components/common/SearchBar';
 import Modal from '../../components/common/Modal';
+import BackendElectionManager from '../../components/admin/BackendElectionManager';
+import { frontendEnv } from '../../config/env';
 import {
   ELECTION_TYPES,
   ELECTION_STATUS_LABELS,
@@ -23,6 +25,14 @@ import {
 } from 'lucide-react';
 
 export default function ElectionManagement() {
+  if (frontendEnv.isBackendApi) {
+    return <BackendElectionManager />;
+  }
+
+  return <LocalDemoElectionManagement />;
+}
+
+function LocalDemoElectionManagement() {
   const { id: routeElectionId } = useParams();
   const location = useLocation();
   const navigate = useNavigate();

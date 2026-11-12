@@ -366,11 +366,26 @@ model Election {
   simulationClockDate  DateTime?                 @db.Date @map("simulation_clock_date")
   demoSandboxMode      String                    @default("CONCURRENT_SIMULATION_SANDBOX") @db.VarChar(50) @map("demo_sandbox_mode")
   description          String                    @default("") @db.Text
+  country              String                    @default("India") @db.VarChar(100)
+  targetJurisdiction   String                    @default("National") @db.VarChar(150) @map("target_jurisdiction")
+  version              Int                       @default(1)
   metadataSource       MetadataSource            @default(DEMO_SAMPLE) @map("metadata_source")
+  createdByAdminId     String?                   @db.Uuid @map("created_by_admin_id")
+  updatedByAdminId     String?                   @db.Uuid @map("updated_by_admin_id")
+  cancelledAt          DateTime?                 @db.Timestamptz(6) @map("cancelled_at")
+  cancelledByAdminId   String?                   @db.Uuid @map("cancelled_by_admin_id")
+  cancellationReason   String?                   @db.Text @map("cancellation_reason")
+  archivedAt           DateTime?                 @db.Timestamptz(6) @map("archived_at")
+  archivedByAdminId    String?                   @db.Uuid @map("archived_by_admin_id")
+  archiveNote          String?                   @db.Text @map("archive_note")
   createdAt            DateTime                  @default(now()) @db.Timestamptz(6) @map("created_at")
   updatedAt            DateTime                  @updatedAt @db.Timestamptz(6) @map("updated_at")
 
   state                State?                    @relation(fields: [stateId], references: [id], onDelete: Restrict)
+  createdByAdmin       AdminUser?                @relation("ElectionCreator", fields: [createdByAdminId], references: [id], onDelete: SetNull)
+  updatedByAdmin       AdminUser?                @relation("ElectionUpdater", fields: [updatedByAdminId], references: [id], onDelete: SetNull)
+  cancelledByAdmin     AdminUser?                @relation("ElectionCanceller", fields: [cancelledByAdminId], references: [id], onDelete: SetNull)
+  archivedByAdmin      AdminUser?                @relation("ElectionArchiver", fields: [archivedByAdminId], references: [id], onDelete: SetNull)
   constituencyMappings ElectionConstituency[]
   lifecycleHistory     ElectionLifecycleHistory[]
   candidateNominations CandidateNomination[]
@@ -381,6 +396,7 @@ model Election {
   adminConstituencyScopes AdminConstituencyScope[]
 
   @@index([status, type])
+  @@index([stateId, status])
   @@map("elections")
 }
 
@@ -407,11 +423,13 @@ model ElectionConstituency {
 model ElectionLifecycleHistory {
   id                String         @id @default(uuid()) @db.Uuid
   electionId        String         @db.VarChar(50) @map("election_id")
+  action            String         @default("STATUS_TRANSITION") @db.VarChar(60)
   fromStatus        ElectionStatus @map("from_status")
   toStatus          ElectionStatus @map("to_status")
   changedByAdminId  String?        @db.Uuid @map("changed_by_admin_id")
   changedAt         DateTime       @default(now()) @db.Timestamptz(6) @map("changed_at")
   note              String         @default("") @db.Text
+  requestId         String?        @db.VarChar(100) @map("request_id")
   metadata          Json           @default("{}")
 
   election          Election       @relation(fields: [electionId], references: [id], onDelete: Cascade)
@@ -547,6 +565,10 @@ model AdminUser {
   delegatedConstituencyScopes AdminConstituencyScope[]   @relation("ConstituencyScopeDelegator")
   actionLogs                  AdminActionLog[]
   lifecycleChanges            ElectionLifecycleHistory[]
+  createdElections            Election[]                 @relation("ElectionCreator")
+  updatedElections            Election[]                 @relation("ElectionUpdater")
+  cancelledElections          Election[]                 @relation("ElectionCanceller")
+  archivedElections           Election[]                 @relation("ElectionArchiver")
   scrutinizedNominations      CandidateNomination[]
   publishedSessions           CountingSession[]          @relation("SessionPublisher")
   processedRounds             CountingRound[]            @relation("RoundProcessor")

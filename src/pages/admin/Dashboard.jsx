@@ -1,8 +1,10 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useElection } from '../../context/ElectionContext';
 import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
+import { frontendEnv } from '../../config/env';
+import { apiClient } from '../../services/apiClient';
 import StatsCard from '../../components/admin/StatsCard';
 import {
   CONSTITUENCY_TYPES,
@@ -33,6 +35,15 @@ export default function AdminDashboard() {
   } = useElection();
   const { currentAdmin, canPerformAdminAction } = useAuth();
   const { notifyInfo, notifyError } = useNotification();
+  const [backendSummary, setBackendSummary] = useState(null);
+
+  useEffect(() => {
+    if (!frontendEnv.isBackendApi) return;
+    apiClient.admin.elections
+      .summary()
+      .then((res) => setBackendSummary(res?.data || null))
+      .catch(() => {});
+  }, []);
 
   // 10 Live Calculated Summary Metrics
   const totalStates = states.filter((s) => s.type === 'STATE').length;
@@ -184,6 +195,47 @@ export default function AdminDashboard() {
           )}
         </div>
       </div>
+
+      {/* Backend Jurisdiction-Scoped Election Summary (Phase 8.5 BACKEND_API) */}
+      {frontendEnv.isBackendApi && backendSummary && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-extrabold text-slate-900">
+              Authorized Election Overview (Live Backend API)
+            </h2>
+            <Link
+              to="/eci/elections"
+              className="text-xs font-bold text-[#002868] hover:underline"
+            >
+              Open Election Directory →
+            </Link>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5 text-xs">
+            {[
+              { label: 'Total', value: backendSummary.total },
+              { label: 'Lok Sabha', value: backendSummary.lokSabha },
+              { label: 'Assembly', value: backendSummary.stateAssembly },
+              { label: 'Draft', value: backendSummary.draft },
+              { label: 'Active', value: backendSummary.active },
+              { label: 'Completed', value: backendSummary.completed },
+              { label: 'Cancelled', value: backendSummary.cancelled },
+              { label: 'Archived', value: backendSummary.archived },
+            ].map((item) => (
+              <div
+                key={item.label}
+                className="p-3 rounded-xl bg-slate-50 border border-slate-200"
+              >
+                <p className="text-[11px] font-bold uppercase text-slate-500">
+                  {item.label}
+                </p>
+                <p className="text-lg font-extrabold text-slate-900">
+                  {item.value}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* 10 Live Summary KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
