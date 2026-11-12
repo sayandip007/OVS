@@ -6,6 +6,7 @@ import { useNotification } from '../../context/NotificationContext';
 import { frontendEnv } from '../../config/env';
 import { apiClient } from '../../services/apiClient';
 import StatsCard from '../../components/admin/StatsCard';
+import BackendAnalyticsDashboard from '../../components/admin/BackendAnalyticsDashboard';
 import {
   CONSTITUENCY_TYPES,
   ELECTION_TYPES,
@@ -108,6 +109,10 @@ export default function AdminDashboard() {
       'All elections, constituencies, candidates, parties, and voter participation records have been reset to clean initial demo state.'
     );
   };
+
+  if (frontendEnv.isBackendApi) {
+    return <BackendAnalyticsDashboard />;
+  }
 
   return (
     <div className="space-y-6">

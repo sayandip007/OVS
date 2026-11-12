@@ -1833,4 +1833,120 @@ describe('OVS Phase 8.2–8.4 — Live PostgreSQL & Supertest API Integration Su
       assert.equal(pubTie.body.data.session.resultStatus, 'PUBLISHED');
     });
   });
+
+  describe('15. Phase 8.10 — Analytics, Dashboards, Privacy & Data Export Suite (Live PostgreSQL)', () => {
+    let superCookie: string;
+    let wbCookie: string;
+    let audCookie: string;
+
+    test('Authenticates admin actors for Phase 8.10 analytics and reporting workflows', async () => {
+      const s = await request(app)
+        .post('/api/v1/admin/auth/login')
+        .send({ identifier: 'super.ci@ovs-test.local', password: 'SuperCiSecret#2026!' });
+      assert.equal(s.status, 200);
+      superCookie = (s.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
+
+      const wb = await request(app)
+        .post('/api/v1/admin/auth/login')
+        .send({ identifier: 'wb.ci@ovs-test.local', password: 'WbCiPassword#2026!' });
+      assert.equal(wb.status, 200);
+      wbCookie = (wb.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
+
+      const aud = await request(app)
+        .post('/api/v1/admin/auth/login')
+        .send({ identifier: 'ECI-AUD-CI-01', password: 'AudCiPassword#2026!' });
+      assert.equal(aud.status, 200);
+      audCookie = (aud.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
+    });
+
+    test('National & State analytics endpoints enforce jurisdiction scoping and return accurate aggregates', async () => {
+      // 1. National analytics accessible by SUPER_ADMIN and READ_ONLY_AUDITOR
+      const natRes = await request(app)
+        .get('/api/v1/admin/analytics/national')
+        .set('Cookie', superCookie);
+      assert.equal(natRes.status, 200);
+      assert.equal(natRes.body.data.isSimulated, true);
+      assert.ok(natRes.body.data.data.totalElections >= 1);
+      assert.ok(natRes.body.data.data.statesCoveredCount >= 1);
+
+      const audNatRes = await request(app)
+        .get('/api/v1/admin/analytics/national')
+        .set('Cookie', audCookie);
+      assert.equal(audNatRes.status, 200);
+
+      // 2. State analytics: WB Admin accessing WB succeeds
+      const wbStateRes = await request(app)
+        .get('/api/v1/admin/analytics/states/WB')
+        .set('Cookie', wbCookie);
+      assert.equal(wbStateRes.status, 200);
+      assert.equal(wbStateRes.body.data.data.state.id, 'WB');
+      assert.ok(wbStateRes.body.data.data.totalElections >= 1);
+
+      // 3. State analytics: WB Admin attempting to access MH returns 403 Forbidden
+      const mhDeniedRes = await request(app)
+        .get('/api/v1/admin/analytics/states/MH')
+        .set('Cookie', wbCookie);
+      assert.equal(mhDeniedRes.status, 403);
+    });
+
+    test('Election overview, voter participation, counting analytics, and audit log endpoints operate with strict domain separation', async () => {
+      // 1. Election-specific analytics
+      const elRes = await request(app)
+        .get('/api/v1/admin/analytics/elections/LS-2029')
+        .set('Cookie', superCookie);
+      assert.equal(elRes.status, 200);
+      assert.equal(elRes.body.data.data.election.id, 'LS-2029');
+      assert.ok(elRes.body.data.data.constituenciesSummary.totalAssigned >= 1);
+
+      // 2. Participation analytics: aggregate counts with zero candidate fields
+      const partRes = await request(app)
+        .get('/api/v1/admin/analytics/participation?electionId=LS-2029')
+        .set('Cookie', superCookie);
+      assert.equal(partRes.status, 200);
+      assert.equal(partRes.body.data.data.metricName, 'Simulated Demo Account Participation');
+      assert.equal((partRes.body.data.data as any).candidateId, undefined);
+      assert.equal((partRes.body.data.data as any).candidateChoices, undefined);
+
+      // 3. Independent counting analytics: certified published results
+      const countRes = await request(app)
+        .get('/api/v1/admin/analytics/counting')
+        .set('Cookie', superCookie);
+      assert.equal(countRes.status, 200);
+      assert.equal(countRes.body.data.data.classification, 'SYNTHETIC_DEMO_COUNTING_INDEPENDENT');
+      assert.ok(countRes.body.data.data.totalCountingSessions >= 1);
+
+      // 4. Audit activity analytics
+      const auditRes = await request(app)
+        .get('/api/v1/admin/analytics/activity')
+        .set('Cookie', superCookie);
+      assert.equal(auditRes.status, 200);
+      assert.ok(auditRes.body.data.data.totalActionsLogged >= 1);
+    });
+
+    test('Data export generates sanitized CSV and structured JSON reports with audit logging and formula safety', async () => {
+      // 1. CSV export for national domain
+      const csvRes = await request(app)
+        .get('/api/v1/admin/analytics/export?domain=national&format=csv')
+        .set('Cookie', superCookie);
+      assert.equal(csvRes.status, 200);
+      assert.match(csvRes.headers['content-type'] ?? '', /text\/csv/);
+      assert.ok(csvRes.text.includes('"Total Elections"'));
+
+      // 2. JSON export for election domain
+      const jsonRes = await request(app)
+        .get('/api/v1/admin/analytics/export?domain=election&format=json&electionId=LS-2029')
+        .set('Cookie', superCookie);
+      assert.equal(jsonRes.status, 200);
+      assert.match(jsonRes.headers['content-type'] ?? '', /application\/json/);
+      const parsedJson = JSON.parse(jsonRes.text);
+      assert.equal(parsedJson.meta.isSimulated, true);
+      assert.equal(parsedJson.data.election.id, 'LS-2029');
+
+      // 3. Public analytics endpoint returns safe metadata
+      const pubRes = await request(app).get('/api/v1/public/analytics/elections');
+      assert.equal(pubRes.status, 200);
+      assert.equal(pubRes.body.data.isSimulated, true);
+      assert.ok(pubRes.body.data.elections.length >= 1);
+    });
+  });
 });

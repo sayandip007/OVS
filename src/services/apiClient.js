@@ -556,6 +556,35 @@ export function createOvsApiClient(options = {}) {
             { method: 'POST', body: {}, csrfToken }
           ),
       },
+
+      // Phase 8.10 Analytics & Dashboards
+      analytics: {
+        national: (query) => request('/admin/analytics/national', { query }),
+        overview: (query) => request('/admin/analytics/overview', { query }),
+        state: (stateId, query) =>
+          request(`/admin/analytics/states/${encodeURIComponent(stateId)}`, { query }),
+        election: (electionId) =>
+          request(`/admin/analytics/elections/${encodeURIComponent(electionId)}`),
+        electionOverview: (electionId) =>
+          request(`/admin/analytics/elections/${encodeURIComponent(electionId)}/overview`),
+        electionCandidates: (electionId) =>
+          request(`/admin/analytics/elections/${encodeURIComponent(electionId)}/candidates`),
+        electionParties: (electionId) =>
+          request(`/admin/analytics/elections/${encodeURIComponent(electionId)}/parties`),
+        participation: (query) => request('/admin/analytics/participation', { query }),
+        participationTrends: (query) => request('/admin/analytics/participation/trends', { query }),
+        counting: (query) => request('/admin/analytics/counting', { query }),
+        audit: (query) => request('/admin/analytics/activity', { query }),
+        exportUrl: (query) => {
+          const params = new URLSearchParams(query || {}).toString();
+          return `/api/v1/admin/analytics/export${params ? `?${params}` : ''}`;
+        },
+      },
+    },
+
+    publicAnalytics: {
+      elections: (query) => request('/public/analytics/elections', { query }),
+      results: (query) => request('/public/analytics/results', { query }),
     },
 
     // Phase 8.8 Voter Demo Voting & Participation (Zero Candidate-Choice Transmission)
