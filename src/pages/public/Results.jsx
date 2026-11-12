@@ -1,6 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useElection } from '../../context/ElectionContext';
+import { apiClient } from '../../services/apiClient';
+import { frontendEnv } from '../../config/env';
 import {
   ELECTION_TYPES,
   RESULT_STATUSES,
@@ -73,6 +75,26 @@ export default function Results() {
   const [partyFilter, setPartyFilter] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedPresetId, setSelectedPresetId] = useState('WB-KRISHNANAGAR');
+  const [backendResults, setBackendResults] = useState(null);
+
+  useEffect(() => {
+    if (!frontendEnv.isBackendApi) return;
+    apiClient.results
+      .list({ page: 1, limit: 100 })
+      .then((res) => {
+        if (res?.data && Array.isArray(res.data)) {
+          setBackendResults(res.data);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const effectiveResults = useMemo(() => {
+    if (frontendEnv.isBackendApi && backendResults && backendResults.length > 0) {
+      return backendResults;
+    }
+    return results;
+  }, [backendResults, results]);
 
   const selectedPreset = useMemo(
     () =>
@@ -86,13 +108,13 @@ export default function Results() {
     () =>
       countingService.computeSimultaneousElectionOverview({
         ...selectedPreset,
-        results,
+        results: effectiveResults,
         elections,
         constituencies,
         candidates,
         parties,
       }),
-    [selectedPreset, results, elections, constituencies, candidates, parties]
+    [selectedPreset, effectiveResults, elections, constituencies, candidates, parties]
   );
 
   // National Lok Sabha 2029 Summary
@@ -100,7 +122,7 @@ export default function Results() {
     () =>
       countingService.computeLokSabhaNationalAnalytics({
         electionId: 'LS-2029',
-        results,
+        results: effectiveResults,
         elections,
         constituencies,
         candidates,
@@ -108,7 +130,7 @@ export default function Results() {
         states,
         publicOnly: true,
       }),
-    [results, elections, constituencies, candidates, parties, states]
+    [effectiveResults, elections, constituencies, candidates, parties, states]
   );
 
   // Turnout & Vote Accounting separation metrics (Section 13)

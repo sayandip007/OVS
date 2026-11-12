@@ -40,6 +40,14 @@ import {
   createAdminRouter,
   type CreateAdminRouterOptions,
 } from './modules/admin/admin.routes.js';
+import {
+  createAdminCountingRouter,
+  type CreateAdminCountingRouterOptions,
+} from './modules/counting/admin.counting.routes.js';
+import {
+  createPublicResultsRouter,
+  type CreatePublicResultsRouterOptions,
+} from './modules/counting/public.results.routes.js';
 
 export interface CreateAppOptions {
   clientOrigin?: string;
@@ -52,6 +60,8 @@ export interface CreateAppOptions {
   voterVotingOptions?: CreateVoterVotingRouterOptions;
   adminOptions?: CreateAdminRouterOptions;
   adminElectionsOptions?: CreateAdminElectionsRouterOptions;
+  adminCountingOptions?: CreateAdminCountingRouterOptions;
+  publicResultsOptions?: CreatePublicResultsRouterOptions;
 }
 
 export function createApp(options: CreateAppOptions = {}): Express {
@@ -106,12 +116,17 @@ export function createApp(options: CreateAppOptions = {}): Express {
   app.use('/api/v1/admin/parties', createAdminPartiesRouter());
   app.use('/api/v1/admin/nominations', createAdminNominationsRouter());
   app.use(
+    '/api/v1/admin/counting',
+    createAdminCountingRouter(options.adminCountingOptions)
+  );
+  app.use(
     '/api/v1/admin',
     createAdminRouter({
       enableRateLimit: options.enableRateLimit,
       ...options.adminOptions,
     })
   );
+  app.use('/api/v1/results', createPublicResultsRouter(options.publicResultsOptions));
   app.use('/api/v1/geography', createGeographyRouter());
   app.use('/api/v1/elections', createElectionsRouter());
   app.use('/api/v1/parties', createPartiesRouter());

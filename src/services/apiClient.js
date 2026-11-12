@@ -216,6 +216,15 @@ export function createOvsApiClient(options = {}) {
         request(`/candidates/${encodeURIComponent(candidateId)}`),
     },
 
+    // Phase 8.9 Public Results APIs (Published Results Only)
+    results: {
+      list: (query) => request('/results', { query }),
+      getById: (sessionId) =>
+        request(`/results/${encodeURIComponent(sessionId)}`),
+      getElectionSummary: (electionId) =>
+        request(`/results/elections/${encodeURIComponent(electionId)}/summary`),
+    },
+
     // Phase 8.3 Authentication & Session Management
     auth: {
       register: (data) =>
@@ -498,6 +507,53 @@ export function createOvsApiClient(options = {}) {
           request(
             `/admin/nominations/${encodeURIComponent(nominationId)}/history`,
             { query }
+          ),
+      },
+      // Phase 8.9 Admin Counting & Results Management
+      counting: {
+        listSessions: (query) => request('/admin/counting/sessions', { query }),
+        getSession: (sessionId) =>
+          request(`/admin/counting/sessions/${encodeURIComponent(sessionId)}`),
+        createSession: (data, csrfToken) =>
+          request('/admin/counting/sessions', {
+            method: 'POST',
+            body: data,
+            csrfToken,
+          }),
+        recordRound: (sessionId, data, csrfToken) =>
+          request(
+            `/admin/counting/sessions/${encodeURIComponent(sessionId)}/rounds`,
+            { method: 'POST', body: data, csrfToken }
+          ),
+        recordTallies: (sessionId, data, csrfToken) =>
+          request(
+            `/admin/counting/sessions/${encodeURIComponent(sessionId)}/tallies`,
+            { method: 'POST', body: data, csrfToken }
+          ),
+        resolveTie: (sessionId, data, csrfToken) =>
+          request(
+            `/admin/counting/sessions/${encodeURIComponent(sessionId)}/tie-break`,
+            { method: 'POST', body: data, csrfToken }
+          ),
+        submitForReview: (sessionId, csrfToken) =>
+          request(
+            `/admin/counting/sessions/${encodeURIComponent(sessionId)}/review`,
+            { method: 'POST', body: {}, csrfToken }
+          ),
+        publish: (sessionId, csrfToken) =>
+          request(
+            `/admin/counting/sessions/${encodeURIComponent(sessionId)}/publish`,
+            { method: 'POST', body: {}, csrfToken }
+          ),
+        correct: (sessionId, data, csrfToken) =>
+          request(
+            `/admin/counting/sessions/${encodeURIComponent(sessionId)}/correct`,
+            { method: 'POST', body: data, csrfToken }
+          ),
+        reset: (sessionId, csrfToken) =>
+          request(
+            `/admin/counting/sessions/${encodeURIComponent(sessionId)}/reset`,
+            { method: 'POST', body: {}, csrfToken }
           ),
       },
     },

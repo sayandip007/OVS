@@ -1630,4 +1630,207 @@ describe('OVS Phase 8.2–8.4 — Live PostgreSQL & Supertest API Integration Su
       assert.ok(constAgg.body.data.items.length >= 1);
     });
   });
+
+  describe('14. Phase 8.9 — Independent Demo Counting, Result Review & Publication Simulation (Live PostgreSQL)', () => {
+    let superCookie: string;
+    let superCsrf: string;
+    let audCookie: string;
+
+    test('Authenticates admin actors for Phase 8.9 counting workflows', async () => {
+      const s = await request(app)
+        .post('/api/v1/admin/auth/login')
+        .send({ identifier: 'super.ci@ovs-test.local', password: 'SuperCiSecret#2026!' });
+      assert.equal(s.status, 200);
+      superCookie = (s.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
+      superCsrf = s.body.data.csrfToken;
+
+      const aud = await request(app)
+        .post('/api/v1/admin/auth/login')
+        .send({ identifier: 'ECI-AUD-CI-01', password: 'AudCiPassword#2026!' });
+      assert.equal(aud.status, 200);
+      audCookie = (aud.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
+    });
+
+    test('Verifies seeded demo counting sessions, public result filtering, and zero-derivation guarantees', async () => {
+      // 1. Public published results lists seeded Krishnanagar PC session
+      const pubRes = await request(app).get('/api/v1/results');
+      assert.equal(pubRes.status, 200);
+      assert.equal(pubRes.body.data.disclaimer, 'SIMULATED DEMO RESULTS - NOT OFFICIAL ELECTION DATA');
+      const krishSession = pubRes.body.data.sessions.find((s: any) => s.constituency.name === 'Krishnanagar');
+      assert.ok(krishSession);
+      assert.equal(krishSession.resultStatus, 'PUBLISHED');
+      assert.ok(krishSession.winner);
+
+      // 2. Draft/Review sessions (e.g. Krishnanagar Uttar AC) are hidden from public
+      const unpubSession = pubRes.body.data.sessions.find((s: any) => s.constituency.name === 'Krishnanagar Uttar');
+      assert.equal(unpubSession, undefined);
+
+      // 3. Election summary endpoint returns totals and winner summary
+      const sumRes = await request(app).get('/api/v1/results/elections/LS-2029/summary');
+      assert.equal(sumRes.status, 200);
+      assert.equal(sumRes.body.data.publishedSessionsCount >= 1, true);
+
+      // 4. Zero-derivation invariant: DemoParticipation has zero candidate foreign keys/columns
+      const participationSample = await prisma.demoParticipation.findFirst();
+      if (participationSample) {
+        assert.equal((participationSample as any).candidateId, undefined);
+        assert.equal((participationSample as any).candidateChoice, undefined);
+      }
+    });
+
+    test('Executes end-to-end counting session lifecycle: Create, Rounds, Reconciliation, Review, and Publication', async () => {
+      // 1. Admin creates a new session for WB-PC-KOLKATA-SOUTH in LS-2029
+      const createRes = await request(app)
+        .post('/api/v1/admin/counting/sessions')
+        .set('Cookie', superCookie)
+        .set('X-CSRF-Token', superCsrf)
+        .send({
+          electionId: 'LS-2029',
+          constituencyType: 'PARLIAMENTARY',
+          parliamentaryConstituencyId: 'WB-PC-KOLKATA-SOUTH',
+          totalRoundsPlanned: 2,
+        });
+      assert.equal(createRes.status, 201);
+      const sessionId = createRes.body.data.session.id;
+      assert.equal(createRes.body.data.session.resultStatus, 'DRAFT');
+
+      // 2. Start counting
+      const startRes = await request(app)
+        .post(`/api/v1/admin/counting/sessions/${sessionId}/start`)
+        .set('Cookie', superCookie)
+        .set('X-CSRF-Token', superCsrf)
+        .send({});
+      assert.equal(startRes.status, 200);
+      assert.equal(startRes.body.data.session.resultStatus, 'COUNTING_IN_PROGRESS');
+
+      // 3. Get candidate list for this session
+      const sessDetail = await request(app)
+        .get(`/api/v1/admin/counting/sessions/${sessionId}`)
+        .set('Cookie', superCookie);
+      assert.equal(sessDetail.status, 200);
+      const candidateTallies = sessDetail.body.data.candidateTallies;
+      assert.ok(candidateTallies.length >= 2);
+
+      const cand1Id = candidateTallies[0].candidateId;
+      const cand2Id = candidateTallies[1].candidateId;
+
+      // 4. Record Round 1
+      const r1Res = await request(app)
+        .post(`/api/v1/admin/counting/sessions/${sessionId}/rounds`)
+        .set('Cookie', superCookie)
+        .set('X-CSRF-Token', superCsrf)
+        .send({
+          roundNumber: 1,
+          notaVotes: 50,
+          rejectedVotes: 10,
+          candidateTallies: [
+            { candidateId: cand1Id, cumulativeVotes: 100 },
+            { candidateId: cand2Id, cumulativeVotes: 80 },
+          ],
+        });
+      assert.equal(r1Res.status, 201);
+      assert.equal(r1Res.body.data.session.currentRound, 1);
+      assert.equal(r1Res.body.data.session.totalCountedVotes, 240); // 100 + 80 + 50 + 10
+
+      // 5. Record Round 2
+      const r2Res = await request(app)
+        .post(`/api/v1/admin/counting/sessions/${sessionId}/rounds`)
+        .set('Cookie', superCookie)
+        .set('X-CSRF-Token', superCsrf)
+        .send({
+          roundNumber: 2,
+          notaVotes: 80,
+          rejectedVotes: 20,
+          candidateTallies: [
+            { candidateId: cand1Id, cumulativeVotes: 250 },
+            { candidateId: cand2Id, cumulativeVotes: 190 },
+          ],
+        });
+      assert.equal(r2Res.status, 201);
+      assert.equal(r2Res.body.data.session.currentRound, 2);
+      assert.equal(r2Res.body.data.session.totalCountedVotes, 540); // 250 + 190 + 80 + 20
+
+      // 6. Complete counting
+      const compRes = await request(app)
+        .post(`/api/v1/admin/counting/sessions/${sessionId}/complete`)
+        .set('Cookie', superCookie)
+        .set('X-CSRF-Token', superCsrf)
+        .send({});
+      assert.equal(compRes.status, 200);
+      assert.equal(compRes.body.data.session.resultStatus, 'COUNTING_COMPLETED');
+      assert.equal(compRes.body.data.session.winningCandidateId, cand1Id);
+
+      // 7. Advance to review
+      const revRes = await request(app)
+        .post(`/api/v1/admin/counting/sessions/${sessionId}/ready-for-review`)
+        .set('Cookie', superCookie)
+        .set('X-CSRF-Token', superCsrf)
+        .send({});
+      assert.equal(revRes.status, 200);
+      assert.equal(revRes.body.data.session.resultStatus, 'RESULT_READY_FOR_REVIEW');
+
+      // 8. Publish result
+      const pubRes = await request(app)
+        .post(`/api/v1/admin/counting/sessions/${sessionId}/publish`)
+        .set('Cookie', superCookie)
+        .set('X-CSRF-Token', superCsrf)
+        .send({ publicationRemarks: 'Final result verified and signed by RO' });
+      assert.equal(pubRes.status, 200);
+      assert.equal(pubRes.body.data.session.resultStatus, 'PUBLISHED');
+
+      // 9. Now visible via public API
+      const pubCheck = await request(app).get(`/api/v1/results/${sessionId}`);
+      assert.equal(pubCheck.status, 200);
+      assert.equal(pubCheck.body.data.resultStatus, 'PUBLISHED');
+      assert.equal(pubCheck.body.data.winner.candidateId, cand1Id);
+    });
+
+    test('Demonstrates controlled tie resolution and prevents unauthorized auditor mutations', async () => {
+      // 1. Find seeded TIED session (New Delhi PC)
+      const listRes = await request(app)
+        .get('/api/v1/admin/counting/sessions?status=TIED')
+        .set('Cookie', superCookie);
+      assert.equal(listRes.status, 200);
+      const tiedSession = listRes.body.data.items[0];
+      assert.ok(tiedSession);
+      assert.equal(tiedSession.resultStatus, 'TIED');
+      assert.equal(tiedSession.winningCandidateId, null);
+
+      // 2. READ_ONLY_AUDITOR cannot resolve tie (403)
+      const audTie = await request(app)
+        .post(`/api/v1/admin/counting/sessions/${tiedSession.id}/resolve-tie`)
+        .set('Cookie', audCookie)
+        .send({
+          resolutionMethod: 'DRAW_OF_LOTS',
+          selectedWinnerCandidateId: tiedSession.candidateTallies[0].candidateId,
+          tieBreakingNotes: 'Unauthorized tie break attempt',
+        });
+      assert.equal(audTie.status, 403);
+
+      // 3. SUPER_ADMIN resolves tie with genuine tied candidate
+      const candWinner = tiedSession.candidateTallies[0].candidateId;
+      const resTie = await request(app)
+        .post(`/api/v1/admin/counting/sessions/${tiedSession.id}/resolve-tie`)
+        .set('Cookie', superCookie)
+        .set('X-CSRF-Token', superCsrf)
+        .send({
+          resolutionMethod: 'DRAW_OF_LOTS',
+          selectedWinnerCandidateId: candWinner,
+          tieBreakingNotes: 'Draw of lots witnessed by candidate counting agents pursuant to standard procedure',
+        });
+      assert.equal(resTie.status, 200);
+      assert.equal(resTie.body.data.session.resultStatus, 'TIE_RESOLVED');
+      assert.equal(resTie.body.data.session.winningCandidateId, candWinner);
+      assert.equal(resTie.body.data.tieResolution.resolutionMethod, 'DRAW_OF_LOTS');
+
+      // 4. Publish resolved tie
+      const pubTie = await request(app)
+        .post(`/api/v1/admin/counting/sessions/${tiedSession.id}/publish`)
+        .set('Cookie', superCookie)
+        .set('X-CSRF-Token', superCsrf)
+        .send({ publicationRemarks: 'Resolved tie result published' });
+      assert.equal(pubTie.status, 200);
+      assert.equal(pubTie.body.data.session.resultStatus, 'PUBLISHED');
+    });
+  });
 });

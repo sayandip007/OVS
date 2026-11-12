@@ -17,6 +17,8 @@ import {
   PartySeatsBarChart,
 } from '../../components/results/ResultCharts';
 import Modal from '../../components/common/Modal';
+import BackendResultsManager from '../../components/admin/BackendResultsManager';
+import { frontendEnv } from '../../config/env';
 import {
   BarChart3,
   Play,
@@ -43,6 +45,14 @@ const ADMIN_RESULT_TABS = [
 ];
 
 export default function ResultsManagement() {
+  if (frontendEnv.isBackendApi) {
+    return <BackendResultsManager />;
+  }
+
+  return <LocalDemoResultsManagement />;
+}
+
+function LocalDemoResultsManagement() {
   const {
     results = [],
     elections = [],

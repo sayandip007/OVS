@@ -453,6 +453,20 @@ export async function seedDatabase(
       metadataSource: MetadataSource.DEMO_SAMPLE,
     },
     {
+      id: 'CAND-LS29-DL-ND-2',
+      partyId: 'PARTY-BJP',
+      fullName: 'Rajesh Khanna (DEMO_SAMPLE)',
+      age: 50,
+      gender: 'Male',
+      education: 'LL.B.',
+      profession: 'Advocate',
+      criminalCases: 0,
+      assetsDeclared: BigInt(19500000),
+      liabilitiesDeclared: BigInt(1100000),
+      bio: 'Synthetic DEMO_SAMPLE candidate for New Delhi PC (Tied Scenario).',
+      metadataSource: MetadataSource.DEMO_SAMPLE,
+    },
+    {
       id: 'CAND-WBA29-KRNU-1',
       partyId: 'PARTY-AITC',
       fullName: 'Rituparna Chatterjee (DEMO_SAMPLE)',
@@ -822,6 +836,17 @@ export async function seedDatabase(
       assemblyConstituencyId: null,
       status: CandidateNominationStatus.APPROVED,
       scrutinyNote: 'DEMO_SAMPLE nomination verified.',
+    },
+    {
+      id: '99999999-9999-4999-8999-999999999015',
+      candidateId: 'CAND-LS29-DL-ND-2',
+      partyId: 'PARTY-BJP',
+      electionId: 'LS-2029',
+      constituencyType: ConstituencyType.PARLIAMENTARY,
+      parliamentaryConstituencyId: 'DL-PC-NEW-DELHI',
+      assemblyConstituencyId: null,
+      status: CandidateNominationStatus.APPROVED,
+      scrutinyNote: 'DEMO_SAMPLE nomination verified (Tied demo candidate).',
     },
     {
       id: '99999999-9999-4999-8999-999999999007',
@@ -1261,6 +1286,360 @@ export async function seedDemoVotingScenarios(
   }
 }
 
+/**
+ * Phase 8.9 — Idempotent synthetic demo counting sessions, counting rounds,
+ * candidate tallies, and simulated result publication (strictly independent of voter participation).
+ */
+export async function seedDemoCountingScenarios(
+  client: PrismaClient = defaultPrisma
+) {
+  // 1. Ensure administrative user exists for result publication authorization
+  let admin = await client.adminUser.findFirst({
+    where: { role: 'SUPER_ADMIN' },
+  });
+
+  if (!admin) {
+    const adminUserRecord = await client.user.upsert({
+      where: { identifier: 'ECI-SUPER-SEED-01' },
+      update: {},
+      create: {
+        id: '77777777-7777-4777-8777-777777770001',
+        userType: 'ADMIN',
+        identifier: 'ECI-SUPER-SEED-01',
+        passwordHash: '$scrypt$placeholder_admin_hash_demo',
+        isActive: true,
+      },
+    });
+
+    admin = await client.adminUser.upsert({
+      where: { officerCode: 'ECI-SUPER-SEED-01' },
+      update: {},
+      create: {
+        id: '77777777-7777-4777-8777-777777771001',
+        userId: adminUserRecord.id,
+        officerCode: 'ECI-SUPER-SEED-01',
+        email: 'superadmin.seed@eci.gov.in',
+        fullName: 'Chief Election Commissioner (DEMO_SAMPLE)',
+        designation: 'Chief Election Commissioner',
+        role: 'SUPER_ADMIN',
+        status: 'ACTIVE',
+        isActive: true,
+      },
+    });
+  }
+
+  // 2. Scenario 1: Published Lok Sabha result for Krishnanagar PC
+  const sessionId1 = 'RESULT-LS-2029-WB-PC-KRISHNANAGAR';
+  let session1 = await client.countingSession.findUnique({
+    where: { id: sessionId1 },
+  });
+
+  if (!session1) {
+    session1 = await client.countingSession.create({
+      data: {
+        id: sessionId1,
+        electionId: 'LS-2029',
+        constituencyType: 'PARLIAMENTARY',
+        parliamentaryConstituencyId: 'WB-PC-KRISHNANAGAR',
+        assemblyConstituencyId: null,
+        totalConfiguredRounds: 5,
+        totalVoters: 1542000,
+        status: 'DRAFT',
+        isPublished: false,
+      },
+    });
+
+    // Rounds 1-5
+    const rounds1 = [
+      { roundNumber: 1, roundVotes: 3000, cumulativeVotes: 3000, leadMargin: 260 },
+      { roundNumber: 2, roundVotes: 3000, cumulativeVotes: 6000, leadMargin: 520 },
+      { roundNumber: 3, roundVotes: 3000, cumulativeVotes: 9000, leadMargin: 780 },
+      { roundNumber: 4, roundVotes: 3000, cumulativeVotes: 12000, leadMargin: 1040 },
+      { roundNumber: 5, roundVotes: 3000, cumulativeVotes: 15000, leadMargin: 1300 },
+    ];
+
+    for (const r of rounds1) {
+      await client.countingRound.create({
+        data: {
+          sessionId: sessionId1,
+          roundNumber: r.roundNumber,
+          roundVotes: r.roundVotes,
+          cumulativeVotes: r.cumulativeVotes,
+          leadingCandidateId: 'CAND-LS29-WB-KRN-1',
+          leadMargin: r.leadMargin,
+          processedByAdminId: admin.id,
+        },
+      });
+    }
+
+    // Tallies: 6500 + 5200 + 2000 + 800 + 300 (NOTA) + 200 (Rejected) = 15000
+    const tallies1 = [
+      {
+        candidateId: 'CAND-LS29-WB-KRN-1',
+        nominationId: '99999999-9999-4999-8999-999999999001',
+        partyId: 'PARTY-AITC',
+        votes: 6500,
+        voteSharePercentage: 43.33,
+      },
+      {
+        candidateId: 'CAND-LS29-WB-KRN-2',
+        nominationId: '99999999-9999-4999-8999-999999999002',
+        partyId: 'PARTY-BJP',
+        votes: 5200,
+        voteSharePercentage: 34.67,
+      },
+      {
+        candidateId: 'CAND-LS29-WB-KRN-3',
+        nominationId: '99999999-9999-4999-8999-999999999003',
+        partyId: 'PARTY-INC',
+        votes: 2000,
+        voteSharePercentage: 13.33,
+      },
+      {
+        candidateId: 'CAND-LS29-WB-KRN-4',
+        nominationId: '99999999-9999-4999-8999-999999999004',
+        partyId: null,
+        votes: 800,
+        voteSharePercentage: 5.33,
+      },
+    ];
+
+    for (const t of tallies1) {
+      await client.candidateTally.create({
+        data: {
+          sessionId: sessionId1,
+          candidateId: t.candidateId,
+          nominationId: t.nominationId,
+          partyId: t.partyId,
+          votes: t.votes,
+          voteSharePercentage: t.voteSharePercentage,
+        },
+      });
+    }
+
+    // State machine progression: DRAFT -> COUNTING_IN_PROGRESS -> COUNTING_COMPLETED -> RESULT_READY_FOR_REVIEW -> PUBLISHED
+    await client.countingSession.update({
+      where: { id: sessionId1 },
+      data: {
+        currentRound: 5,
+        totalCountedVotes: 15000,
+        notaVotes: 300,
+        rejectedVotes: 200,
+        winnerCandidateId: 'CAND-LS29-WB-KRN-1',
+        runnerUpCandidateId: 'CAND-LS29-WB-KRN-2',
+        victoryMargin: 1300,
+        status: 'COUNTING_IN_PROGRESS',
+      },
+    });
+
+    await client.countingSession.update({
+      where: { id: sessionId1 },
+      data: { status: 'COUNTING_COMPLETED' },
+    });
+
+    await client.countingSession.update({
+      where: { id: sessionId1 },
+      data: { status: 'RESULT_READY_FOR_REVIEW' },
+    });
+
+    await client.countingSession.update({
+      where: { id: sessionId1 },
+      data: {
+        status: 'PUBLISHED',
+        isPublished: true,
+        publishedAt: new Date('2029-05-22T10:00:00Z'),
+        publishedByAdminId: admin.id,
+      },
+    });
+  }
+
+  // 3. Scenario 2: Assembly counting completed awaiting review for Krishnanagar Uttar AC
+  const sessionId2 = 'RESULT-WB-ASSEMBLY-2029-WB-AC-KRISHNANAGAR-UTTAR';
+  let session2 = await client.countingSession.findUnique({
+    where: { id: sessionId2 },
+  });
+
+  if (!session2) {
+    session2 = await client.countingSession.create({
+      data: {
+        id: sessionId2,
+        electionId: 'WB-ASSEMBLY-2029',
+        constituencyType: 'ASSEMBLY',
+        parliamentaryConstituencyId: null,
+        assemblyConstituencyId: 'WB-AC-KRISHNANAGAR-UTTAR',
+        totalConfiguredRounds: 3,
+        totalVoters: 245000,
+        status: 'DRAFT',
+        isPublished: false,
+      },
+    });
+
+    const rounds2 = [
+      { roundNumber: 1, roundVotes: 3333, cumulativeVotes: 3333, leadMargin: 500 },
+      { roundNumber: 2, roundVotes: 3333, cumulativeVotes: 6666, leadMargin: 1000 },
+      { roundNumber: 3, roundVotes: 3334, cumulativeVotes: 10000, leadMargin: 1500 },
+    ];
+
+    for (const r of rounds2) {
+      await client.countingRound.create({
+        data: {
+          sessionId: sessionId2,
+          roundNumber: r.roundNumber,
+          roundVotes: r.roundVotes,
+          cumulativeVotes: r.cumulativeVotes,
+          leadingCandidateId: 'CAND-WBA29-KRNU-1',
+          leadMargin: r.leadMargin,
+          processedByAdminId: admin.id,
+        },
+      });
+    }
+
+    const tallies2 = [
+      {
+        candidateId: 'CAND-WBA29-KRNU-1',
+        nominationId: '99999999-9999-4999-8999-999999999007',
+        partyId: 'PARTY-AITC',
+        votes: 5000,
+        voteSharePercentage: 50.0,
+      },
+      {
+        candidateId: 'CAND-WBA29-KRNU-2',
+        nominationId: '99999999-9999-4999-8999-999999999008',
+        partyId: 'PARTY-BJP',
+        votes: 3500,
+        voteSharePercentage: 35.0,
+      },
+      {
+        candidateId: 'CAND-WBA29-KRNU-3',
+        nominationId: '99999999-9999-4999-8999-999999999009',
+        partyId: null,
+        votes: 1000,
+        voteSharePercentage: 10.0,
+      },
+    ];
+
+    for (const t of tallies2) {
+      await client.candidateTally.create({
+        data: {
+          sessionId: sessionId2,
+          candidateId: t.candidateId,
+          nominationId: t.nominationId,
+          partyId: t.partyId,
+          votes: t.votes,
+          voteSharePercentage: t.voteSharePercentage,
+        },
+      });
+    }
+
+    await client.countingSession.update({
+      where: { id: sessionId2 },
+      data: {
+        currentRound: 3,
+        totalCountedVotes: 10000,
+        notaVotes: 300,
+        rejectedVotes: 200,
+        winnerCandidateId: 'CAND-WBA29-KRNU-1',
+        runnerUpCandidateId: 'CAND-WBA29-KRNU-2',
+        victoryMargin: 1500,
+        status: 'COUNTING_IN_PROGRESS',
+      },
+    });
+
+    await client.countingSession.update({
+      where: { id: sessionId2 },
+      data: { status: 'COUNTING_COMPLETED' },
+    });
+
+    await client.countingSession.update({
+      where: { id: sessionId2 },
+      data: { status: 'RESULT_READY_FOR_REVIEW' },
+    });
+  }
+
+  // 4. Scenario 3: Genuine TIED scenario for New Delhi PC (demonstration for tie resolution)
+  const sessionId3 = 'RESULT-LS-2029-DL-PC-NEW-DELHI';
+  let session3 = await client.countingSession.findUnique({
+    where: { id: sessionId3 },
+  });
+
+  if (!session3) {
+    session3 = await client.countingSession.create({
+      data: {
+        id: sessionId3,
+        electionId: 'LS-2029',
+        constituencyType: 'PARLIAMENTARY',
+        parliamentaryConstituencyId: 'DL-PC-NEW-DELHI',
+        assemblyConstituencyId: null,
+        totalConfiguredRounds: 3,
+        totalVoters: 980000,
+        status: 'DRAFT',
+        isPublished: false,
+      },
+    });
+
+    await client.countingRound.create({
+      data: {
+        sessionId: sessionId3,
+        roundNumber: 1,
+        roundVotes: 10000,
+        cumulativeVotes: 10000,
+        leadingCandidateId: 'CAND-LS29-DL-ND-1',
+        leadMargin: 0,
+        processedByAdminId: admin.id,
+      },
+    });
+
+    const tallies3 = [
+      {
+        candidateId: 'CAND-LS29-DL-ND-1',
+        nominationId: '99999999-9999-4999-8999-999999999006',
+        partyId: 'PARTY-AAP',
+        votes: 4800,
+        voteSharePercentage: 48.0,
+      },
+      {
+        candidateId: 'CAND-LS29-DL-ND-2',
+        nominationId: '99999999-9999-4999-8999-999999999015',
+        partyId: 'PARTY-BJP',
+        votes: 4800,
+        voteSharePercentage: 48.0,
+      },
+    ];
+
+    for (const t of tallies3) {
+      await client.candidateTally.create({
+        data: {
+          sessionId: sessionId3,
+          candidateId: t.candidateId,
+          nominationId: t.nominationId,
+          partyId: t.partyId,
+          votes: t.votes,
+          voteSharePercentage: t.voteSharePercentage,
+        },
+      });
+    }
+
+    await client.countingSession.update({
+      where: { id: sessionId3 },
+      data: {
+        currentRound: 1,
+        totalCountedVotes: 10000,
+        notaVotes: 250,
+        rejectedVotes: 150,
+        winnerCandidateId: null,
+        runnerUpCandidateId: null,
+        victoryMargin: 0,
+        status: 'COUNTING_IN_PROGRESS',
+      },
+    });
+
+    await client.countingSession.update({
+      where: { id: sessionId3 },
+      data: { status: 'TIED' },
+    });
+  }
+}
+
 const isMainModule =
   process.argv[1] &&
   (process.argv[1].endsWith('seed.ts') || process.argv[1].endsWith('seed.js'));
@@ -1268,8 +1647,10 @@ const isMainModule =
 if (isMainModule) {
   seedDatabase()
     .then(async (summary) => {
+      await seedDemoVotingScenarios(defaultPrisma);
+      await seedDemoCountingScenarios(defaultPrisma);
       console.log(
-        'OVS Phase 8.2 DEMO_SAMPLE database seed completed idempotently:',
+        'OVS Phase 8.9 DEMO_SAMPLE database seed completed idempotently:',
         JSON.stringify(summary)
       );
       await defaultPrisma.$disconnect();
