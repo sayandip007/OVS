@@ -19,6 +19,9 @@ import {
   createAdminElectionsRouter,
   type CreateAdminElectionsRouterOptions,
 } from './modules/elections/admin.elections.routes.js';
+import { createAdminCandidatesRouter } from './modules/candidates/candidates.admin.routes.js';
+import { createAdminPartiesRouter } from './modules/parties/parties.admin.routes.js';
+import { createAdminNominationsRouter } from './modules/nominations/nominations.routes.js';
 import { createPartiesRouter } from './modules/parties/parties.routes.js';
 import { createCandidatesRouter } from './modules/candidates/candidates.routes.js';
 import {
@@ -87,6 +90,9 @@ export function createApp(options: CreateAppOptions = {}): Express {
     '/api/v1/admin/elections',
     createAdminElectionsRouter(options.adminElectionsOptions)
   );
+  app.use('/api/v1/admin/candidates', createAdminCandidatesRouter());
+  app.use('/api/v1/admin/parties', createAdminPartiesRouter());
+  app.use('/api/v1/admin/nominations', createAdminNominationsRouter());
   app.use(
     '/api/v1/admin',
     createAdminRouter({

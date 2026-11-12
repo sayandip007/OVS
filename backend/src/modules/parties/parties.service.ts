@@ -23,14 +23,45 @@ export class PartiesService {
     return party;
   }
 
+  async listPublicCandidates(filters: {
+    partyId?: string;
+    search?: string;
+    page: number;
+    limit: number;
+  }) {
+    const result = await this.repo.listPublicCandidates(filters);
+    return {
+      items: result.items.map((c) => ({
+        id: c.id,
+        displayName: c.displayName ?? c.fullName,
+        fullName: c.fullName,
+        age: c.age,
+        gender: c.gender,
+        education: c.education,
+        profession: c.profession,
+        photoUrl: c.photoUrl,
+        bio: c.bio,
+        metadataSource: c.metadataSource,
+        currentRegisteredPartyId: c.partyId,
+        currentRegisteredParty: c.party,
+      })),
+      total: result.total,
+    };
+  }
+
   async getCandidateById(candidateId: string) {
     const candidate = await this.repo.findCandidateById(candidateId);
-    if (!candidate) {
+    if (!candidate || !candidate.isActive) {
       throw new NotFoundProblemError('Candidate', candidateId);
     }
 
+    const approvedNominations = candidate.nominations.filter(
+      (nom) => nom.status === 'APPROVED'
+    );
+
     return {
       id: candidate.id,
+      displayName: candidate.displayName ?? candidate.fullName,
       fullName: candidate.fullName,
       age: candidate.age,
       gender: candidate.gender,
@@ -44,7 +75,7 @@ export class PartiesService {
       metadataSource: candidate.metadataSource,
       currentRegisteredPartyId: candidate.partyId,
       currentRegisteredParty: candidate.party,
-      nominations: candidate.nominations.map((nom) => ({
+      nominations: approvedNominations.map((nom) => ({
         nominationId: nom.id,
         electionId: nom.electionId,
         election: nom.election,
@@ -57,10 +88,11 @@ export class PartiesService {
             : nom.assemblyConstituency,
         status: nom.status,
         nominationDate: nom.nominationDate,
-        scrutinyNote: nom.scrutinyNote,
         nominationPartyId: nom.partyId,
         nominationParty: nom.party,
-        isIndependent: nom.partyId === null,
+        partyNameSnapshot: nom.partyNameSnapshot,
+        partyAbbreviationSnapshot: nom.partyAbbreviationSnapshot,
+        isIndependent: nom.isIndependent || nom.partyId === null,
       })),
     };
   }

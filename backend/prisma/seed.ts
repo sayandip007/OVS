@@ -357,7 +357,7 @@ export async function seedDatabase(
   for (const party of partiesData) {
     await client.politicalParty.upsert({
       where: { id: party.id },
-      update: party,
+      update: {},
       create: party,
     });
   }
@@ -490,12 +490,40 @@ export async function seedDatabase(
       bio: 'Synthetic DEMO_SAMPLE independent assembly candidate for Krishnanagar Uttar.',
       metadataSource: MetadataSource.DEMO_SAMPLE,
     },
+    {
+      id: 'CAND-MH29-BW-1',
+      partyId: 'PARTY-INC',
+      fullName: 'Siddharth Deshmukh (DEMO_SAMPLE)',
+      age: 45,
+      gender: 'Male',
+      education: 'LL.B., Mumbai University',
+      profession: 'Advocate',
+      criminalCases: 0,
+      assetsDeclared: BigInt(14200000),
+      liabilitiesDeclared: BigInt(900000),
+      bio: 'Synthetic DEMO_SAMPLE assembly candidate for Bandra West.',
+      metadataSource: MetadataSource.DEMO_SAMPLE,
+    },
+    {
+      id: 'CAND-DL29-ND-1',
+      partyId: 'PARTY-AAP',
+      fullName: 'Meera Krishnan (DEMO_SAMPLE)',
+      age: 39,
+      gender: 'Female',
+      education: 'M.Tech, IIT Delhi',
+      profession: 'Urban Planner',
+      criminalCases: 0,
+      assetsDeclared: BigInt(7800000),
+      liabilitiesDeclared: BigInt(400000),
+      bio: 'Synthetic DEMO_SAMPLE assembly candidate for New Delhi.',
+      metadataSource: MetadataSource.DEMO_SAMPLE,
+    },
   ];
 
   for (const candidate of candidatesData) {
     await client.candidate.upsert({
       where: { id: candidate.id },
-      update: candidate,
+      update: {},
       create: candidate,
     });
   }
@@ -693,6 +721,20 @@ export async function seedDatabase(
       parliamentaryConstituencyId: null,
       assemblyConstituencyId: 'WB-AC-RASHBEHARI',
     },
+    {
+      id: '88888888-8888-4888-8888-888888888011',
+      electionId: 'MH-ASSEMBLY-2029',
+      constituencyType: ConstituencyType.ASSEMBLY,
+      parliamentaryConstituencyId: null,
+      assemblyConstituencyId: 'MH-AC-BANDRA-WEST',
+    },
+    {
+      id: '88888888-8888-4888-8888-888888888012',
+      electionId: 'DL-ASSEMBLY-2029',
+      constituencyType: ConstituencyType.ASSEMBLY,
+      parliamentaryConstituencyId: null,
+      assemblyConstituencyId: 'DL-AC-NEW-DELHI',
+    },
   ];
 
   for (const ec of electionConstituenciesData) {
@@ -797,6 +839,7 @@ export async function seedDatabase(
       id: '99999999-9999-4999-8999-999999999009',
       candidateId: 'CAND-WBA29-KRNU-3',
       partyId: null, // Independent assembly nomination
+      isIndependent: true,
       electionId: 'WB-ASSEMBLY-2029',
       constituencyType: ConstituencyType.ASSEMBLY,
       parliamentaryConstituencyId: null,
@@ -804,12 +847,86 @@ export async function seedDatabase(
       status: CandidateNominationStatus.APPROVED,
       scrutinyNote: 'DEMO_SAMPLE independent assembly nomination verified.',
     },
+    {
+      id: '99999999-9999-4999-8999-999999999010',
+      candidateId: 'CAND-MH29-BW-1',
+      partyId: 'PARTY-INC',
+      isIndependent: false,
+      partyNameSnapshot: 'Indian National Congress (DEMO_SAMPLE)',
+      partyAbbreviationSnapshot: 'INC',
+      partyTypeSnapshot: PartyType.NATIONAL,
+      electionId: 'MH-ASSEMBLY-2029',
+      constituencyType: ConstituencyType.ASSEMBLY,
+      parliamentaryConstituencyId: null,
+      assemblyConstituencyId: 'MH-AC-BANDRA-WEST',
+      status: CandidateNominationStatus.SUBMITTED,
+      scrutinyNote: 'DEMO_SAMPLE submitted nomination awaiting scrutiny.',
+    },
+    {
+      id: '99999999-9999-4999-8999-999999999011',
+      candidateId: 'CAND-DL29-ND-1',
+      partyId: 'PARTY-AAP',
+      isIndependent: false,
+      partyNameSnapshot: 'Aam Aadmi Party (DEMO_SAMPLE)',
+      partyAbbreviationSnapshot: 'AAP',
+      partyTypeSnapshot: PartyType.NATIONAL,
+      electionId: 'DL-ASSEMBLY-2029',
+      constituencyType: ConstituencyType.ASSEMBLY,
+      parliamentaryConstituencyId: null,
+      assemblyConstituencyId: 'DL-AC-NEW-DELHI',
+      status: CandidateNominationStatus.DRAFT,
+      scrutinyNote: 'DEMO_SAMPLE draft Delhi nomination.',
+    },
+    {
+      id: '99999999-9999-4999-8999-999999999012',
+      candidateId: 'CAND-LS29-WB-KRN-1',
+      partyId: 'PARTY-AITC',
+      isIndependent: false,
+      partyNameSnapshot: 'All India Trinamool Congress (DEMO_SAMPLE)',
+      partyAbbreviationSnapshot: 'AITC',
+      partyTypeSnapshot: PartyType.STATE,
+      electionId: 'WB-ASSEMBLY-2029',
+      constituencyType: ConstituencyType.ASSEMBLY,
+      parliamentaryConstituencyId: null,
+      assemblyConstituencyId: 'WB-AC-BHABANIPUR',
+      status: CandidateNominationStatus.UNDER_REVIEW,
+      scrutinyNote: 'DEMO_SAMPLE under-review nomination.',
+    },
+    {
+      id: '99999999-9999-4999-8999-999999999013',
+      candidateId: 'CAND-LS29-WB-KRN-2',
+      partyId: 'PARTY-BJP',
+      isIndependent: false,
+      partyNameSnapshot: 'Bharatiya Janata Party (DEMO_SAMPLE)',
+      partyAbbreviationSnapshot: 'BJP',
+      partyTypeSnapshot: PartyType.NATIONAL,
+      electionId: 'WB-ASSEMBLY-2029',
+      constituencyType: ConstituencyType.ASSEMBLY,
+      parliamentaryConstituencyId: null,
+      assemblyConstituencyId: 'WB-AC-BHABANIPUR',
+      status: CandidateNominationStatus.REJECTED,
+      decisionReason: 'DEMO_SAMPLE simulated scrutiny rejection example.',
+      scrutinyNote: 'DEMO_SAMPLE rejected nomination example.',
+    },
+    {
+      id: '99999999-9999-4999-8999-999999999014',
+      candidateId: 'CAND-LS29-WB-KRN-4',
+      partyId: null,
+      isIndependent: true,
+      electionId: 'WB-ASSEMBLY-2029',
+      constituencyType: ConstituencyType.ASSEMBLY,
+      parliamentaryConstituencyId: null,
+      assemblyConstituencyId: 'WB-AC-RASHBEHARI',
+      status: CandidateNominationStatus.WITHDRAWN,
+      withdrawalReason: 'DEMO_SAMPLE simulated voluntary withdrawal example.',
+      scrutinyNote: 'DEMO_SAMPLE withdrawn nomination example.',
+    },
   ];
 
   for (const nom of nominationsData) {
     await client.candidateNomination.upsert({
       where: { id: nom.id },
-      update: nom,
+      update: {},
       create: nom,
     });
   }

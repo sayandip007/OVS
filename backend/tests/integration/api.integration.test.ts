@@ -22,6 +22,7 @@ describe('OVS Phase 8.2–8.4 — Live PostgreSQL & Supertest API Integration Su
     await prisma.resultCorrectionHistory.deleteMany();
     await prisma.tieResolution.deleteMany();
     await prisma.countingSession.deleteMany();
+    await prisma.nominationLifecycleHistory.deleteMany();
     await prisma.candidateNomination.deleteMany();
     await prisma.electionConstituency.deleteMany();
     await prisma.electionLifecycleHistory.deleteMany();
@@ -58,10 +59,10 @@ describe('OVS Phase 8.2–8.4 — Live PostgreSQL & Supertest API Integration Su
       assert.equal(firstRun.parliamentaryCount, 6);
       assert.equal(firstRun.assemblyCount, 8);
       assert.equal(firstRun.partiesCount, 5);
-      assert.equal(firstRun.candidatesCount, 9);
+      assert.equal(firstRun.candidatesCount, 11);
       assert.equal(firstRun.electionsCount, 5);
-      assert.equal(firstRun.electionConstituenciesCount, 10);
-      assert.equal(firstRun.nominationsCount, 9);
+      assert.equal(firstRun.electionConstituenciesCount, 12);
+      assert.equal(firstRun.nominationsCount, 14);
 
       // Run a second time to verify idempotency (zero duplicates, zero constraint errors)
       const secondRun = await seedDatabase(prisma);
@@ -1172,6 +1173,171 @@ describe('OVS Phase 8.2–8.4 — Live PostgreSQL & Supertest API Integration Su
       // Auditor can read immutable lifecycle history
       const histRes = await request(app)
         .get('/api/v1/admin/elections/WB-2034-DEMO/history')
+        .set('Cookie', audCookie);
+      assert.equal(histRes.status, 200);
+      assert.ok(histRes.body.data.length >= 5);
+    });
+  });
+
+  describe('11. Phase 8.6 — Candidate Registration, Party Snapshots & Nomination Lifecycle (Live PostgreSQL)', () => {
+    let superCookie: string;
+    let superCsrf: string;
+    let wbCookie: string;
+    let wbCsrf: string;
+    let audCookie: string;
+    let nominationId: string;
+
+    test('Authenticates SUPER_ADMIN, WB STATE_ADMIN, and READ_ONLY_AUDITOR', async () => {
+      const s = await request(app)
+        .post('/api/v1/admin/auth/login')
+        .send({ identifier: 'super.ci@ovs-test.local', password: 'SuperCiSecret#2026!' });
+      superCookie = (s.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
+      superCsrf = s.body.data.csrfToken;
+
+      const wb = await request(app)
+        .post('/api/v1/admin/auth/login')
+        .send({ identifier: 'wb.ci@ovs-test.local', password: 'WbCiPassword#2026!' });
+      wbCookie = (wb.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
+      wbCsrf = wb.body.data.csrfToken;
+
+      const aud = await request(app)
+        .post('/api/v1/admin/auth/login')
+        .send({ identifier: 'ECI-AUD-CI-01', password: 'AudCiPassword#2026!' });
+      audCookie = (aud.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
+    });
+
+    test('Creates party, candidate, and nomination; enforces DB constraints, separation of duties, and historical party snapshot', async () => {
+      // 1. Create a new STATE party via WB STATE_ADMIN
+      const pRes = await request(app)
+        .post('/api/v1/admin/parties')
+        .set('Cookie', wbCookie)
+        .set('X-CSRF-Token', wbCsrf)
+        .send({
+          id: 'PARTY-WB-DEMO',
+          name: 'Bengal Demo Front (DEMO_SAMPLE)',
+          abbreviation: 'BDF',
+          partyType: 'STATE',
+          symbolName: 'Lantern',
+        });
+      assert.equal(pRes.status, 201);
+
+      // 2. Create candidate associated with PARTY-WB-DEMO
+      const cRes = await request(app)
+        .post('/api/v1/admin/candidates')
+        .set('Cookie', wbCookie)
+        .set('X-CSRF-Token', wbCsrf)
+        .send({
+          id: 'CAND-WB-CI-86',
+          fullName: 'Subrata Chatterjee (DEMO_SAMPLE)',
+          partyId: 'PARTY-WB-DEMO',
+          age: 42,
+          gender: 'Male',
+        });
+      assert.equal(cRes.status, 201);
+
+      // 3. Reject nomination in constituency NOT mapped to WB-ASSEMBLY-2029
+      const badConst = await request(app)
+        .post('/api/v1/admin/nominations')
+        .set('Cookie', wbCookie)
+        .set('X-CSRF-Token', wbCsrf)
+        .send({
+          electionId: 'WB-ASSEMBLY-2029',
+          candidateId: 'CAND-WB-CI-86',
+          constituencyType: 'ASSEMBLY',
+          assemblyConstituencyId: 'MH-AC-BANDRA-WEST',
+          isIndependent: false,
+          partyId: 'PARTY-WB-DEMO',
+        });
+      assert.equal(badConst.status, 400);
+
+      // 4. Create valid DRAFT nomination in WB-AC-KRISHNANAGAR-DAKSHIN
+      const createNom = await request(app)
+        .post('/api/v1/admin/nominations')
+        .set('Cookie', wbCookie)
+        .set('X-CSRF-Token', wbCsrf)
+        .send({
+          electionId: 'WB-ASSEMBLY-2029',
+          candidateId: 'CAND-WB-CI-86',
+          constituencyType: 'ASSEMBLY',
+          assemblyConstituencyId: 'WB-AC-KRISHNANAGAR-DAKSHIN',
+          isIndependent: false,
+          partyId: 'PARTY-WB-DEMO',
+        });
+      assert.equal(createNom.status, 201);
+      nominationId = createNom.body.data.id;
+      assert.equal(createNom.body.data.partySnapshot.abbreviation, 'BDF');
+
+      // 5. Duplicate nomination rejected with 409
+      const dupNom = await request(app)
+        .post('/api/v1/admin/nominations')
+        .set('Cookie', wbCookie)
+        .set('X-CSRF-Token', wbCsrf)
+        .send({
+          electionId: 'WB-ASSEMBLY-2029',
+          candidateId: 'CAND-WB-CI-86',
+          constituencyType: 'ASSEMBLY',
+          assemblyConstituencyId: 'WB-AC-KRISHNANAGAR-DAKSHIN',
+          isIndependent: false,
+          partyId: 'PARTY-WB-DEMO',
+        });
+      assert.equal(dupNom.status, 409);
+
+      // 6. WB admin submits & moves to UNDER_REVIEW, then attempts self-approval -> 403
+      const subRes = await request(app)
+        .post(`/api/v1/admin/nominations/${nominationId}/submit`)
+        .set('Cookie', wbCookie)
+        .set('X-CSRF-Token', wbCsrf)
+        .send({});
+      assert.equal(subRes.status, 200);
+
+      const revRes = await request(app)
+        .post(`/api/v1/admin/nominations/${nominationId}/review`)
+        .set('Cookie', superCookie)
+        .set('X-CSRF-Token', superCsrf)
+        .send({ note: 'CI scrutiny check' });
+      assert.equal(revRes.status, 200);
+
+      const selfApprove = await request(app)
+        .post(`/api/v1/admin/nominations/${nominationId}/approve`)
+        .set('Cookie', wbCookie)
+        .set('X-CSRF-Token', wbCsrf)
+        .send({});
+      assert.equal(selfApprove.status, 403);
+
+      // 7. SUPER_ADMIN approves; then candidate switches current party to PARTY-INC -> historical nomination keeps PARTY-WB-DEMO!
+      const appRes = await request(app)
+        .post(`/api/v1/admin/nominations/${nominationId}/approve`)
+        .set('Cookie', superCookie)
+        .set('X-CSRF-Token', superCsrf)
+        .send({ note: 'Approved by CEC' });
+      assert.equal(appRes.status, 200);
+      assert.equal(appRes.body.data.status, 'APPROVED');
+
+      const switchParty = await request(app)
+        .patch('/api/v1/admin/candidates/CAND-WB-CI-86')
+        .set('Cookie', superCookie)
+        .set('X-CSRF-Token', superCsrf)
+        .send({ partyId: 'PARTY-INC' });
+      assert.equal(switchParty.status, 200);
+
+      const pubCand = await request(app).get('/api/v1/candidates/CAND-WB-CI-86');
+      assert.equal(pubCand.status, 200);
+      assert.equal(pubCand.body.data.currentRegisteredPartyId, 'PARTY-INC');
+      assert.equal(pubCand.body.data.nominations[0].nominationPartyId, 'PARTY-WB-DEMO');
+      assert.equal(pubCand.body.data.nominations[0].partyAbbreviationSnapshot, 'BDF');
+      assert.equal(pubCand.body.data.nominations[0].scrutinyNote, undefined);
+
+      // 8. Withdraw nomination & verify history
+      const wdRes = await request(app)
+        .post(`/api/v1/admin/nominations/${nominationId}/withdraw`)
+        .set('Cookie', superCookie)
+        .set('X-CSRF-Token', superCsrf)
+        .send({ reason: 'CI withdrawal lifecycle verification' });
+      assert.equal(wdRes.status, 200);
+      assert.equal(wdRes.body.data.status, 'WITHDRAWN');
+
+      const histRes = await request(app)
+        .get(`/api/v1/admin/nominations/${nominationId}/history`)
         .set('Cookie', audCookie);
       assert.equal(histRes.status, 200);
       assert.ok(histRes.body.data.length >= 5);

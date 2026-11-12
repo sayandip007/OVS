@@ -450,6 +450,7 @@ model PoliticalParty {
   partyType       PartyType         @default(NATIONAL) @map("party_type")
   symbolName      String            @db.VarChar(100) @map("symbol_name")
   symbolUrl       String            @db.VarChar(500) @map("symbol_url")
+  description     String            @default("") @db.Text
   establishedYear Int?              @map("established_year")
   headquarters    String?           @db.VarChar(150)
   status          PartyStatus       @default(ACTIVE)
@@ -467,6 +468,7 @@ model PoliticalParty {
 model Candidate {
   id                  String                @id @db.VarChar(50) // e.g. "CAND-LS29-KRN-1"
   partyId             String                @db.VarChar(50) @map("party_id")
+  displayName         String?               @db.VarChar(150) @map("display_name")
   fullName            String                @db.VarChar(150) @map("full_name")
   age                 Int
   gender              String                @db.VarChar(20)
@@ -477,6 +479,8 @@ model Candidate {
   liabilitiesDeclared BigInt                @default(0) @map("liabilities_declared")
   photoUrl            String?               @db.VarChar(500) @map("photo_url")
   bio                 String                @default("") @db.Text
+  isActive            Boolean               @default(true) @map("is_active")
+  deactivatedAt       DateTime?             @db.Timestamptz(6) @map("deactivated_at")
   metadataSource      MetadataSource        @default(DEMO_SAMPLE) @map("metadata_source")
   createdAt           DateTime              @default(now()) @db.Timestamptz(6) @map("created_at")
   updatedAt           DateTime              @updatedAt @db.Timestamptz(6) @map("updated_at")
@@ -491,6 +495,7 @@ model Candidate {
 
   @@unique([id, partyId]) // Composite key guaranteeing party consistency in tallies
   @@index([partyId])
+  @@index([isActive])
   @@map("candidates")
 }
 
@@ -498,15 +503,28 @@ model CandidateNomination {
   id                          String                    @id @default(uuid()) @db.Uuid
   candidateId                 String                    @db.VarChar(50) @map("candidate_id")
   partyId                     String?                   @db.VarChar(50) @map("party_id") // Null for independent candidates
+  isIndependent               Boolean                   @default(false) @map("is_independent")
+  partyNameSnapshot           String?                   @db.VarChar(150) @map("party_name_snapshot")
+  partyAbbreviationSnapshot   String?                   @db.VarChar(20) @map("party_abbreviation_snapshot")
+  partyTypeSnapshot           PartyType?                @map("party_type_snapshot")
   electionId                  String                    @db.VarChar(50) @map("election_id")
   constituencyType            ConstituencyType          @map("constituency_type")
   parliamentaryConstituencyId String?                   @db.VarChar(50) @map("parliamentary_constituency_id")
   assemblyConstituencyId      String?                   @db.VarChar(50) @map("assembly_constituency_id")
   nominationDate              DateTime                  @default(now()) @db.Timestamptz(6) @map("nomination_date")
   status                      CandidateNominationStatus @default(APPROVED)
+  version                     Int                       @default(1)
+  submittedAt                 DateTime?                 @db.Timestamptz(6) @map("submitted_at")
+  submittedByAdminId          String?                   @db.Uuid @map("submitted_by_admin_id")
   scrutinyNote                String                    @default("") @db.Text @map("scrutiny_note")
   scrutinyDate                DateTime?                 @db.Timestamptz(6) @map("scrutiny_date")
   scrutinizedByAdminId        String?                   @db.Uuid @map("scrutinized_by_admin_id")
+  decisionAt                  DateTime?                 @db.Timestamptz(6) @map("decision_at")
+  decisionReason              String?                   @db.Text @map("decision_reason")
+  withdrawnAt                 DateTime?                 @db.Timestamptz(6) @map("withdrawn_at")
+  withdrawnByAdminId          String?                   @db.Uuid @map("withdrawn_by_admin_id")
+  withdrawalReason            String?                   @db.Text @map("withdrawal_reason")
+  createdByAdminId            String?                   @db.Uuid @map("created_by_admin_id")
   createdAt                   DateTime                  @default(now()) @db.Timestamptz(6) @map("created_at")
   updatedAt                   DateTime                  @updatedAt @db.Timestamptz(6) @map("updated_at")
 
@@ -515,8 +533,12 @@ model CandidateNomination {
   election                    Election                  @relation(fields: [electionId], references: [id], onDelete: Cascade)
   parliamentaryConstituency   ParliamentaryConstituency? @relation(fields: [parliamentaryConstituencyId], references: [id], onDelete: Cascade)
   assemblyConstituency        AssemblyConstituency?     @relation(fields: [assemblyConstituencyId], references: [id], onDelete: Cascade)
+  createdByAdmin              AdminUser?                @relation("NominationCreator", fields: [createdByAdminId], references: [id], onDelete: SetNull)
+  submittedByAdmin            AdminUser?                @relation("NominationSubmitter", fields: [submittedByAdminId], references: [id], onDelete: SetNull)
   scrutinizedByAdmin          AdminUser?                @relation(fields: [scrutinizedByAdminId], references: [id], onDelete: SetNull)
+  withdrawnByAdmin            AdminUser?                @relation("NominationWithdrawer", fields: [withdrawnByAdminId], references: [id], onDelete: SetNull)
   tallies                     CandidateTally[]
+  lifecycleHistory            NominationLifecycleHistory[]
 
   // NOTE: Candidates may contest multiple constituencies in an election (simulated up to 2 constituencies).
   // Per-constituency uniqueness is enforced via PostgreSQL partial unique indexes:
@@ -528,6 +550,25 @@ model CandidateNomination {
   @@index([parliamentaryConstituencyId])
   @@index([assemblyConstituencyId])
   @@map("candidate_nominations")
+}
+
+model NominationLifecycleHistory {
+  id               String                    @id @default(uuid()) @db.Uuid
+  nominationId     String                    @db.Uuid @map("nomination_id")
+  action           String                    @db.VarChar(60)
+  fromStatus       CandidateNominationStatus @map("from_status")
+  toStatus         CandidateNominationStatus @map("to_status")
+  changedByAdminId String?                   @db.Uuid @map("changed_by_admin_id")
+  changedAt        DateTime                  @default(now()) @db.Timestamptz(6) @map("changed_at")
+  note             String                    @default("") @db.Text
+  requestId        String?                   @db.VarChar(100) @map("request_id")
+  metadata         Json                      @default("{}")
+
+  nomination       CandidateNomination       @relation(fields: [nominationId], references: [id], onDelete: Cascade)
+  changedByAdmin   AdminUser?                @relation("NominationHistoryActor", fields: [changedByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([nominationId, changedAt])
+  @@map("nomination_lifecycle_history")
 }
 
 // ============================================================================
@@ -570,6 +611,10 @@ model AdminUser {
   cancelledElections          Election[]                 @relation("ElectionCanceller")
   archivedElections           Election[]                 @relation("ElectionArchiver")
   scrutinizedNominations      CandidateNomination[]
+  createdNominations          CandidateNomination[]      @relation("NominationCreator")
+  submittedNominations        CandidateNomination[]      @relation("NominationSubmitter")
+  withdrawnNominations        CandidateNomination[]      @relation("NominationWithdrawer")
+  nominationHistoryChanges    NominationLifecycleHistory[] @relation("NominationHistoryActor")
   publishedSessions           CountingSession[]          @relation("SessionPublisher")
   processedRounds             CountingRound[]            @relation("RoundProcessor")
   correctedSessions           ResultCorrectionHistory[]  @relation("SessionCorrector")

@@ -330,6 +330,80 @@ export function createOvsApiClient(options = {}) {
             query,
           }),
       },
+      candidates: {
+        list: (query) => request('/admin/candidates', { query }),
+        getById: (candidateId) =>
+          request(`/admin/candidates/${encodeURIComponent(candidateId)}`),
+        create: (data, csrfToken) =>
+          request('/admin/candidates', { method: 'POST', body: data, csrfToken }),
+        update: (candidateId, data, csrfToken) =>
+          request(`/admin/candidates/${encodeURIComponent(candidateId)}`, {
+            method: 'PATCH',
+            body: data,
+            csrfToken,
+          }),
+        deactivate: (candidateId, data, csrfToken) =>
+          request(
+            `/admin/candidates/${encodeURIComponent(candidateId)}/deactivate`,
+            { method: 'POST', body: data || {}, csrfToken }
+          ),
+      },
+      parties: {
+        list: (query) => request('/admin/parties', { query }),
+        getById: (partyId) =>
+          request(`/admin/parties/${encodeURIComponent(partyId)}`),
+        create: (data, csrfToken) =>
+          request('/admin/parties', { method: 'POST', body: data, csrfToken }),
+        update: (partyId, data, csrfToken) =>
+          request(`/admin/parties/${encodeURIComponent(partyId)}`, {
+            method: 'PATCH',
+            body: data,
+            csrfToken,
+          }),
+      },
+      nominations: {
+        list: (query) => request('/admin/nominations', { query }),
+        getById: (nominationId) =>
+          request(`/admin/nominations/${encodeURIComponent(nominationId)}`),
+        create: (data, csrfToken) =>
+          request('/admin/nominations', { method: 'POST', body: data, csrfToken }),
+        updateDraft: (nominationId, data, csrfToken) =>
+          request(`/admin/nominations/${encodeURIComponent(nominationId)}`, {
+            method: 'PATCH',
+            body: data,
+            csrfToken,
+          }),
+        submit: (nominationId, data, csrfToken) =>
+          request(
+            `/admin/nominations/${encodeURIComponent(nominationId)}/submit`,
+            { method: 'POST', body: data || {}, csrfToken }
+          ),
+        review: (nominationId, data, csrfToken) =>
+          request(
+            `/admin/nominations/${encodeURIComponent(nominationId)}/review`,
+            { method: 'POST', body: data || {}, csrfToken }
+          ),
+        approve: (nominationId, data, csrfToken) =>
+          request(
+            `/admin/nominations/${encodeURIComponent(nominationId)}/approve`,
+            { method: 'POST', body: data || {}, csrfToken }
+          ),
+        reject: (nominationId, data, csrfToken) =>
+          request(
+            `/admin/nominations/${encodeURIComponent(nominationId)}/reject`,
+            { method: 'POST', body: data, csrfToken }
+          ),
+        withdraw: (nominationId, data, csrfToken) =>
+          request(
+            `/admin/nominations/${encodeURIComponent(nominationId)}/withdraw`,
+            { method: 'POST', body: data, csrfToken }
+          ),
+        history: (nominationId, query) =>
+          request(
+            `/admin/nominations/${encodeURIComponent(nominationId)}/history`,
+            { query }
+          ),
+      },
     },
   };
 }

@@ -3,6 +3,8 @@ import { useElection } from '../../context/ElectionContext';
 import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
 import SearchBar from '../../components/common/SearchBar';
+import BackendCandidateNominationManager from '../../components/admin/BackendCandidateNominationManager';
+import { frontendEnv } from '../../config/env';
 import {
   ELECTION_TYPES,
   CONSTITUENCY_TYPES,
@@ -12,6 +14,14 @@ import { CANDIDATE_PHOTO_OPTIONS } from '../../assets';
 import { CheckCircle2, XCircle, PauseCircle, Archive, Edit3 } from 'lucide-react';
 
 export default function CandidateManagement() {
+  if (frontendEnv.isBackendApi) {
+    return <BackendCandidateNominationManager />;
+  }
+
+  return <LocalDemoCandidateManagement />;
+}
+
+function LocalDemoCandidateManagement() {
   const {
     elections,
     states,

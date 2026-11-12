@@ -3,10 +3,20 @@ import { useElection } from '../../context/ElectionContext';
 import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
 import SearchBar from '../../components/common/SearchBar';
+import BackendPartyManager from '../../components/admin/BackendPartyManager';
+import { frontendEnv } from '../../config/env';
 import { PARTY_SYMBOL_OPTIONS } from '../../assets';
 import { Archive, Trash2, Edit3 } from 'lucide-react';
 
 export default function PartyManagement() {
+  if (frontendEnv.isBackendApi) {
+    return <BackendPartyManager />;
+  }
+
+  return <LocalDemoPartyManagement />;
+}
+
+function LocalDemoPartyManagement() {
   const { parties, candidates, upsertParty, deleteParty } = useElection();
   const { currentAdmin, canPerformAdminAction } = useAuth();
   const { notifySuccess, notifyError } = useNotification();

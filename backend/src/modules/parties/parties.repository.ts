@@ -75,6 +75,51 @@ export class PartiesRepository {
     });
   }
 
+  async listPublicCandidates(filters: {
+    partyId?: string;
+    search?: string;
+    page: number;
+    limit: number;
+  }) {
+    const where = {
+      isActive: true,
+      ...(filters.partyId ? { partyId: filters.partyId } : {}),
+      ...(filters.search
+        ? {
+            OR: [
+              { fullName: { contains: filters.search, mode: 'insensitive' as const } },
+              { displayName: { contains: filters.search, mode: 'insensitive' as const } },
+              { id: { contains: filters.search, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
+    };
+
+    const [items, total] = await Promise.all([
+      this.prisma.candidate.findMany({
+        where,
+        orderBy: { fullName: 'asc' },
+        skip: (filters.page - 1) * filters.limit,
+        take: filters.limit,
+        include: {
+          party: {
+            select: {
+              id: true,
+              name: true,
+              abbreviation: true,
+              partyType: true,
+              symbolName: true,
+              symbolUrl: true,
+            },
+          },
+        },
+      }),
+      this.prisma.candidate.count({ where }),
+    ]);
+
+    return { items, total };
+  }
+
   async findCandidateById(candidateId: string) {
     return this.prisma.candidate.findUnique({
       where: { id: candidateId },

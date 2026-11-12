@@ -122,7 +122,6 @@ export class ElectionsService {
       assemblyConstituencyId: nom.assemblyConstituencyId,
       status: nom.status,
       nominationDate: nom.nominationDate,
-      scrutinyNote: nom.scrutinyNote,
       nominationPartyId: nom.partyId,
       nominationParty: nom.party,
       isIndependent: nom.partyId === null,
