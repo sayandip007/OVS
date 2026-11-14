@@ -9,8 +9,18 @@ import {
   ANNOUNCEMENT_STATUSES,
 } from '../../utils/constants';
 import { Megaphone, CheckCircle2, Archive, Edit3, FileEdit } from 'lucide-react';
+import BackendAnnouncementManager from '../../components/admin/BackendAnnouncementManager';
+import { frontendEnv } from '../../config/env';
 
 export default function AnnouncementManagement() {
+  if (frontendEnv.isBackendApi) {
+    return <BackendAnnouncementManager />;
+  }
+
+  return <LocalDemoAnnouncementManagement />;
+}
+
+function LocalDemoAnnouncementManagement() {
   const {
     allAnnouncements,
     states,

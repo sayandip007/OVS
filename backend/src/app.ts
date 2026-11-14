@@ -56,6 +56,19 @@ import {
   createPublicAnalyticsRouter,
   type CreatePublicAnalyticsRouterOptions,
 } from './modules/analytics/public.analytics.routes.js';
+import {
+  createVoterNotificationsRouter,
+  type CreateVoterNotificationsRouterOptions,
+} from './modules/notifications/voter.notifications.routes.js';
+import {
+  createAdminAnnouncementsRouter,
+  createAdminNotificationsDeliveryRouter,
+  type CreateAdminAnnouncementsRouterOptions,
+} from './modules/notifications/admin.announcements.routes.js';
+import {
+  createPublicAnnouncementsRouter,
+  type CreatePublicAnnouncementsRouterOptions,
+} from './modules/notifications/public.announcements.routes.js';
 
 export interface CreateAppOptions {
   clientOrigin?: string;
@@ -72,6 +85,9 @@ export interface CreateAppOptions {
   publicResultsOptions?: CreatePublicResultsRouterOptions;
   adminAnalyticsOptions?: CreateAdminAnalyticsRouterOptions;
   publicAnalyticsOptions?: CreatePublicAnalyticsRouterOptions;
+  voterNotificationsOptions?: CreateVoterNotificationsRouterOptions;
+  adminAnnouncementsOptions?: CreateAdminAnnouncementsRouterOptions;
+  publicAnnouncementsOptions?: CreatePublicAnnouncementsRouterOptions;
 }
 
 export function createApp(options: CreateAppOptions = {}): Express {
@@ -134,16 +150,32 @@ export function createApp(options: CreateAppOptions = {}): Express {
     createAdminAnalyticsRouter(options.adminAnalyticsOptions)
   );
   app.use(
+    '/api/v1/admin/announcements',
+    createAdminAnnouncementsRouter(options.adminAnnouncementsOptions)
+  );
+  app.use(
+    '/api/v1/admin/notifications',
+    createAdminNotificationsDeliveryRouter(options.adminAnnouncementsOptions)
+  );
+  app.use(
     '/api/v1/admin',
     createAdminRouter({
       enableRateLimit: options.enableRateLimit,
       ...options.adminOptions,
     })
   );
+  app.use(
+    '/api/v1/notifications',
+    createVoterNotificationsRouter(options.voterNotificationsOptions)
+  );
   app.use('/api/v1/results', createPublicResultsRouter(options.publicResultsOptions));
   app.use(
     '/api/v1/public/analytics',
     createPublicAnalyticsRouter(options.publicAnalyticsOptions)
+  );
+  app.use(
+    '/api/v1/public/announcements',
+    createPublicAnnouncementsRouter(options.publicAnnouncementsOptions)
   );
   app.use('/api/v1/geography', createGeographyRouter());
   app.use('/api/v1/elections', createElectionsRouter());

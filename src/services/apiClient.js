@@ -580,11 +580,106 @@ export function createOvsApiClient(options = {}) {
           return `/api/v1/admin/analytics/export${params ? `?${params}` : ''}`;
         },
       },
+
+      // Phase 8.11 Administrative Announcements & Notifications
+      announcements: {
+        list: (query) => request('/admin/announcements', { query }),
+        get: (id) => request(`/admin/announcements/${encodeURIComponent(id)}`),
+        create: (data, csrfToken) =>
+          request('/admin/announcements', {
+            method: 'POST',
+            body: data,
+            csrfToken,
+          }),
+        update: (id, data, csrfToken) =>
+          request(`/admin/announcements/${encodeURIComponent(id)}`, {
+            method: 'PATCH',
+            body: data,
+            csrfToken,
+          }),
+        submitReview: (id, notes, csrfToken) =>
+          request(`/admin/announcements/${encodeURIComponent(id)}/submit-review`, {
+            method: 'POST',
+            body: { notes },
+            csrfToken,
+          }),
+        approve: (id, notes, csrfToken) =>
+          request(`/admin/announcements/${encodeURIComponent(id)}/approve`, {
+            method: 'POST',
+            body: { notes },
+            csrfToken,
+          }),
+        schedule: (id, scheduledAt, csrfToken) =>
+          request(`/admin/announcements/${encodeURIComponent(id)}/schedule`, {
+            method: 'POST',
+            body: { scheduledAt },
+            csrfToken,
+          }),
+        publish: (id, csrfToken) =>
+          request(`/admin/announcements/${encodeURIComponent(id)}/publish`, {
+            method: 'POST',
+            body: {},
+            csrfToken,
+          }),
+        archive: (id, reason, csrfToken) =>
+          request(`/admin/announcements/${encodeURIComponent(id)}/archive`, {
+            method: 'POST',
+            body: { reason },
+            csrfToken,
+          }),
+      },
+
+      notifications: {
+        listDeliveries: (query) => request('/admin/notifications/deliveries', { query }),
+        retryDelivery: (id, csrfToken) =>
+          request(`/admin/notifications/deliveries/${encodeURIComponent(id)}/retry`, {
+            method: 'POST',
+            body: {},
+            csrfToken,
+          }),
+        getStats: () => request('/admin/notifications/statistics'),
+      },
     },
 
     publicAnalytics: {
       elections: (query) => request('/public/analytics/elections', { query }),
       results: (query) => request('/public/analytics/results', { query }),
+    },
+
+    publicAnnouncements: {
+      list: (query) => request('/public/announcements', { query }),
+      get: (id) => request(`/public/announcements/${encodeURIComponent(id)}`),
+      categories: () => request('/public/announcements/categories'),
+    },
+
+    // Phase 8.11 Voter In-App Notifications & Preferences
+    notifications: {
+      list: (query) => request('/notifications', { query }),
+      unreadCount: () => request('/notifications/unread-count'),
+      getPreferences: () => request('/notifications/preferences'),
+      updatePreferences: (data, csrfToken) =>
+        request('/notifications/preferences', {
+          method: 'PATCH',
+          body: data,
+          csrfToken,
+        }),
+      markRead: (id, csrfToken) =>
+        request(`/notifications/${encodeURIComponent(id)}/read`, {
+          method: 'PATCH',
+          body: {},
+          csrfToken,
+        }),
+      markAllRead: (csrfToken) =>
+        request('/notifications/read-all', {
+          method: 'POST',
+          body: {},
+          csrfToken,
+        }),
+      delete: (id, csrfToken) =>
+        request(`/notifications/${encodeURIComponent(id)}`, {
+          method: 'DELETE',
+          csrfToken,
+        }),
     },
 
     // Phase 8.8 Voter Demo Voting & Participation (Zero Candidate-Choice Transmission)

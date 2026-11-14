@@ -1949,4 +1949,109 @@ describe('OVS Phase 8.2–8.4 — Live PostgreSQL & Supertest API Integration Su
       assert.ok(pubRes.body.data.elections.length >= 1);
     });
   });
+
+  describe('16. Phase 8.11 — Notifications, Announcements & Email Communication Suite (Live PostgreSQL)', () => {
+    let superCookie: string;
+    let wbCookie: string;
+    let createdAnnouncementId: string;
+
+    test('Authenticates admin actors for announcement and notification workflows', async () => {
+      const s = await request(app)
+        .post('/api/v1/admin/auth/login')
+        .send({ identifier: 'super.ci@ovs-test.local', password: 'SuperCiSecret#2026!' });
+      assert.equal(s.status, 200);
+      superCookie = (s.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
+
+      const w = await request(app)
+        .post('/api/v1/admin/auth/login')
+        .send({ identifier: 'wb.ci@ovs-test.local', password: 'WbCiSecret#2026!' });
+      assert.equal(w.status, 200);
+      wbCookie = (w.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
+    });
+
+    test('Creates an announcement draft and manages lifecycle (Review -> Approve -> Publish)', async () => {
+      // 1. Create draft announcement
+      const createRes = await request(app)
+        .post('/api/v1/admin/announcements')
+        .set('Cookie', superCookie)
+        .send({
+          title: 'General Election Notification for Phase 1',
+          summary: 'Simulated gazette notice for general polling',
+          message: 'All registered demo voters are requested to review polling stations.',
+          category: 'GENERAL_INFO',
+          targetAudience: 'ALL_VOTERS',
+          publicationDate: '2026-11-20',
+          expiryDate: '2026-12-31',
+        });
+      assert.equal(createRes.status, 201);
+      assert.equal(createRes.body.status, 'DRAFT');
+      createdAnnouncementId = createRes.body.id;
+
+      // 2. Submit for review
+      const reviewRes = await request(app)
+        .post(`/api/v1/admin/announcements/${createdAnnouncementId}/submit-review`)
+        .set('Cookie', superCookie)
+        .send({ notes: 'Initial draft approved by staff' });
+      assert.equal(reviewRes.status, 200);
+      assert.equal(reviewRes.body.status, 'UNDER_REVIEW');
+
+      // 3. Approve announcement
+      const approveRes = await request(app)
+        .post(`/api/v1/admin/announcements/${createdAnnouncementId}/approve`)
+        .set('Cookie', superCookie)
+        .send({ notes: 'Certified by Chief Election Commissioner' });
+      assert.equal(approveRes.status, 200);
+      assert.equal(approveRes.body.status, 'APPROVED');
+
+      // 4. Publish announcement
+      const publishRes = await request(app)
+        .post(`/api/v1/admin/announcements/${createdAnnouncementId}/publish`)
+        .set('Cookie', superCookie)
+        .send({});
+      assert.equal(publishRes.status, 200);
+      assert.equal(publishRes.body.status, 'PUBLISHED');
+    });
+
+    test('Enforces jurisdiction boundaries for state administrators', async () => {
+      // WB admin cannot target MH state
+      const breachRes = await request(app)
+        .post('/api/v1/admin/announcements')
+        .set('Cookie', wbCookie)
+        .send({
+          title: 'Maharashtra Electoral Timetable',
+          summary: 'Summary',
+          message: 'Message content for MH',
+          category: 'GENERAL_INFO',
+          targetAudience: 'SPECIFIC_STATE',
+          targetStateId: 'MH',
+          publicationDate: '2026-11-20',
+          expiryDate: '2026-12-31',
+        });
+      assert.equal(breachRes.status, 403);
+    });
+
+    test('Retrieves public announcements with category filtering and simulation headers', async () => {
+      const pubList = await request(app).get('/api/v1/public/announcements');
+      assert.equal(pubList.status, 200);
+      assert.ok(Array.isArray(pubList.body.data));
+
+      const catRes = await request(app).get('/api/v1/public/announcements/categories');
+      assert.equal(catRes.status, 200);
+      assert.ok(catRes.body.categories.includes('GENERAL_INFO'));
+    });
+
+    test('Inspects delivery telemetry and statistics', async () => {
+      const statsRes = await request(app)
+        .get('/api/v1/admin/notifications/statistics')
+        .set('Cookie', superCookie);
+      assert.equal(statsRes.status, 200);
+      assert.ok(typeof statsRes.body.totalDeliveries === 'number');
+
+      const delivRes = await request(app)
+        .get('/api/v1/admin/notifications/deliveries')
+        .set('Cookie', superCookie);
+      assert.equal(delivRes.status, 200);
+      assert.ok(Array.isArray(delivRes.body.data));
+    });
+  });
 });

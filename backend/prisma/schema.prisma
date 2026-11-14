@@ -1023,6 +1023,9 @@ model Announcement {
   publicationDate                  DateTime                   @db.Date @map("publication_date")
   expiryDate                       DateTime                   @db.Date @map("expiry_date")
   status                           AnnouncementStatus         @default(PUBLISHED)
+  scheduledAt                      DateTime?                  @db.Timestamptz(6) @map("scheduled_at")
+  approvedByAdminId                String?                    @db.Uuid @map("approved_by_admin_id")
+  reviewNotes                      String?                    @db.Text @map("review_notes")
   createdByAdminId                 String?                    @db.Uuid @map("created_by_admin_id")
   createdAt                        DateTime                   @default(now()) @db.Timestamptz(6) @map("created_at")
   updatedAt                        DateTime                   @updatedAt @db.Timestamptz(6) @map("updated_at")
@@ -1032,6 +1035,7 @@ model Announcement {
   targetParliamentaryConstituency  ParliamentaryConstituency? @relation(fields: [targetParliamentaryConstituencyId], references: [id], onDelete: SetNull)
   targetAssemblyConstituency       AssemblyConstituency?      @relation(fields: [targetAssemblyConstituencyId], references: [id], onDelete: SetNull)
   createdByAdmin                   AdminUser?                 @relation("AnnouncementCreator", fields: [createdByAdminId], references: [id], onDelete: SetNull)
+  approvedByAdmin                  AdminUser?                 @relation("AnnouncementApprover", fields: [approvedByAdminId], references: [id], onDelete: SetNull)
 
   @@index([status, targetAudience, publicationDate])
   @@map("announcements")
@@ -1051,4 +1055,60 @@ model VoterNotification {
 
   @@index([voterId, isRead])
   @@map("voter_notifications")
+}
+
+model AdminNotification {
+  id        String           @id @db.VarChar(50) // e.g. "ADM-NOTIF-001"
+  adminId   String           @db.Uuid @map("admin_id")
+  type      NotificationType @default(GENERAL_ANNOUNCEMENT)
+  title     String           @db.VarChar(200)
+  message   String           @db.Text
+  timestamp DateTime         @default(now()) @db.Timestamptz(6)
+  isRead    Boolean          @default(false) @map("is_read")
+  readAt    DateTime?        @db.Timestamptz(6) @map("read_at")
+
+  admin     AdminUser        @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([adminId, isRead])
+  @@map("admin_notifications")
+}
+
+model NotificationPreference {
+  id                   String   @id @default(uuid()) @db.Uuid
+  userId               String   @unique @db.Uuid @map("user_id")
+  emailEnabled         Boolean  @default(false) @map("email_enabled")
+  inAppEnabled         Boolean  @default(true) @map("in_app_enabled")
+  electionReminders    Boolean  @default(true) @map("election_reminders")
+  generalAnnouncements Boolean  @default(true) @map("general_announcements")
+  adminAlerts          Boolean  @default(true) @map("admin_alerts")
+  createdAt            DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt            DateTime @updatedAt @db.Timestamptz(6) @map("updated_at")
+
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_preferences")
+}
+
+model NotificationDelivery {
+  id              String                     @id @default(uuid()) @db.Uuid
+  notificationId  String?                    @db.VarChar(50) @map("notification_id")
+  announcementId  String?                    @db.VarChar(50) @map("announcement_id")
+  recipientUserId String?                    @db.Uuid @map("recipient_user_id")
+  recipientEmail  String?                    @db.VarChar(255) @map("recipient_email")
+  channel         String                     @db.VarChar(20) // IN_APP, EMAIL
+  status          NotificationDeliveryStatus @default(PENDING)
+  attempts        Int                        @default(0)
+  maxAttempts     Int                        @default(3) @map("max_attempts")
+  nextRetryAt     DateTime?                  @db.Timestamptz(6) @map("next_retry_at")
+  lastAttemptAt   DateTime?                  @db.Timestamptz(6) @map("last_attempt_at")
+  deliveredAt     DateTime?                  @db.Timestamptz(6) @map("delivered_at")
+  failureReason   String?                    @db.Text @map("failure_reason")
+  metadata        Json?
+  createdAt       DateTime                   @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt       DateTime                   @updatedAt @db.Timestamptz(6) @map("updated_at")
+
+  @@index([status, nextRetryAt])
+  @@index([recipientUserId])
+  @@index([announcementId])
+  @@map("notification_deliveries")
 }

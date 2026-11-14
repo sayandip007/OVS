@@ -1,4 +1,7 @@
 import {
+  AnnouncementAudience,
+  AnnouncementCategory,
+  AnnouncementStatus,
   CandidateNominationStatus,
   ConfigurationReviewStatus,
   ConstituencyType,
@@ -6,6 +9,7 @@ import {
   ElectionType,
   JurisdictionType,
   MetadataSource,
+  NotificationType,
   PartyStatus,
   PartyType,
   PrismaClient,
@@ -1640,6 +1644,144 @@ export async function seedDemoCountingScenarios(
   }
 }
 
+/**
+ * Phase 8.11 — Idempotent synthetic announcements, voter in-app notifications,
+ * preferences, and development delivery telemetry.
+ */
+export async function seedNotificationsAndAnnouncements(
+  client: PrismaClient = defaultPrisma
+) {
+  // 1. Seed announcements
+  await client.announcement.upsert({
+    where: { id: 'ANN-SEED-001' },
+    update: {},
+    create: {
+      id: 'ANN-SEED-001',
+      title: 'General Election 2029 Gazette Notification',
+      summary: 'Official simulated gazette notification for Lok Sabha General Election 2029.',
+      message:
+        'The Election Commission simulation announces the schedule for General Elections 2029 across 543 Parliamentary Constituencies.',
+      category: AnnouncementCategory.GENERAL_INFO,
+      targetAudience: AnnouncementAudience.ALL_VOTERS,
+      publicationDate: new Date('2026-11-01'),
+      expiryDate: new Date('2029-12-31'),
+      status: AnnouncementStatus.PUBLISHED,
+    },
+  });
+
+  await client.announcement.upsert({
+    where: { id: 'ANN-SEED-002' },
+    update: {},
+    create: {
+      id: 'ANN-SEED-002',
+      title: 'West Bengal Assembly Election 2026 Polling Advisory',
+      summary: 'Simulated polling hours and station allocation for West Bengal Assembly Election.',
+      message:
+        'All registered demo voters in West Bengal may review designated polling stations and verify electoral roll entries.',
+      category: AnnouncementCategory.POLLING_INSTRUCTIONS,
+      targetAudience: AnnouncementAudience.SPECIFIC_STATE,
+      targetStateId: 'WB',
+      publicationDate: new Date('2026-11-05'),
+      expiryDate: new Date('2027-12-31'),
+      status: AnnouncementStatus.PUBLISHED,
+    },
+  });
+
+  await client.announcement.upsert({
+    where: { id: 'ANN-SEED-003' },
+    update: {},
+    create: {
+      id: 'ANN-SEED-003',
+      title: 'Nomination Scrutiny Timetable Draft',
+      summary: 'Draft scrutiny calendar for prospective candidates.',
+      message:
+        'Draft schedule under internal review for candidate documentation verification.',
+      category: AnnouncementCategory.ELECTION_SCHEDULE,
+      targetAudience: AnnouncementAudience.ALL_VOTERS,
+      publicationDate: new Date('2026-11-15'),
+      expiryDate: new Date('2027-01-01'),
+      status: AnnouncementStatus.DRAFT,
+    },
+  });
+
+  // 2. Seed voter notifications and preferences for existing sample voters
+  const sampleVoter = await client.voterProfile.findFirst({
+    include: { user: true },
+  });
+
+  if (sampleVoter) {
+    // Seed notification preference
+    await client.notificationPreference.upsert({
+      where: { userId: sampleVoter.userId },
+      update: {},
+      create: {
+        userId: sampleVoter.userId,
+        emailEnabled: false,
+        inAppEnabled: true,
+        electionReminders: true,
+        generalAnnouncements: true,
+        adminAlerts: true,
+      },
+    });
+
+    // Seed sample voter notifications
+    const notif1Id = 'NOTIF-SEED-001';
+    const notif2Id = 'NOTIF-SEED-002';
+
+    const existingNotif = await client.voterNotification.findUnique({
+      where: { id: notif1Id },
+    });
+
+    if (!existingNotif) {
+      await client.voterNotification.create({
+        data: {
+          id: notif1Id,
+          voterId: sampleVoter.id,
+          type: NotificationType.ELECTION_ANNOUNCEMENT,
+          title: 'Simulated Election Announced: LS-2029',
+          message:
+            'The demo election LS-2029 has been gazetted. Check your eligibility and candidate profiles in the voter portal.',
+          timestamp: new Date(),
+          isRead: false,
+        },
+      });
+
+      await client.voterNotification.create({
+        data: {
+          id: notif2Id,
+          voterId: sampleVoter.id,
+          type: NotificationType.POLLING_SCHEDULE,
+          title: 'Demo Polling Hours Reminder',
+          message:
+            'Simulated voting for your constituency will be active from 07:00 to 18:00 IST on polling day.',
+          timestamp: new Date(),
+          isRead: true,
+          readAt: new Date(),
+        },
+      });
+    }
+
+    // Seed sample delivery log
+    const existingDelivery = await client.notificationDelivery.findFirst({
+      where: { notificationId: notif1Id },
+    });
+
+    if (!existingDelivery) {
+      await client.notificationDelivery.create({
+        data: {
+          notificationId: notif1Id,
+          recipientUserId: sampleVoter.userId,
+          recipientEmail: sampleVoter.email,
+          channel: 'IN_APP',
+          status: 'DELIVERED',
+          attempts: 1,
+          deliveredAt: new Date(),
+        },
+      });
+    }
+  }
+}
+
 const isMainModule =
   process.argv[1] &&
   (process.argv[1].endsWith('seed.ts') || process.argv[1].endsWith('seed.js'));
@@ -1649,8 +1791,9 @@ if (isMainModule) {
     .then(async (summary) => {
       await seedDemoVotingScenarios(defaultPrisma);
       await seedDemoCountingScenarios(defaultPrisma);
+      await seedNotificationsAndAnnouncements(defaultPrisma);
       console.log(
-        'OVS Phase 8.9 DEMO_SAMPLE database seed completed idempotently:',
+        'OVS Phase 8.11 DEMO_SAMPLE database seed completed idempotently:',
         JSON.stringify(summary)
       );
       await defaultPrisma.$disconnect();

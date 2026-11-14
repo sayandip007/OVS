@@ -1,26 +1,97 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useVoter } from '../../context/VoterContext';
 import { useNotification } from '../../context/NotificationContext';
+import { apiClient } from '../../services/apiClient';
+import { frontendEnv } from '../../config/env';
 import EmptyState from '../../components/common/EmptyState';
 import Modal from '../../components/common/Modal';
 import {
   NOTIFICATION_TYPES,
   NOTIFICATION_TYPE_LABELS,
 } from '../../utils/constants';
+import { Bell, Sliders, CheckCircle2, AlertCircle } from 'lucide-react';
 
 export default function Notifications() {
-  const {
-    notifications,
-    unreadNotificationCount,
-    markNotificationAsRead,
-    markAllNotificationsAsRead,
-    clearAllNotifications,
-  } = useVoter();
-  const { notifySuccess } = useNotification();
+  const isBackend = frontendEnv.isBackendApi;
 
+  // Local demo fallback context
+  const {
+    notifications: demoNotifications,
+    unreadNotificationCount: demoUnreadCount,
+    markNotificationAsRead: demoMarkRead,
+    markAllNotificationsAsRead: demoMarkAllRead,
+    clearAllNotifications: demoClearAll,
+  } = useVoter();
+
+  const { notifySuccess, notifyError } = useNotification();
+
+  // Backend state
+  const [backendItems, setBackendItems] = useState([]);
+  const [backendUnreadCount, setBackendUnreadCount] = useState(0);
+  const [loading, setLoading] = useState(false);
+
+  // Filter state
   const [categoryFilter, setCategoryFilter] = useState('ALL');
   const [readFilter, setReadFilter] = useState('ALL');
   const [clearModalOpen, setClearModalOpen] = useState(false);
+
+  // Preference modal state
+  const [prefModalOpen, setPrefModalOpen] = useState(false);
+  const [preferences, setPreferences] = useState({
+    inAppEnabled: true,
+    emailEnabled: false,
+    electionReminders: true,
+    generalAnnouncements: true,
+  });
+  const [savingPrefs, setSavingPrefs] = useState(false);
+
+  const fetchBackendNotifications = useCallback(async () => {
+    if (!isBackend) return;
+    try {
+      setLoading(true);
+      const res = await apiClient.notifications.list({ limit: 100 });
+      setBackendItems(res.data || []);
+      setBackendUnreadCount(res.unreadCount || 0);
+    } catch (err) {
+      notifyError(err.message || 'Failed to load notifications');
+    } finally {
+      setLoading(false);
+    }
+  }, [isBackend, notifyError]);
+
+  const fetchPreferences = useCallback(async () => {
+    if (!isBackend) return;
+    try {
+      const res = await apiClient.notifications.getPreferences();
+      setPreferences({
+        inAppEnabled: res.inAppEnabled,
+        emailEnabled: res.emailEnabled,
+        electionReminders: res.electionReminders,
+        generalAnnouncements: res.generalAnnouncements,
+      });
+    } catch (err) {
+      // Non-blocking fallback
+    }
+  }, [isBackend]);
+
+  useEffect(() => {
+    if (isBackend) {
+      fetchBackendNotifications();
+      fetchPreferences();
+    }
+  }, [isBackend, fetchBackendNotifications, fetchPreferences]);
+
+  const notifications = isBackend
+    ? backendItems.map((n) => ({
+        ...n,
+        notificationId: n.id,
+        createdAt: n.timestamp,
+      }))
+    : demoNotifications;
+
+  const unreadNotificationCount = isBackend
+    ? backendUnreadCount
+    : demoUnreadCount;
 
   const filteredNotifications = useMemo(() => {
     return notifications.filter((item) => {
@@ -31,19 +102,86 @@ export default function Notifications() {
     });
   }, [notifications, categoryFilter, readFilter]);
 
-  const handleMarkAllRead = () => {
-    markAllNotificationsAsRead();
-    notifySuccess('All election notifications marked as read.');
+  const handleMarkRead = async (notificationId) => {
+    if (isBackend) {
+      try {
+        await apiClient.notifications.markRead(notificationId);
+        notifySuccess('Notification marked as read.');
+        fetchBackendNotifications();
+      } catch (err) {
+        notifyError(err.message || 'Failed to mark notification read');
+      }
+    } else {
+      demoMarkRead(notificationId);
+      notifySuccess('Notification marked as read.');
+    }
+  };
+
+  const handleMarkAllRead = async () => {
+    if (isBackend) {
+      try {
+        await apiClient.notifications.markAllRead();
+        notifySuccess('All election notifications marked as read.');
+        fetchBackendNotifications();
+      } catch (err) {
+        notifyError(err.message || 'Failed to mark all as read');
+      }
+    } else {
+      demoMarkAllRead();
+      notifySuccess('All election notifications marked as read.');
+    }
   };
 
   const handleConfirmClearAll = () => {
-    clearAllNotifications();
+    if (isBackend) {
+      notifySuccess('All notifications cleared from view.');
+      setBackendItems([]);
+      setBackendUnreadCount(0);
+    } else {
+      demoClearAll();
+      notifySuccess('All notifications cleared from your voter inbox.');
+    }
     setClearModalOpen(false);
-    notifySuccess('All notifications cleared from your voter inbox.');
+  };
+
+  const handleSavePreferences = async () => {
+    if (!isBackend) {
+      setPrefModalOpen(false);
+      notifySuccess('Notification preferences updated.');
+      return;
+    }
+    try {
+      setSavingPrefs(true);
+      await apiClient.notifications.updatePreferences(preferences);
+      notifySuccess('Notification preferences updated successfully.');
+      setPrefModalOpen(false);
+    } catch (err) {
+      notifyError(err.message || 'Failed to update preferences');
+    } finally {
+      setSavingPrefs(false);
+    }
   };
 
   return (
     <div className="space-y-6">
+      {/* Simulation Banner */}
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center justify-between text-xs text-amber-800">
+        <div className="flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+          <span>
+            <strong>Educational Notification Simulation:</strong> All notifications describe mock demo election events. They do not constitute official election alerts.
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={() => setPrefModalOpen(true)}
+          className="px-3 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 rounded font-bold transition flex items-center gap-1.5 cursor-pointer"
+        >
+          <Sliders className="w-3.5 h-3.5" />
+          Preferences
+        </button>
+      </div>
+
       {/* Header Banner */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 flex flex-wrap items-center justify-between gap-4">
         <div>
@@ -55,7 +193,7 @@ export default function Notifications() {
           </h1>
           <p className="text-xs text-slate-600 mt-1">
             Stay updated with election announcements, nomination schedules, polling dates,
-            candidate lists, and profile update confirmations.
+            candidate lists, and profile confirmations.
           </p>
         </div>
 
@@ -137,7 +275,9 @@ export default function Notifications() {
       </div>
 
       {/* Notification List */}
-      {filteredNotifications.length === 0 ? (
+      {loading ? (
+        <div className="p-12 text-center text-slate-500 text-xs">Loading voter notifications...</div>
+      ) : filteredNotifications.length === 0 ? (
         <EmptyState
           title="No Notifications Found"
           description={
@@ -180,7 +320,7 @@ export default function Notifications() {
                     </span>
                   )}
                   <span className="text-xs text-slate-400">
-                    • {new Date(item.createdAt).toLocaleString('en-IN')}
+                    &bull; {new Date(item.createdAt).toLocaleString('en-IN')}
                   </span>
                 </div>
 
@@ -196,14 +336,14 @@ export default function Notifications() {
                 {!item.isRead ? (
                   <button
                     type="button"
-                    onClick={() => markNotificationAsRead(item.notificationId)}
+                    onClick={() => handleMarkRead(item.notificationId)}
                     className="px-3.5 py-1.5 rounded-xl bg-[#002868] hover:bg-blue-900 text-white text-xs font-bold cursor-pointer"
                   >
                     Mark as Read
                   </button>
                 ) : (
                   <span className="px-3 py-1 rounded-lg bg-slate-100 text-slate-500 text-xs font-semibold">
-                    ✓ Read
+                    &check; Read
                   </span>
                 )}
               </div>
@@ -238,9 +378,103 @@ export default function Notifications() {
       >
         <p className="text-xs text-slate-600 leading-relaxed">
           Are you sure you want to remove all notifications from your Voter Notification
-          Centre? You can restore default demo notifications anytime using the{' '}
-          <strong>Reset Demo Data</strong> button.
+          Centre?
         </p>
+      </Modal>
+
+      {/* Notification Preferences Modal */}
+      <Modal
+        isOpen={prefModalOpen}
+        onClose={() => setPrefModalOpen(false)}
+        title="Notification Preferences"
+      >
+        <div className="space-y-4 text-xs">
+          <p className="text-slate-600">
+            Customize which simulated electoral notifications you receive across in-app and email channels.
+          </p>
+
+          <div className="space-y-3 pt-2 border-t border-slate-100">
+            <label className="flex items-center justify-between p-2.5 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer">
+              <div>
+                <span className="font-bold text-slate-800 block">In-App Notifications</span>
+                <span className="text-[11px] text-slate-500">Receive alerts in your voter portal inbox</span>
+              </div>
+              <input
+                type="checkbox"
+                checked={preferences.inAppEnabled}
+                onChange={(e) =>
+                  setPreferences({ ...preferences, inAppEnabled: e.target.checked })
+                }
+                className="w-4 h-4 text-[#002868] rounded"
+              />
+            </label>
+
+            <label className="flex items-center justify-between p-2.5 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer">
+              <div>
+                <span className="font-bold text-slate-800 block">Simulated Email Advisories</span>
+                <span className="text-[11px] text-slate-500">
+                  Deliver notices to your verified registered email (development mode uses safe outbox)
+                </span>
+              </div>
+              <input
+                type="checkbox"
+                checked={preferences.emailEnabled}
+                onChange={(e) =>
+                  setPreferences({ ...preferences, emailEnabled: e.target.checked })
+                }
+                className="w-4 h-4 text-[#002868] rounded"
+              />
+            </label>
+
+            <label className="flex items-center justify-between p-2.5 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer">
+              <div>
+                <span className="font-bold text-slate-800 block">Election Schedule Reminders</span>
+                <span className="text-[11px] text-slate-500">Upcoming demo polling opening and closing hours</span>
+              </div>
+              <input
+                type="checkbox"
+                checked={preferences.electionReminders}
+                onChange={(e) =>
+                  setPreferences({ ...preferences, electionReminders: e.target.checked })
+                }
+                className="w-4 h-4 text-[#002868] rounded"
+              />
+            </label>
+
+            <label className="flex items-center justify-between p-2.5 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer">
+              <div>
+                <span className="font-bold text-slate-800 block">General Gazette Announcements</span>
+                <span className="text-[11px] text-slate-500">Pan-India and state-level electoral notices</span>
+              </div>
+              <input
+                type="checkbox"
+                checked={preferences.generalAnnouncements}
+                onChange={(e) =>
+                  setPreferences({ ...preferences, generalAnnouncements: e.target.checked })
+                }
+                className="w-4 h-4 text-[#002868] rounded"
+              />
+            </label>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={() => setPrefModalOpen(false)}
+              className="px-4 py-2 border border-slate-300 rounded-lg font-bold"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={savingPrefs}
+              onClick={handleSavePreferences}
+              className="px-4 py-2 bg-[#002868] text-white rounded-lg font-bold disabled:opacity-50"
+            >
+              {savingPrefs ? 'Saving...' : 'Save Preferences'}
+            </button>
+          </div>
+        </div>
       </Modal>
     </div>
   );
