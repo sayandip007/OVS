@@ -28,6 +28,7 @@ const ROUTE_TITLES = {
   'audit-logs': 'Audit Logs',
   profile: 'My Profile & Sessions',
   settings: 'Admin Settings',
+  simulation: 'Pan-India Simulation & Stress Console',
 };
 
 export default function AdminLayout() {

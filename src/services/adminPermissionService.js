@@ -151,6 +151,9 @@ export const ADMIN_ROUTE_PERMISSIONS = {
     ADMIN_ROLES.ELECTION_OFFICER,
     ADMIN_ROLES.READ_ONLY_AUDITOR,
   ],
+  '/eci/simulation': [
+    ADMIN_ROLES.SUPER_ADMIN,
+  ],
 };
 
 /**

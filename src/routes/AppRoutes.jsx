@@ -50,6 +50,7 @@ import AuditLogs from '../pages/admin/AuditLogs';
 import AdminSettings from '../pages/admin/AdminSettings';
 import AdminProfile from '../pages/admin/AdminProfile';
 import AdminUserManagement from '../pages/admin/AdminUserManagement';
+import MasterSimulationConsole from '../pages/admin/MasterSimulationConsole';
 
 /**
  * Frontend Route Guard for Protected Voter Routes
@@ -222,6 +223,7 @@ export default function AppRoutes() {
         <Route path="audit-logs" element={<AuditLogs />} />
         <Route path="profile" element={<AdminProfile />} />
         <Route path="settings" element={<AdminSettings />} />
+        <Route path="simulation" element={<MasterSimulationConsole />} />
       </Route>
     </Routes>
   );

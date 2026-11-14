@@ -38,6 +38,11 @@ import {
   createSanitizedAuditLogEntry,
 } from '../services/adminPermissionService';
 import { auditElectionDataIntegrity } from '../services/dataIntegrityService';
+import {
+  generatePanIndiaSimulationDataset,
+  purgePanIndiaSimulatedData,
+  PAN_INDIA_36_STATES,
+} from '../services/panIndiaSimulationRunner';
 
 const ElectionContext = createContext(null);
 
@@ -2495,6 +2500,76 @@ export function ElectionProvider({ children }) {
     return fresh;
   }, []);
 
+  const runClientSidePanIndiaSimulation = useCallback(
+    async (options = {}, onProgress = null) => {
+      const result = await generatePanIndiaSimulationDataset({
+        ...options,
+        onProgress,
+      });
+
+      // Merge newly generated elections (upsert by id)
+      const existingElectionIds = new Set((store.elections || []).map((e) => e.id));
+      const mergedElections = [
+        ...(store.elections || []),
+        ...result.electionsGenerated.filter((e) => !existingElectionIds.has(e.id)),
+      ];
+
+      // Merge candidates
+      const existingCandidateIds = new Set(
+        (store.candidates || []).map((c) => c.id || c.candidateId)
+      );
+      const mergedCandidates = [
+        ...(store.candidates || []),
+        ...result.candidatesGenerated.filter((c) => !existingCandidateIds.has(c.id)),
+      ];
+
+      // Merge results
+      const existingResultIds = new Set((store.results || []).map((r) => r.id));
+      const mergedResults = [
+        ...(store.results || []),
+        ...result.resultsGenerated.filter((r) => !existingResultIds.has(r.id)),
+      ];
+
+      // Update state and storage
+      syncKey(STORAGE_KEYS.ELECTIONS, 'elections', mergedElections);
+      syncKey(STORAGE_KEYS.CANDIDATES, 'candidates', mergedCandidates);
+      syncKey(STORAGE_KEYS.RESULTS, 'results', mergedResults);
+
+      appendAuditLog({
+        action: 'PAN_INDIA_SIMULATION_EXECUTED',
+        entityType: 'SIMULATION',
+        entityId: 'PAN_INDIA_BENCHMARK',
+        adminId: options.adminId || 'ECI-SUPER-001',
+        adminRole: 'SUPER_ADMIN',
+        description: `Generated Pan-India stress-test data: ${result.candidatesGenerated.length} candidates across ${result.statesSimulated} States/UTs.`,
+      });
+
+      return result;
+    },
+    [store.elections, store.candidates, store.results, syncKey, appendAuditLog]
+  );
+
+  const purgeClientSideSimulation = useCallback(
+    (actor = {}) => {
+      const purged = purgePanIndiaSimulatedData(store);
+      syncKey(STORAGE_KEYS.ELECTIONS, 'elections', purged.elections);
+      syncKey(STORAGE_KEYS.CANDIDATES, 'candidates', purged.candidates);
+      syncKey(STORAGE_KEYS.RESULTS, 'results', purged.results);
+
+      appendAuditLog({
+        action: 'PAN_INDIA_SIMULATION_PURGED',
+        entityType: 'SIMULATION',
+        entityId: 'PAN_INDIA_BENCHMARK',
+        adminId: actor.adminId || 'ECI-SUPER-001',
+        adminRole: actor.adminRole || 'SUPER_ADMIN',
+        description: 'Purged all simulated Pan-India candidate and election benchmark records.',
+      });
+
+      return { ok: true };
+    },
+    [store, syncKey, appendAuditLog]
+  );
+
   const exportDemoDatasets = useCallback(() => {
     return {
       exportedAt: new Date().toISOString(),
@@ -2666,6 +2741,9 @@ export function ElectionProvider({ children }) {
         submitFeedback: addFeedback,
         resetDemoData,
         resetDemoEnvironment: resetDemoData,
+        runClientSidePanIndiaSimulation,
+        purgeClientSideSimulation,
+        panIndiaStates: PAN_INDIA_36_STATES,
         exportDemoDatasets,
         importDemoDatasets,
         dataIntegrityReport,

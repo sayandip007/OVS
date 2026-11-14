@@ -325,9 +325,11 @@ describe('OVS Phase 8.15 — User Acceptance Testing (UAT) & System Verification
       ];
 
       for (let i = 0; i < milestones.length - 1; i++) {
+        const curr = milestones[i]!;
+        const nxt = milestones[i + 1]!;
         assert.ok(
-          milestones[i].date.getTime() < milestones[i + 1].date.getTime(),
-          `Milestone ${milestones[i].type} must precede ${milestones[i + 1].type}`
+          curr.date.getTime() < nxt.date.getTime(),
+          `Milestone ${curr.type} must precede ${nxt.type}`
         );
       }
     });
@@ -357,6 +359,8 @@ describe('OVS Phase 8.15 — User Acceptance Testing (UAT) & System Verification
         [CandidateNominationStatus.APPROVED]: [CandidateNominationStatus.WITHDRAWN],
         [CandidateNominationStatus.REJECTED]: [],
         [CandidateNominationStatus.WITHDRAWN]: [],
+        [CandidateNominationStatus.SUSPENDED]: [CandidateNominationStatus.APPROVED, CandidateNominationStatus.REJECTED],
+        [CandidateNominationStatus.ARCHIVED]: [],
       };
 
       const canTransition = (from: CandidateNominationStatus, to: CandidateNominationStatus) =>
@@ -404,7 +408,7 @@ describe('OVS Phase 8.15 — User Acceptance Testing (UAT) & System Verification
       ];
 
       const sorted = [...tallies].sort((a, b) => b.votes - a.votes);
-      const isTie = sorted.length >= 2 && sorted[0].votes === sorted[1].votes;
+      const isTie = sorted.length >= 2 && sorted[0]!.votes === sorted[1]!.votes;
       assert.equal(isTie, true, 'Equal top votes triggers genuine tie state');
     });
 

@@ -692,6 +692,22 @@ export function createOvsApiClient(options = {}) {
       diagnostics: {
         get: () => request('/health/diagnostics'),
       },
+
+      simulation: {
+        runPanIndia: (data, csrfToken) =>
+          request('/admin/simulation/pan-india', {
+            method: 'POST',
+            body: data,
+            csrfToken,
+          }),
+        getStatus: () => request('/admin/simulation/status'),
+        purge: (csrfToken) =>
+          request('/admin/simulation/purge', {
+            method: 'POST',
+            body: {},
+            csrfToken,
+          }),
+      },
     },
 
     publicAnalytics: {

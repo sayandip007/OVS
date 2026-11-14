@@ -70,6 +70,10 @@ import {
   type CreatePublicAnnouncementsRouterOptions,
 } from './modules/notifications/public.announcements.routes.js';
 import {
+  createAdminSimulationRouter,
+  type CreateAdminSimulationRouterOptions,
+} from './modules/admin/simulation.routes.js';
+import {
   createAdminSystemSettingsRouter,
   createAdminFeatureFlagsRouter,
   createAdminMaintenanceRouter,
@@ -103,6 +107,7 @@ export interface CreateAppOptions {
   adminAnnouncementsOptions?: CreateAdminAnnouncementsRouterOptions;
   publicAnnouncementsOptions?: CreatePublicAnnouncementsRouterOptions;
   systemSettingsOptions?: CreateSystemSettingsRouterOptions;
+  adminSimulationOptions?: CreateAdminSimulationRouterOptions;
   maintenanceService?: MaintenanceService;
 }
 
@@ -200,6 +205,10 @@ export function createApp(options: CreateAppOptions = {}): Express {
   app.use(
     '/api/v1/admin/notifications',
     createAdminNotificationsDeliveryRouter(options.adminAnnouncementsOptions)
+  );
+  app.use(
+    '/api/v1/admin/simulation',
+    createAdminSimulationRouter(options.adminSimulationOptions)
   );
   app.use(
     '/api/v1/admin',

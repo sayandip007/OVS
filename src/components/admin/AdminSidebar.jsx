@@ -17,6 +17,7 @@ import {
   BarChart3,
   FileText,
   Settings,
+  Flame,
   RotateCcw,
   Menu,
   X,
@@ -64,6 +65,7 @@ export default function AdminSidebar({ onResetDemo }) {
         { to: '/eci/audit-logs', label: 'Audit Logs', icon: FileText },
         { to: '/eci/profile', label: 'My Profile & Sessions', icon: Shield },
         { to: '/eci/settings', label: 'Admin Settings', icon: Settings },
+        { to: '/eci/simulation', label: 'Pan-India Simulation', icon: Flame },
       ],
     },
   ];

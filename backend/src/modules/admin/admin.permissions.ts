@@ -80,6 +80,8 @@ export const ADMIN_PERMISSIONS = {
   FEATURES_MANAGE: 'features.manage',
   MAINTENANCE_MANAGE: 'maintenance.manage',
   DIAGNOSTICS_READ: 'diagnostics.read',
+  SIMULATION_MANAGE: 'simulation.manage',
+  SIMULATION_READ: 'simulation.read',
 } as const;
 
 export type AdminPermission =
@@ -136,6 +138,7 @@ export const MUTATING_ADMIN_PERMISSIONS: ReadonlySet<AdminPermission> = new Set(
   ADMIN_PERMISSIONS.SETTINGS_ROLLBACK,
   ADMIN_PERMISSIONS.FEATURES_MANAGE,
   ADMIN_PERMISSIONS.MAINTENANCE_MANAGE,
+  ADMIN_PERMISSIONS.SIMULATION_MANAGE,
 ]);
 
 /**
