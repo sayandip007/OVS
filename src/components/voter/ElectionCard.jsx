@@ -51,8 +51,8 @@ export default function ElectionCard({
   const handleCustomClick = onStartParticipation || onParticipate;
 
   const ballotButtonLabel = isLokSabha
-    ? 'Open Lok Sabha Demo Ballot'
-    : 'Open Assembly Demo Ballot';
+    ? 'Vote in Lok Sabha'
+    : 'Vote in Assembly';
 
   return (
     <div
@@ -205,7 +205,7 @@ export default function ElectionCard({
               className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold bg-emerald-800 text-white hover:bg-emerald-900 transition-colors"
             >
               <FileCheck2 className="w-3.5 h-3.5" />
-              <span>View Demo Receipt</span>
+              <span>View Receipt</span>
             </Link>
           ) : canOpenBallot ? (
             <Link

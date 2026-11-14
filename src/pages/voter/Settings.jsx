@@ -34,14 +34,13 @@ export default function Settings() {
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 flex flex-wrap items-center justify-between gap-4">
         <div>
           <span className="text-xs font-bold uppercase tracking-wider text-[#002868]">
-            Portal Preferences &amp; Sandbox Controls
+            Settings &amp; Preferences
           </span>
           <h1 className="text-2xl font-extrabold text-slate-900 mt-0.5">
-            Voter Portal Settings &amp; Demo Account Switcher
+            Account Settings
           </h1>
           <p className="text-xs text-slate-600 mt-1">
-            Inspect your simulated authentication session, switch between the 5 state/UT
-            demo voters, or reset local demonstration state.
+            Manage your session, switch test accounts, or reset portal data.
           </p>
         </div>
 
@@ -50,14 +49,14 @@ export default function Settings() {
           onClick={handleResetAllDemoData}
           className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold shadow-xs cursor-pointer"
         >
-          Reset Demo Data to Initial Defaults
+          Reset Portal Data
         </button>
       </div>
 
       {/* Active Simulated Session Info */}
       <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
         <h2 className="text-base font-extrabold text-slate-900">
-          1. Active Simulated Session Details
+          Active Session Details
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
           <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
@@ -67,15 +66,15 @@ export default function Settings() {
             </strong>
           </div>
           <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
-            <span className="text-slate-500 block">Demo EPIC &amp; Mobile</span>
+            <span className="text-slate-500 block">EPIC &amp; Mobile</span>
             <strong className="text-[#002868] font-mono text-sm">
               {currentVoter.voterRef} • +91-{currentVoter.mobile}
             </strong>
           </div>
           <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
-            <span className="text-slate-500 block">Simulated OTP Reference</span>
+            <span className="text-slate-500 block">OTP Reference</span>
             <strong className="text-emerald-700 font-mono text-sm">
-              {DEMO_OTP_CODES.VOTER_LOGIN} (Dev-Only)
+              {DEMO_OTP_CODES.VOTER_LOGIN}
             </strong>
           </div>
           <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
@@ -93,7 +92,7 @@ export default function Settings() {
       <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
         <div>
           <h2 className="text-base font-extrabold text-slate-900">
-            2. Quick-Switch Multi-State Demo Voter Accounts
+            Switch Test Voter Account
           </h2>
           <p className="text-xs text-slate-600 mt-0.5">
             Instantly switch between pre-configured sample voters across West Bengal,

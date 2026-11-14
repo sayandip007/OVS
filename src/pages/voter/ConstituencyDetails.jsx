@@ -93,10 +93,10 @@ export default function ConstituencyDetails() {
       <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs flex flex-wrap items-center justify-between gap-4">
         <div>
           <span className="text-xs font-bold uppercase tracking-wider text-[#002868]">
-            Geographical Electoral Hierarchy
+            Electoral Jurisdictions
           </span>
           <h1 className="text-2xl font-extrabold text-slate-900 mt-0.5">
-            My Parliamentary (PC) &amp; Assembly (AC) Constituencies
+            My Constituencies
           </h1>
           <p className="text-xs text-slate-600 mt-1">
             State: <strong>{voterState?.stateName}</strong> • Registered District:{' '}

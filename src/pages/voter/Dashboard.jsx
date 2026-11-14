@@ -21,7 +21,7 @@ function BackendVoterDashboard() {
       const res = await apiClient.voter.listElections();
       setData(res?.data || null);
     } catch (err) {
-      notifyError(err?.message || 'Failed to load demo elections.');
+      notifyError(err?.message || 'Failed to load elections.');
     } finally {
       setLoading(false);
     }
@@ -34,7 +34,7 @@ function BackendVoterDashboard() {
   if (loading) {
     return (
       <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-sm text-slate-500">
-        Loading your eligible demo elections...
+        Loading eligible elections...
       </div>
     );
   }
@@ -58,7 +58,7 @@ function BackendVoterDashboard() {
       </div>
 
       {items.length === 0 ? (
-        <p className="text-xs text-slate-500">No demo elections available in this category.</p>
+        <p className="text-xs text-slate-500">No elections available in this category.</p>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {items.map((el) => (
@@ -91,25 +91,25 @@ function BackendVoterDashboard() {
                 {el.hasParticipated ? (
                   <>
                     <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 font-bold">
-                      PARTICIPATED • {el.participation?.demoReference}
+                      VOTED • {el.participation?.demoReference}
                     </span>
                     <Link
                       to={`/voter/elections/${el.id}/receipt`}
                       className="px-3 py-1.5 rounded-lg bg-emerald-700 text-white font-bold"
                     >
-                      View Confirmation
+                      View Receipt
                     </Link>
                   </>
                 ) : el.eligible ? (
                   <>
                     <span className="text-emerald-700 font-bold">
-                      Eligible ({el.approvedCandidatesCount} approved candidates)
+                      Eligible ({el.approvedCandidatesCount} candidates)
                     </span>
                     <Link
                       to={`/voter/elections/${el.id}/ballot`}
                       className="px-3.5 py-1.5 rounded-lg bg-[#002868] text-white font-bold"
                     >
-                      Open Demo Ballot
+                      Vote Now
                     </Link>
                   </>
                 ) : (
@@ -150,11 +150,6 @@ function BackendVoterDashboard() {
             Participation History
           </Link>
         </div>
-        <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-          Educational Demo Simulation: Lok Sabha (PC) and State Assembly (AC) elections operate
-          independently. Candidate choices stay strictly in temporary browser memory and are never
-          sent to the server.
-        </p>
       </div>
 
       {renderElectionSection(
@@ -220,7 +215,7 @@ function LocalDemoVoterDashboard() {
       return;
     }
     notifySuccess(
-      `Demo participation status marked as VOTED for ${election.title} (Ref: ${res.referenceId}). Other elections remain independent.`
+      `Participation recorded for ${election.title} (Ref: ${res.referenceId}).`
     );
   };
 
@@ -228,7 +223,7 @@ function LocalDemoVoterDashboard() {
 
   return (
     <div className="space-y-6">
-      {/* 1. Dashboard Header: Greeting, Current Date, Profile Completion, Demo Status, Notification Access */}
+      {/* 1. Dashboard Header: Greeting, Current Date, Profile Completion, Status, Notification Access */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
           <div className="flex items-start sm:items-center gap-4">
@@ -243,7 +238,7 @@ function LocalDemoVoterDashboard() {
                   EPIC: {currentVoter.voterRef}
                 </span>
                 <span className="px-2.5 py-0.5 rounded bg-emerald-100 text-emerald-800 text-xs font-semibold">
-                  {currentVoter.accountStatus || 'VERIFIED_DEMO'} Account
+                  Verified Voter
                 </span>
                 <span className="text-xs text-slate-500 font-medium">
                   • {formattedCurrentDate}
@@ -368,23 +363,22 @@ function LocalDemoVoterDashboard() {
       {/* 3. Simultaneous Election Progress Tracker (0/2, 1/2, 2/2 completed) */}
       <VotingStatus summary={participationSummary} />
 
-      {/* 4. Independent Election Overview Cards (Lok Sabha & State Assembly) */}
+      {/* 4. Eligible Elections (Lok Sabha & State Assembly) */}
       <div className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h2 className="text-lg font-bold text-slate-900">
-              Independent Election Overview ({eligibleElections.length})
+              Eligible Elections ({eligibleElections.length})
             </h2>
             <p className="text-xs text-slate-600">
-              Separate cards for Lok Sabha General Elections and State Legislative Assembly
-              Elections. Participating in one election never marks the other as completed.
+              Active Parliamentary and State Assembly elections for your constituency.
             </p>
           </div>
           <Link
             to="/voter/elections"
             className="text-xs font-bold text-[#002868] hover:underline"
           >
-            View All Elections &amp; Filters &rarr;
+            View All Elections &rarr;
           </Link>
         </div>
 
@@ -425,18 +419,17 @@ function LocalDemoVoterDashboard() {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h2 className="text-base font-extrabold text-slate-900">
-              Your Dual Constituency Summary
+              Registered Constituencies
             </h2>
             <p className="text-xs text-slate-600">
-              Every Indian elector is mapped to both a Parliamentary Constituency (MP) and an
-              Assembly Constituency (MLA).
+              Your assigned Parliamentary and Assembly electoral jurisdictions.
             </p>
           </div>
           <Link
             to="/voter/constituencies"
             className="text-xs font-bold text-[#002868] hover:underline"
           >
-            Inspect Full Constituency Details &rarr;
+            Constituency Details &rarr;
           </Link>
         </div>
 
@@ -501,10 +494,10 @@ function LocalDemoVoterDashboard() {
           <div className="flex items-center justify-between">
             <div>
               <span className="text-[11px] font-bold uppercase tracking-wider text-[#002868]">
-                ECI Statutory Gazette Calendar
+                Key Dates
               </span>
               <h2 className="text-base font-extrabold text-slate-900">
-                Upcoming Election Timeline &amp; Important Dates
+                Election Schedule &amp; Timelines
               </h2>
             </div>
             <Link
@@ -565,17 +558,17 @@ function LocalDemoVoterDashboard() {
           <div className="flex items-center justify-between">
             <div>
               <span className="text-[11px] font-bold uppercase tracking-wider text-[#002868]">
-                Official ECI Advisories
+                Advisories
               </span>
               <h2 className="text-base font-extrabold text-slate-900">
-                Recent Announcements &amp; Alerts
+                Announcements &amp; Alerts
               </h2>
             </div>
             <Link
               to="/voter/notifications"
               className="text-xs font-bold text-[#002868] hover:underline"
             >
-              Open Notification Centre &rarr;
+              Notification Centre &rarr;
             </Link>
           </div>
 
@@ -616,37 +609,36 @@ function LocalDemoVoterDashboard() {
         </div>
       </div>
 
-      {/* 7. Recently Viewed Candidate Information & Quick Links */}
+      {/* 7. Candidate Information & Quick Links */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
           <div className="flex items-center justify-between">
             <div>
               <span className="text-[11px] font-bold uppercase tracking-wider text-[#002868]">
-                Affidavit &amp; Manifesto Explorer
+                Candidates
               </span>
               <h2 className="text-base font-extrabold text-slate-900">
-                Recently Viewed Candidate Information
+                Recent Candidate Profiles
               </h2>
             </div>
             <Link
               to="/voter/candidates"
               className="text-xs font-bold text-[#002868] hover:underline"
             >
-              Browse Candidate Directory &rarr;
+              Browse Directory &rarr;
             </Link>
           </div>
 
           {recentCandidates.length === 0 ? (
             <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-wrap items-center justify-between gap-3">
               <p className="text-xs text-slate-600">
-                You have not inspected any individual candidate affidavits in this session yet.
                 Explore nominated candidates in your Parliamentary and Assembly constituencies.
               </p>
               <Link
                 to="/voter/candidates"
                 className="px-3.5 py-2 rounded-lg bg-[#002868] text-white text-xs font-bold shrink-0"
               >
-                Explore Candidates &rarr;
+                Browse Candidates &rarr;
               </Link>
             </div>
           ) : (
@@ -688,35 +680,35 @@ function LocalDemoVoterDashboard() {
             Shortcuts
           </span>
           <h2 className="text-base font-extrabold text-slate-900">
-            Voter Portal Quick Links
+            Quick Actions
           </h2>
           <div className="grid grid-cols-1 gap-2 pt-1 text-xs font-bold">
             <Link
               to="/voter/profile"
               className="p-2.5 rounded-xl bg-slate-50 hover:bg-blue-50 text-slate-800 hover:text-[#002868] border border-slate-200 flex items-center justify-between"
             >
-              <span>Update Personal &amp; Address Info</span>
+              <span>Update Profile &amp; Address</span>
               <span>&rarr;</span>
             </Link>
             <Link
               to="/voter/constituencies"
               className="p-2.5 rounded-xl bg-slate-50 hover:bg-blue-50 text-slate-800 hover:text-[#002868] border border-slate-200 flex items-center justify-between"
             >
-              <span>Inspect PC &amp; AC Jurisdictions</span>
+              <span>View Constituencies</span>
               <span>&rarr;</span>
             </Link>
             <Link
               to="/voter/history"
               className="p-2.5 rounded-xl bg-slate-50 hover:bg-blue-50 text-slate-800 hover:text-[#002868] border border-slate-200 flex items-center justify-between"
             >
-              <span>View Non-Revealing Participation History</span>
+              <span>Voting History</span>
               <span>&rarr;</span>
             </Link>
             <Link
               to="/voter/settings"
               className="p-2.5 rounded-xl bg-slate-50 hover:bg-blue-50 text-slate-800 hover:text-[#002868] border border-slate-200 flex items-center justify-between"
             >
-              <span>Demo Account Switcher &amp; Settings</span>
+              <span>Account Settings</span>
               <span>&rarr;</span>
             </Link>
           </div>

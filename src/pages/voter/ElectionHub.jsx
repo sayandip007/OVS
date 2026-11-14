@@ -133,17 +133,13 @@ export default function ElectionHub() {
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-200 pb-4">
           <div>
             <span className="text-xs font-bold uppercase tracking-wider text-[#002868]">
-              Simultaneous &amp; Independent Election Selection Hub
+              Electoral Hub
             </span>
             <h1 className="text-2xl font-extrabold text-slate-900 mt-0.5">
               My Eligible Elections ({eligibleElections.length})
             </h1>
             <p className="text-xs text-slate-600 mt-1">
-              Displaying elections matched strictly to your Parliamentary
-              Constituency (
-              <strong>{voterParliamentaryConstituency?.name} PC</strong>) and
-              State Assembly Constituency (
-              <strong>{voterAssemblyConstituency?.name} AC</strong>).
+              Active elections for <strong>{voterParliamentaryConstituency?.name} PC</strong> and <strong>{voterAssemblyConstituency?.name} AC</strong>.
             </p>
           </div>
 

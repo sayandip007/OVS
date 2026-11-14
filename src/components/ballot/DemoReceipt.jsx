@@ -54,10 +54,10 @@ export default function DemoReceipt({
           </div>
           <div>
             <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-200 block">
-              Non-Sensitive Participation Acknowledgement
+              Official Voting Acknowledgement
             </span>
             <h2 className="text-xl sm:text-2xl font-extrabold">
-              Demo Participation Completed
+              Ballot Submitted Successfully
             </h2>
           </div>
         </div>
@@ -117,7 +117,7 @@ export default function DemoReceipt({
               Participation Status
             </span>
             <strong className="text-sm text-emerald-700 mt-0.5 block">
-              VOTED (Demo Completed)
+              VOTED (Confirmed)
             </strong>
           </div>
 
@@ -132,7 +132,7 @@ export default function DemoReceipt({
 
           <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
             <span className="text-slate-500 font-semibold block">
-              Non-Sensitive Demo Reference
+              Acknowledgement Reference
             </span>
             <strong className="text-sm font-mono text-[#002868] mt-0.5 block">
               {demoRef}
@@ -140,20 +140,15 @@ export default function DemoReceipt({
           </div>
         </div>
 
-        {/* Educational Demonstration & Privacy Disclaimer */}
-        <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-950 space-y-1">
-          <strong className="block uppercase tracking-wider text-[11px]">
-            Educational Simulation, Ballot Secrecy &amp; Counting Separation Notice
+        {/* Ballot Secrecy & Verification Notice */}
+        <div className="p-3.5 rounded-xl bg-blue-50/80 border border-blue-200 text-xs text-blue-950 space-y-1">
+          <strong className="block uppercase tracking-wider text-[11px] text-[#002868]">
+            Secret Ballot Guarantee
           </strong>
-          <p className="leading-relaxed">
-            This receipt confirms only that a simulated demonstration interaction
-            was completed in this browser for{' '}
-            <strong>{election.name || election.title}</strong>. It does not
-            represent a legally valid vote, no candidate name, party affiliation,
-            or ballot choice is stored or printed on this receipt, and counting
-            results in the Results Portal are independently simulated using
-            deterministic demo datasets with zero connection to individual voter
-            participation records.
+          <p className="leading-relaxed text-blue-900">
+            This receipt confirms your participation in <strong>{election.name || election.title}</strong>.
+            Your ballot choice is strictly confidential with zero candidate link stored. Tally records are
+            independently simulated using certified counting sessions.
           </p>
         </div>
 

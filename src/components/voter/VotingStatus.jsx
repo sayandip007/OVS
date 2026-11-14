@@ -12,7 +12,7 @@ export default function VotingStatus({ summary }) {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
         <div>
           <p className="text-xs font-semibold text-[#004d99]">
-            Simultaneous Election Participation Tracker
+            Voting Status Tracker
           </p>
           <h3 className="text-base font-bold text-slate-900">
             Eligible Elections Progress

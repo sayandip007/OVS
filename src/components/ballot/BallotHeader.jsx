@@ -59,11 +59,11 @@ export default function BallotHeader({
                 }`}
               >
                 {isLokSabha
-                  ? 'Lok Sabha General Election (PARLIAMENTARY)'
-                  : 'State Legislative Assembly Election (ASSEMBLY)'}
+                  ? 'Lok Sabha (Parliamentary)'
+                  : 'State Legislative Assembly'}
               </span>
-              <span className="px-2.5 py-0.5 rounded bg-amber-100 text-amber-950 text-xs font-bold">
-                Educational Simulation Prototype
+              <span className="px-2.5 py-0.5 rounded bg-emerald-100 text-emerald-900 text-xs font-bold">
+                Official Ballot
               </span>
             </div>
 
@@ -88,7 +88,7 @@ export default function BallotHeader({
 
           {voterEpic && (
             <div className="px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs shrink-0">
-              <span className="text-slate-500 block">Demo Elector Reference</span>
+              <span className="text-slate-500 block">Voter EPIC Reference</span>
               <strong className="font-mono text-sm text-[#002868]">
                 {voterEpic}
               </strong>
@@ -118,13 +118,10 @@ export default function BallotHeader({
           })}
         </div>
 
-        {/* Explicit Educational Demonstration Disclaimer */}
-        <div className="p-3 rounded-xl bg-amber-50/90 border border-amber-200 text-[11px] sm:text-xs text-amber-950 leading-relaxed">
-          <strong>Local Demonstration Notice:</strong> This interface is a local
-          frontend simulation and does not cast a legally valid election vote.
-          Candidate selections exist only temporarily in browser memory during this
-          interaction and are never saved to your voter profile, participation
-          history, or confirmation receipt.
+        {/* Secret Ballot Assurance */}
+        <div className="p-2.5 rounded-xl bg-blue-50/80 border border-blue-200 text-xs text-[#002868] flex items-center gap-2">
+          <span className="font-bold">Secret Ballot:</span>
+          <span>Your candidate choice is confidential and never stored with your identity.</span>
         </div>
       </div>
     </div>

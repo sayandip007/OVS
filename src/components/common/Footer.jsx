@@ -25,7 +25,7 @@ export default function Footer() {
               </div>
             </div>
             <p className="text-xs text-slate-300 max-w-xl leading-relaxed">
-              Frontend architectural demonstration supporting all 28 Indian States and 8 Union Territories, independent Parliamentary and Assembly constituencies, and simultaneous election participation workflows. All sample records are marked DEMO_SAMPLE.
+              National Electoral Service Portal facilitating Lok Sabha Parliamentary and State Legislative Assembly elections across all 28 States and 8 Union Territories.
             </p>
           </div>
 
@@ -88,7 +88,7 @@ export default function Footer() {
 
         <div className="pt-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-300">
           <p>
-            Copyright &copy; {new Date().getFullYear()} Voting Portal (Frontend Demonstration System). All rights reserved.
+            Copyright &copy; {new Date().getFullYear()} Election Commission of India. All rights reserved.
           </p>
           <div className="flex items-center gap-4">
             <Link to="/about" className="hover:text-[#f4c542]">

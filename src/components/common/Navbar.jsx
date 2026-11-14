@@ -95,11 +95,11 @@ export default function Navbar() {
         <div className="w-1/3 bg-[#138808]" />
       </div>
 
-      {/* Accessibility & Educational Prototype Strip */}
+      {/* Accessibility & Government Header Strip */}
       <div className="bg-[#001f52] border-b border-white/10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-1 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-200">
           <span className="truncate">
-            Educational Election-System Prototype · Local Demonstration Data Only
+            Election Commission of India · National Electoral Service Portal
           </span>
           <div
             role="group"

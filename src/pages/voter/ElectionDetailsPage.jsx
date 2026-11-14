@@ -126,7 +126,7 @@ export default function ElectionDetailsPage() {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-4">
           <div>
             <span className="text-xs font-bold uppercase tracking-wider text-[#002868]">
-              Pre-Ballot Eligibility &amp; Schedule Verification
+              Election Details &amp; Eligibility
             </span>
             <h2 className="text-lg font-extrabold text-slate-900 mt-0.5">
               {isLokSabha
@@ -181,7 +181,7 @@ export default function ElectionDetailsPage() {
 
           <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
             <span className="text-slate-500 font-semibold block">
-              Contesting Demo Candidates
+              Contesting Candidates
             </span>
             <strong className="text-sm text-slate-900 mt-0.5 block">
               {ballotCandidates.length} Candidates + NOTA
@@ -197,11 +197,10 @@ export default function ElectionDetailsPage() {
                 Eligibility Verified
               </span>
               <h3 className="text-base font-extrabold text-emerald-950">
-                Ready to Open{' '}
+                Ready to Vote in{' '}
                 {isLokSabha
-                  ? 'Lok Sabha General Election'
-                  : 'State Legislative Assembly'}{' '}
-                Demo Ballot
+                  ? 'Lok Sabha Election'
+                  : 'State Legislative Assembly'}
               </h3>
               <p className="text-emerald-900">{statusExplanation}</p>
             </div>
@@ -220,9 +219,7 @@ export default function ElectionDetailsPage() {
               data-testid="proceed-to-ballot-btn"
               className="px-6 py-3 rounded-xl bg-[#002868] hover:bg-blue-900 text-white text-xs sm:text-sm font-extrabold shadow-xs shrink-0 cursor-pointer"
             >
-              {isLokSabha
-                ? 'Open Lok Sabha Demo Ballot \u2192'
-                : 'Open Assembly Demo Ballot \u2192'}
+              Proceed to Ballot &rarr;
             </button>
           </div>
         ) : validation.alreadyParticipated ? (
@@ -232,7 +229,7 @@ export default function ElectionDetailsPage() {
                 Participation Completed (VOTED)
               </span>
               <h3 className="text-base font-extrabold text-emerald-950">
-                You Have Already Completed Demo Participation for This Election
+                You Have Already Voted in This Election
               </h3>
               <p className="text-emerald-900">{validation.reason}</p>
             </div>
@@ -243,7 +240,7 @@ export default function ElectionDetailsPage() {
               }/receipt`}
               className="px-5 py-2.5 rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-extrabold shrink-0"
             >
-              View Demo Confirmation Receipt &rarr;
+              View Confirmation Receipt &rarr;
             </Link>
           </div>
         ) : (

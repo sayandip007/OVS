@@ -143,13 +143,13 @@ export default function AssemblyResults() {
       <div className="bg-[#002868] text-white rounded-xl p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div className="space-y-1">
           <p className="text-xs text-amber-300 font-semibold">
-            State Legislative Assembly Election Results (STATE_ASSEMBLY)
+            State Legislative Assembly Results
           </p>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
             {assemblyAnalytics.stateName} — {assemblyAnalytics.electionName}
           </h1>
           <p className="text-xs text-blue-100">
-            Independent state-specific Assembly results · Never combined across states or mixed with Lok Sabha
+            Vidhan Sabha State Legislative Assembly Results
           </p>
         </div>
 
@@ -158,7 +158,7 @@ export default function AssemblyResults() {
             htmlFor="assembly-state-select"
             className="block text-xs text-blue-200 mb-1 font-medium"
           >
-            1. Select State / Union Territory
+            Select State / Union Territory
           </label>
           <select
             id="assembly-state-select"
@@ -174,7 +174,7 @@ export default function AssemblyResults() {
               return (
                 <option key={sid} value={sid}>
                   {st.name || st.stateName} ({sid})
-                  {hasAsmElection ? ' — Active Demo Election' : ''}
+                  {hasAsmElection ? ' — Active Election' : ''}
                 </option>
               );
             })}
@@ -185,7 +185,7 @@ export default function AssemblyResults() {
       {/* Quick State Switcher Pills for Configured Demo States */}
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs font-semibold text-slate-600">
-          Quick Select Configured Assembly Elections:
+          State Elections:
         </span>
         {assemblyElections.map((el) => (
           <button

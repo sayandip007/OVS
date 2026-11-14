@@ -112,19 +112,17 @@ export default function Home() {
           <div className="p-6 sm:p-10 lg:p-12 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
             <div className="lg:col-span-7 space-y-5">
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/20 text-xs font-semibold tracking-wider uppercase text-amber-300">
-                <span>National &amp; State Digital Election Infrastructure</span>
+                <span>Election Commission of India</span>
               </div>
 
               <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight leading-tight">
-                Online Voting &amp; Election Management Portal of India
+                National Election Portal
               </h1>
 
               <p className="text-blue-100 text-sm sm:text-base leading-relaxed max-w-2xl">
-                Unified, strictly decoupled architecture supporting nationwide{' '}
-                <strong className="text-white">Lok Sabha General Elections</strong>,{' '}
-                <strong className="text-white">State Legislative Assembly Elections</strong>{' '}
-                across all {totalStatesCount} States and {totalUTCount} Union Territories, and{' '}
-                <strong className="text-amber-300">Simultaneous Multi-Election Participation</strong>.
+                Official digital platform for <strong className="text-white">Lok Sabha General Elections</strong> and{' '}
+                <strong className="text-white">State Legislative Assembly Elections</strong> across all{' '}
+                {totalStatesCount} States and {totalUTCount} Union Territories.
               </p>
 
               {/* Primary Role Selection Buttons (preserving original portal intent + modern portal access) */}
@@ -134,7 +132,7 @@ export default function Home() {
                     onClick={() => navigate('/voter/dashboard')}
                     className="px-6 py-3.5 bg-[#FF9933] hover:bg-amber-500 text-slate-950 font-bold rounded-xl shadow-md transition-all cursor-pointer text-sm sm:text-base"
                   >
-                    Go to Voter Dashboard &rarr;
+                    Voter Dashboard &rarr;
                   </button>
                 ) : (
                   <button
@@ -142,7 +140,7 @@ export default function Home() {
                     onClick={() => navigate('/voter/login')}
                     className="px-6 py-3.5 bg-[#FF9933] hover:bg-amber-500 text-slate-950 font-bold rounded-xl shadow-md transition-all cursor-pointer text-sm sm:text-base"
                   >
-                    I am a Voter (Login / Vote)
+                    Voter Login
                   </button>
                 )}
 
@@ -151,7 +149,7 @@ export default function Home() {
                     onClick={() => navigate('/eci/dashboard')}
                     className="px-6 py-3.5 bg-white hover:bg-blue-50 text-[#002868] font-bold rounded-xl shadow-md transition-all cursor-pointer text-sm sm:text-base"
                   >
-                    Open ECI Officer Console &rarr;
+                    ECI Officer Console &rarr;
                   </button>
                 ) : (
                   <button
@@ -159,7 +157,7 @@ export default function Home() {
                     onClick={() => navigate('/eci/login')}
                     className="px-6 py-3.5 bg-white hover:bg-blue-50 text-[#002868] font-bold rounded-xl shadow-md transition-all cursor-pointer text-sm sm:text-base"
                   >
-                    I am an ECI Officer
+                    ECI Officer Login
                   </button>
                 )}
 
@@ -167,7 +165,7 @@ export default function Home() {
                   to="/voter/register"
                   className="px-5 py-3.5 bg-blue-800/60 hover:bg-blue-800 text-white border border-blue-400/30 font-semibold rounded-xl transition-all text-sm"
                 >
-                  New Voter Registration
+                  Register as Voter
                 </Link>
               </div>
 
@@ -182,15 +180,15 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Right Column: Live National Architecture Snapshot */}
+            {/* Right Column: Electoral Snapshot */}
             <div className="lg:col-span-5 bg-white/10 backdrop-blur-md border border-white/15 rounded-xl p-5 sm:p-6 space-y-4">
               <div className="flex items-center justify-between border-b border-white/15 pb-3">
                 <div>
                   <h2 className="text-base font-bold text-white">
-                    Pan-India Electoral Hierarchy
+                    National Electoral Summary
                   </h2>
                   <p className="text-xs text-blue-200">
-                    Live frontend architecture &amp; constituency dataset
+                    Constituencies and active polling jurisdictions
                   </p>
                 </div>
                 <span className="px-2.5 py-1 rounded bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-xs font-bold">
@@ -209,7 +207,7 @@ export default function Home() {
                   </p>
                 </div>
                 <div className="bg-slate-900/50 border border-white/10 rounded-lg p-3.5">
-                  <p className="text-xs text-blue-200 font-medium">Sample Districts</p>
+                  <p className="text-xs text-blue-200 font-medium">Districts</p>
                   <p className="text-2xl font-extrabold text-white mt-0.5">
                     {districts.length}
                   </p>
@@ -221,7 +219,7 @@ export default function Home() {
                   <p className="text-2xl font-extrabold text-amber-300 mt-0.5">
                     {totalPCCount}{' '}
                     <span className="text-xs font-normal text-blue-200">
-                      (543 Official Cap)
+                      (543 Seats)
                     </span>
                   </p>
                 </div>
@@ -238,23 +236,21 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className="bg-blue-950/70 border border-blue-700/50 rounded-lg p-3.5 text-xs space-y-1.5">
-                <p className="font-bold text-amber-300 uppercase tracking-wider">
-                  Try Simultaneous Elections Demo:
-                </p>
-                <p className="text-blue-100 leading-relaxed">
-                  Login as voter <strong>Aarav Sen</strong> (EPIC:{' '}
-                  <code className="bg-white/15 px-1.5 py-0.5 rounded text-white font-mono">
-                    WBX1234567
-                  </code>{' '}
-                  / Mobile:{' '}
-                  <code className="bg-white/15 px-1.5 py-0.5 rounded text-white font-mono">
-                    9876543210
-                  </code>
-                  , OTP: <code className="font-mono text-white">123456</code>) to vote
-                  independently in both <strong>Lok Sabha 2029 (Krishnanagar PC)</strong>{' '}
-                  and <strong>West Bengal Assembly 2029 (Krishnanagar Uttar AC)</strong>.
-                </p>
+              <div className="bg-blue-950/70 border border-blue-700/50 rounded-lg p-3 text-xs flex items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                  <span className="text-[11px] font-bold text-amber-300 uppercase tracking-wider block">
+                    Quick Test Voter Access
+                  </span>
+                  <span className="text-blue-100 text-xs">
+                    EPIC: <strong className="text-white font-mono">WBX1234567</strong> &bull; OTP: <strong className="text-white font-mono">123456</strong>
+                  </span>
+                </div>
+                <Link
+                  to="/voter/login"
+                  className="px-3 py-1.5 bg-[#FF9933] text-slate-950 rounded-lg font-bold text-xs shrink-0 hover:bg-amber-400"
+                >
+                  Sign In &rarr;
+                </Link>
               </div>
             </div>
           </div>
@@ -283,9 +279,9 @@ export default function Home() {
                 to the Lower House of the Parliament of India.
               </p>
               <ul className="text-xs text-slate-700 space-y-1.5 mb-5 bg-slate-50 p-3.5 rounded-lg border border-slate-200/80">
-                <li>• Uses Parliamentary Constituency (<code className="font-mono">PARLIAMENTARY</code>) mapping</li>
-                <li>• Separate candidate nomination list &amp; independent EVM ballot</li>
-                <li>• Independent participation status per election ID</li>
+                <li>• Elects Members of Parliament (MPs) across 543 Parliamentary seats</li>
+                <li>• Independent candidate nomination list &amp; EVM ballot</li>
+                <li>• Includes NOTA (None of the Above) voting option</li>
               </ul>
             </div>
             <div className="flex items-center gap-3 pt-2 border-t border-slate-100">
@@ -325,9 +321,9 @@ export default function Home() {
                 Lok Sabha elections.
               </p>
               <ul className="text-xs text-slate-700 space-y-1.5 mb-5 bg-slate-50 p-3.5 rounded-lg border border-slate-200/80">
-                <li>• Uses Assembly Constituency (<code className="font-mono">ASSEMBLY</code>) mapping</li>
-                <li>• Scoped strictly to the target State/UT and its Assembly seats</li>
-                <li>• Never conflicts with or overwrites Lok Sabha ballot status</li>
+                <li>• Elects Members of Legislative Assembly (MLAs) to the Vidhan Sabha</li>
+                <li>• Scoped to state-specific Assembly constituencies</li>
+                <li>• Operates simultaneously or independently with Lok Sabha elections</li>
               </ul>
             </div>
             <div className="flex items-center gap-3 pt-2 border-t border-slate-100">
@@ -476,8 +472,7 @@ export default function Home() {
                 Interactive State &amp; Constituency Explorer
               </h2>
               <p className="text-sm text-slate-600 mt-1">
-                Select any Indian State or Union Territory to inspect its official Lok Sabha
-                &amp; Assembly seat counts, sample districts, and constituencies.
+                Select any Indian State or Union Territory to inspect constituency allocations and seat counts.
               </p>
             </div>
             <div className="w-full lg:w-72">
@@ -562,9 +557,6 @@ export default function Home() {
                       <span className="px-2.5 py-0.5 rounded bg-slate-200 text-slate-700 text-xs font-semibold">
                         {selectedState.type === 'UT' ? 'Union Territory' : 'State'}
                       </span>
-                      <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[11px] font-semibold">
-                        {selectedState.metadataSource}
-                      </span>
                     </div>
                     <h3 className="text-2xl font-extrabold text-slate-900 mt-2">
                       {selectedState.stateName}
@@ -616,9 +608,7 @@ export default function Home() {
                             </span>
                           </div>
                           <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[10px] font-semibold">
-                            {pc.metadataSource === 'VERIFIED_OFFICIAL'
-                              ? 'Official'
-                              : 'Demo Sample'}
+                            {pc.reservationType}
                           </span>
                         </li>
                       ))}
@@ -644,9 +634,7 @@ export default function Home() {
                             </span>
                           </div>
                           <span className="px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 text-[10px] font-semibold">
-                            {ac.metadataSource === 'VERIFIED_OFFICIAL'
-                              ? 'Official'
-                              : 'Demo Sample'}
+                            {ac.reservationType}
                           </span>
                         </li>
                       ))}
@@ -658,7 +646,7 @@ export default function Home() {
                 <div className="flex flex-wrap items-center justify-between gap-3 pt-2 text-xs text-slate-600">
                   <div>
                     <span className="font-semibold text-slate-800">
-                      Sample Districts ({stateDistricts.length}):{' '}
+                      Districts ({stateDistricts.length}):{' '}
                     </span>
                     {stateDistricts.map((d) => d.districtName).join(', ')}
                   </div>

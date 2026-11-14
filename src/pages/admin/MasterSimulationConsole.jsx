@@ -266,12 +266,10 @@ export default function MasterSimulationConsole() {
               </span>
             </div>
             <h1 className="text-2xl md:text-3xl font-black tracking-tight">
-              Pan-India Election Simulation & Scale Benchmark
+              Pan-India Election Simulation &amp; Stress Testing
             </h1>
             <p className="text-blue-100/80 text-sm max-w-3xl">
-              Simulate General Parliamentary (Lok Sabha) and all 36 State & Union Territory Legislative
-              Assembly elections on demand. Generate up to 500 candidates per state (~18,000 candidates
-              Pan-India) to verify system responsiveness, data integrity, and strict Zero-Knowledge Secret Ballot compliance.
+              Simulate Lok Sabha and all 36 State &amp; UT Legislative Assembly elections with up to 500 candidates per state to benchmark system throughput and ballot secrecy.
             </p>
           </div>
 

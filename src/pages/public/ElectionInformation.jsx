@@ -45,15 +45,15 @@ export default function ElectionInformation() {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
       <PageHeader
-        badge="Electoral Schedule & Jurisdiction Directory"
-        title="Elections Information Portal"
-        subtitle="Inspect nationwide Lok Sabha General Elections and State Legislative Assembly Elections, their polling schedules, and mapped constituencies."
+        badge="Elections Directory"
+        title="Election Directory"
+        subtitle="Active and scheduled Lok Sabha and State Legislative Assembly elections across India."
         actions={
           <Link
             to="/voter/login"
             className="px-4 py-2 bg-[#FF9933] hover:bg-amber-500 text-slate-950 text-sm font-bold rounded-lg transition-colors"
           >
-            Voter Login to Participate
+            Voter Login
           </Link>
         }
       />
@@ -73,10 +73,10 @@ export default function ElectionInformation() {
         >
           <option value="ALL">All Election Types</option>
           <option value={ELECTION_TYPES.LOK_SABHA}>
-            Lok Sabha General Election (PARLIAMENTARY)
+            Lok Sabha (PC)
           </option>
           <option value={ELECTION_TYPES.STATE_ASSEMBLY}>
-            State Legislative Assembly (ASSEMBLY)
+            State Assembly (AC)
           </option>
         </select>
 

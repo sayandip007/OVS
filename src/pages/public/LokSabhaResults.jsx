@@ -230,13 +230,13 @@ export default function LokSabhaResults() {
       <div className="bg-[#002868] text-white rounded-xl p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div className="space-y-1">
           <p className="text-xs text-amber-300 font-semibold">
-            National Parliamentary Election Results (LOK_SABHA)
+            Lok Sabha General Election
           </p>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
             {nationalAnalytics.electionName}
           </h1>
           <p className="text-xs text-blue-100">
-            Strictly scoped to Parliamentary Constituencies (PC) · Never combined with State Assembly tallies
+            Nationwide Parliamentary Constituencies (543 Seats)
           </p>
         </div>
 

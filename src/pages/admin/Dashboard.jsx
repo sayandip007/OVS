@@ -121,13 +121,13 @@ export default function AdminDashboard() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <span className="text-xs font-bold uppercase tracking-wider text-[#002868]">
-              Election Commission of India • Master Control
+              ECI Command Center
             </span>
             <h1 className="text-2xl font-extrabold text-slate-900 mt-0.5">
-              National &amp; State Election Operations Overview
+              Electoral Operations Overview
             </h1>
             <p className="text-xs text-slate-600 mt-1">
-              Live command centre for Lok Sabha General Elections, State Legislative Assembly Elections, 36 States/UTs, Constituencies, Candidates, and Aggregate Participation.
+              Manage elections, constituencies, candidates, schedules, and certified counting.
             </p>
           </div>
           <div className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs">

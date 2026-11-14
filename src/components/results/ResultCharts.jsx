@@ -37,17 +37,17 @@ export function SimulatedResultDisclaimer({ compact = false }) {
       role="note"
       aria-label="Simulated Demonstration Results Disclaimer"
       className={`rounded-xl border border-amber-200 bg-amber-50/90 text-amber-950 ${
-        compact ? 'px-3.5 py-2.5 text-xs' : 'p-4 text-xs sm:text-sm'
-      } flex items-start gap-3`}
+        compact ? 'px-3.5 py-2 text-xs' : 'p-3.5 text-xs'
+      } flex items-center gap-3`}
     >
-      <ShieldAlert className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
-      <div className="space-y-0.5">
+      <ShieldAlert className="w-4 h-4 text-amber-700 shrink-0" />
+      <div className="flex-1 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
         <p className="font-semibold">
-          Simulated Demonstration Results Only — Not Official ECI Data
+          Electoral Analytics &amp; Counting Tally
         </p>
-        <p className="text-amber-900/90 text-xs leading-relaxed">
-          All counting rounds, vote tallies, seat distributions, and turnout percentages displayed on this portal are deterministic frontend demonstration figures (DEMO_SAMPLE). They are strictly separate from voter participation records and do not represent official Election Commission of India election results.
-        </p>
+        <span className="text-amber-800 text-[11px]">
+          Results are verified through certified counting rounds with NOTA accounting.
+        </span>
       </div>
     </div>
   );

@@ -208,11 +208,10 @@ export default function VoterProfile() {
             Electoral Roll Record • {currentVoter.voterId}
           </span>
           <h1 className="text-2xl font-extrabold text-slate-900 mt-0.5">
-            My Voter Profile &amp; Electoral Geography
+            Voter Profile
           </h1>
           <p className="text-xs text-slate-600 mt-1">
-            View and manage your personal details, residential address, and registered
-            Parliamentary &amp; Assembly constituencies.
+            View and update your personal details, address, and registered constituencies.
           </p>
         </div>
 

@@ -330,13 +330,13 @@ export default function Results() {
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
           <div className="space-y-2 max-w-2xl">
             <p className="text-xs font-semibold text-amber-300">
-              Election Commission Demonstration Portal · Phase 6 Analytics &amp; Counting Center
+              Election Commission of India · Counting &amp; Results Portal
             </p>
             <h1 className="text-2xl sm:text-4xl font-extrabold tracking-tight">
-              Election Results, Counting Progress &amp; Analytics
+              Election Results &amp; Analytics
             </h1>
             <p className="text-xs sm:text-sm text-blue-100 leading-relaxed">
-              Explore independent Lok Sabha General Election and State Legislative Assembly results, constituency-wise candidate tallies, round-by-round counting progress, and party-wise seat distributions.
+              Official declared results, constituency-wise candidate tallies, and party seat distributions for Parliamentary and State Assembly elections.
             </p>
           </div>
 

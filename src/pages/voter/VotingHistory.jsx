@@ -35,7 +35,7 @@ function BackendVotingHistory() {
   if (loading) {
     return (
       <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-sm text-slate-500">
-        Loading demo participation history...
+        Loading participation history...
       </div>
     );
   }
@@ -72,7 +72,7 @@ function BackendVotingHistory() {
                 <th className="py-3 px-4">Constituency</th>
                 <th className="py-3 px-4">Status</th>
                 <th className="py-3 px-4">Timestamp</th>
-                <th className="py-3 px-4">Demo Reference</th>
+                <th className="py-3 px-4">Reference ID</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
@@ -101,10 +101,10 @@ function BackendVotingHistory() {
       <div className="bg-white rounded-2xl border border-slate-200 p-5 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-extrabold text-slate-900">
-            Demo Participation History
+            Voting History
           </h1>
           <p className="text-xs text-slate-600">
-            Educational simulation records only. Candidate choices are never recorded or displayed.
+            Secret ballot participation records. Candidate choices are never recorded or displayed.
           </p>
         </div>
         <Link
@@ -201,7 +201,7 @@ function LocalDemoVotingHistory() {
               <th className="py-3.5 px-4">Constituency</th>
               <th className="py-3.5 px-4">Participation Status</th>
               <th className="py-3.5 px-4">Participation Date</th>
-              <th className="py-3.5 px-4">Demo Reference ID</th>
+              <th className="py-3.5 px-4">Reference ID</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200">
@@ -259,14 +259,13 @@ function LocalDemoVotingHistory() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <span className="text-xs font-bold uppercase tracking-wider text-[#002868]">
-              Cryptographic Secrecy &amp; Turnout Ledger
+              Electoral Ledger
             </span>
             <h1 className="text-2xl font-extrabold text-slate-900 mt-0.5">
-              My Voting &amp; Participation History
+              Voting History
             </h1>
             <p className="text-xs text-slate-600 mt-1">
-              Separate Lok Sabha and State Legislative Assembly participation records for{' '}
-              <strong>{currentVoter.fullName}</strong> (EPIC:{' '}
+              Participation records for <strong>{currentVoter.fullName}</strong> (EPIC:{' '}
               <code className="font-mono font-bold">{currentVoter.voterRef}</code>).
             </p>
           </div>
@@ -274,20 +273,17 @@ function LocalDemoVotingHistory() {
             to="/voter/elections"
             className="px-4 py-2.5 rounded-xl bg-[#002868] hover:bg-blue-900 text-white text-xs font-bold"
           >
-            Back to My Elections &rarr;
+            My Elections &rarr;
           </Link>
         </div>
 
-        <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-950 flex items-start gap-3">
+        <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-950 flex items-start gap-3">
           <span className="px-2 py-0.5 rounded bg-emerald-700 text-white font-bold uppercase text-[10px] shrink-0 mt-0.5">
             Secrecy Guarantee
           </span>
           <p className="leading-relaxed">
-            In strict compliance with Rule 49M of the Conduct of Elections Rules, this
-            participation history records <strong>only whether you participated</strong>,
-            the timestamp, and a non-revealing participation reference ID. Your selected
-            candidate, political party, or ballot choice is{' '}
-            <strong>never stored or displayed</strong> in your voter profile.
+            In compliance with Conduct of Elections Rules, this history records <strong>only participation status</strong>,
+            timestamp, and reference ID. Your selected candidate or ballot choice is <strong>never stored or displayed</strong>.
           </p>
         </div>
       </div>
