@@ -173,8 +173,20 @@ enum AnnouncementAudience {
 
 enum AnnouncementStatus {
   DRAFT
+  UNDER_REVIEW
+  APPROVED
+  SCHEDULED
   PUBLISHED
   ARCHIVED
+}
+
+enum NotificationDeliveryStatus {
+  PENDING
+  PROCESSING
+  SENT
+  DELIVERED
+  FAILED
+  CANCELLED
 }
 
 enum NotificationType {
@@ -313,6 +325,7 @@ model User {
   voterProfile        VoterProfile?
   adminUser           AdminUser?
   sessions            UserSession[]
+  notificationPreference NotificationPreference?
 
   @@map("users")
 }
@@ -746,6 +759,8 @@ model AdminUser {
   correctedSessions           ResultCorrectionHistory[]  @relation("SessionCorrector")
   approvedTieResolutions      TieResolution[]            @relation("TieResolutionApprover")
   createdAnnouncements        Announcement[]             @relation("AnnouncementCreator")
+  approvedAnnouncements       Announcement[]             @relation("AnnouncementApprover")
+  adminNotifications          AdminNotification[]
 
   @@index([role, status])
   @@index([assignedStateId])
