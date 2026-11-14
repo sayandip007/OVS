@@ -6,6 +6,7 @@ import { AuthProvider } from './context/AuthContext';
 import { VoterProvider } from './context/VoterContext';
 import ErrorBoundary from './components/common/ErrorBoundary';
 import Notification from './components/common/Notification';
+import MaintenanceBanner from './components/common/MaintenanceBanner';
 import AppRoutes from './routes/AppRoutes';
 
 export default function App() {
@@ -16,6 +17,7 @@ export default function App() {
           <ElectionProvider>
             <AuthProvider>
               <VoterProvider>
+                <MaintenanceBanner />
                 <Notification />
                 <AppRoutes />
               </VoterProvider>

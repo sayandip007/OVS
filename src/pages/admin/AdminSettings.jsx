@@ -14,8 +14,18 @@ import {
   Zap,
   Database,
 } from 'lucide-react';
+import BackendSystemSettings from '../../components/admin/BackendSystemSettings';
+import { frontendEnv } from '../../config/env';
 
 export default function AdminSettings() {
+  if (frontendEnv.isBackendApi) {
+    return <BackendSystemSettings />;
+  }
+
+  return <LocalDemoAdminSettings />;
+}
+
+function LocalDemoAdminSettings() {
   const navigate = useNavigate();
   const {
     states,

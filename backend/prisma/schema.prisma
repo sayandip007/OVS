@@ -189,6 +189,29 @@ enum NotificationDeliveryStatus {
   CANCELLED
 }
 
+enum SettingValueType {
+  STRING
+  NUMBER
+  BOOLEAN
+  JSON
+}
+
+enum SettingCategory {
+  PLATFORM
+  ELECTION_OPERATIONS
+  VOTING
+  SECURITY
+  NOTIFICATIONS
+  DEMO_SIMULATION
+}
+
+enum MaintenanceState {
+  NORMAL
+  SCHEDULED_MAINTENANCE
+  MAINTENANCE_ACTIVE
+  READ_ONLY_MODE
+}
+
 enum NotificationType {
   ELECTION_ANNOUNCEMENT
   NOMINATION_SCHEDULE
@@ -761,6 +784,11 @@ model AdminUser {
   createdAnnouncements        Announcement[]             @relation("AnnouncementCreator")
   approvedAnnouncements       Announcement[]             @relation("AnnouncementApprover")
   adminNotifications          AdminNotification[]
+  updatedSettings             SystemSetting[]            @relation("SettingUpdater")
+  settingHistoryChanges       SystemSettingHistory[]     @relation("SettingHistoryAdmin")
+  updatedFeatureFlags         FeatureFlag[]              @relation("FeatureFlagUpdater")
+  featureFlagHistoryChanges   FeatureFlagHistory[]       @relation("FeatureFlagHistoryAdmin")
+  activatedMaintenanceSchedules MaintenanceSchedule[]    @relation("MaintenanceAdmin")
 
   @@index([role, status])
   @@index([assignedStateId])
@@ -1111,4 +1139,101 @@ model NotificationDelivery {
   @@index([recipientUserId])
   @@index([announcementId])
   @@map("notification_deliveries")
+}
+
+// ============================================================================
+// SYSTEM SETTINGS, FEATURE FLAGS & MAINTENANCE (Models 26–30)
+// ============================================================================
+
+model SystemSetting {
+  key             String                @id @db.VarChar(100)
+  category        SettingCategory       @default(PLATFORM)
+  valueType       SettingValueType      @default(STRING) @map("value_type")
+  value           String                @db.Text
+  defaultValue    String                @db.Text @map("default_value")
+  description     String                @db.Text
+  isEditable      Boolean               @default(true) @map("is_editable")
+  isSensitive     Boolean               @default(false) @map("is_sensitive")
+  isPublic        Boolean               @default(false) @map("is_public")
+  requiresRestart Boolean               @default(false) @map("requires_restart")
+  version         Int                   @default(1)
+  updatedByAdminId String?              @db.Uuid @map("updated_by_admin_id")
+  createdAt       DateTime              @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt       DateTime              @updatedAt @db.Timestamptz(6) @map("updated_at")
+
+  updatedByAdmin  AdminUser?            @relation("SettingUpdater", fields: [updatedByAdminId], references: [id], onDelete: SetNull)
+  history         SystemSettingHistory[]
+
+  @@index([category])
+  @@map("system_settings")
+}
+
+model SystemSettingHistory {
+  id            String         @id @default(uuid()) @db.Uuid
+  settingKey    String         @db.VarChar(100) @map("setting_key")
+  previousValue String?        @db.Text @map("previous_value")
+  newValue      String         @db.Text @map("new_value")
+  changeReason  String         @db.Text @map("change_reason")
+  version       Int
+  adminId       String?        @db.Uuid @map("admin_id")
+  createdAt     DateTime       @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  setting       SystemSetting  @relation(fields: [settingKey], references: [key], onDelete: Cascade)
+  admin         AdminUser?     @relation("SettingHistoryAdmin", fields: [adminId], references: [id], onDelete: SetNull)
+
+  @@index([settingKey, version])
+  @@index([adminId, createdAt])
+  @@map("system_setting_history")
+}
+
+model FeatureFlag {
+  key               String               @id @db.VarChar(100)
+  description       String               @db.Text
+  isEnabled         Boolean              @default(false) @map("is_enabled")
+  rolloutPercentage Int                  @default(0) @map("rollout_percentage")
+  targetRoles       String[]             @default([]) @map("target_roles")
+  metadata          Json?
+  updatedByAdminId  String?              @db.Uuid @map("updated_by_admin_id")
+  createdAt         DateTime             @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt         DateTime             @updatedAt @db.Timestamptz(6) @map("updated_at")
+
+  updatedByAdmin    AdminUser?           @relation("FeatureFlagUpdater", fields: [updatedByAdminId], references: [id], onDelete: SetNull)
+  history           FeatureFlagHistory[]
+
+  @@map("feature_flags")
+}
+
+model FeatureFlagHistory {
+  id                String       @id @default(uuid()) @db.Uuid
+  flagKey           String       @db.VarChar(100) @map("flag_key")
+  wasEnabled        Boolean      @map("was_enabled")
+  isEnabled         Boolean      @map("is_enabled")
+  rolloutPercentage Int          @map("rollout_percentage")
+  changeReason      String       @db.Text @map("change_reason")
+  adminId           String?      @db.Uuid @map("admin_id")
+  createdAt         DateTime     @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  flag              FeatureFlag  @relation(fields: [flagKey], references: [key], onDelete: Cascade)
+  admin             AdminUser?   @relation("FeatureFlagHistoryAdmin", fields: [adminId], references: [id], onDelete: SetNull)
+
+  @@index([flagKey, createdAt])
+  @@map("feature_flag_history")
+}
+
+model MaintenanceSchedule {
+  id                 String           @id @default(uuid()) @db.Uuid
+  state              MaintenanceState @default(NORMAL)
+  message            String           @default("System maintenance in progress. Please check back later.") @db.Text
+  startAt            DateTime?        @db.Timestamptz(6) @map("start_at")
+  endAt              DateTime?        @db.Timestamptz(6) @map("end_at")
+  isEmergency        Boolean          @default(false) @map("is_emergency")
+  reason             String?          @db.Text
+  activatedByAdminId String?          @db.Uuid @map("activated_by_admin_id")
+  createdAt          DateTime         @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt          DateTime         @updatedAt @db.Timestamptz(6) @map("updated_at")
+
+  activatedByAdmin   AdminUser?       @relation("MaintenanceAdmin", fields: [activatedByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([state, startAt, endAt])
+  @@map("maintenance_schedules")
 }

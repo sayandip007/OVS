@@ -639,6 +639,59 @@ export function createOvsApiClient(options = {}) {
           }),
         getStats: () => request('/admin/notifications/statistics'),
       },
+
+      // Phase 8.12 System Settings, Feature Flags & Maintenance
+      settings: {
+        list: (query) => request('/admin/system/settings', { query }),
+        get: (key) => request(`/admin/system/settings/${encodeURIComponent(key)}`),
+        update: (key, data, csrfToken) =>
+          request(`/admin/system/settings/${encodeURIComponent(key)}`, {
+            method: 'PUT',
+            body: data,
+            csrfToken,
+          }),
+        bulkUpdate: (data, csrfToken) =>
+          request('/admin/system/settings/bulk', {
+            method: 'PUT',
+            body: data,
+            csrfToken,
+          }),
+        rollback: (key, data, csrfToken) =>
+          request(`/admin/system/settings/${encodeURIComponent(key)}/rollback`, {
+            method: 'POST',
+            body: data,
+            csrfToken,
+          }),
+        getHistory: (key) =>
+          request(`/admin/system/settings/${encodeURIComponent(key)}/history`),
+      },
+
+      features: {
+        list: () => request('/admin/system/features'),
+        get: (key) => request(`/admin/system/features/${encodeURIComponent(key)}`),
+        update: (key, data, csrfToken) =>
+          request(`/admin/system/features/${encodeURIComponent(key)}`, {
+            method: 'PUT',
+            body: data,
+            csrfToken,
+          }),
+        getHistory: (key) =>
+          request(`/admin/system/features/${encodeURIComponent(key)}/history`),
+      },
+
+      maintenance: {
+        getStatus: () => request('/admin/system/maintenance'),
+        update: (data, csrfToken) =>
+          request('/admin/system/maintenance', {
+            method: 'PUT',
+            body: data,
+            csrfToken,
+          }),
+      },
+
+      diagnostics: {
+        get: () => request('/health/diagnostics'),
+      },
     },
 
     publicAnalytics: {
@@ -703,6 +756,11 @@ export function createOvsApiClient(options = {}) {
         request(
           `/voter/elections/${encodeURIComponent(electionId)}/participation`
         ),
+    },
+
+    // Phase 8.12 Public Platform Configuration
+    publicConfig: {
+      get: () => request('/system/public-config'),
     },
   };
 }

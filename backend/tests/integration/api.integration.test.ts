@@ -2054,4 +2054,158 @@ describe('OVS Phase 8.2–8.4 — Live PostgreSQL & Supertest API Integration Su
       assert.ok(Array.isArray(delivRes.body.data));
     });
   });
+
+  describe('17. Phase 8.12 — System Settings, Feature Flags & Operational Administration Suite (Live PostgreSQL)', () => {
+    let superCookie: string;
+    let wbCookie: string;
+    let audCookie: string;
+
+    test('Authenticates admin actors for Phase 8.12 settings workflows', async () => {
+      const s = await request(app)
+        .post('/api/v1/admin/auth/login')
+        .send({ identifier: 'super.ci@ovs-test.local', password: 'SuperCiSecret#2026!' });
+      assert.equal(s.status, 200);
+      superCookie = (s.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
+
+      const wb = await request(app)
+        .post('/api/v1/admin/auth/login')
+        .send({ identifier: 'wb.ci@ovs-test.local', password: 'WbCiPassword#2026!' });
+      assert.equal(wb.status, 200);
+      wbCookie = (wb.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
+
+      const aud = await request(app)
+        .post('/api/v1/admin/auth/login')
+        .send({ identifier: 'auditor.ci@ovs-test.local', password: 'AuditorCiPass#2026!' });
+      assert.equal(aud.status, 200);
+      audCookie = (aud.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
+    });
+
+    test('SUPER_ADMIN lists initialized settings and verifies registry catalog', async () => {
+      const res = await request(app)
+        .get('/api/v1/admin/system/settings')
+        .set('Cookie', superCookie);
+
+      assert.equal(res.status, 200);
+      assert.ok(Array.isArray(res.body.settings));
+      assert.ok(res.body.settings.length >= 10);
+
+      const siteName = res.body.settings.find((s: any) => s.key === 'platform.siteName');
+      assert.ok(siteName);
+      assert.equal(typeof siteName.value, 'string');
+    });
+
+    test('Public config endpoint exposes public settings and maintenance status without auth', async () => {
+      const res = await request(app).get('/api/v1/system/public-config');
+      assert.equal(res.status, 200);
+      assert.ok(res.body.config);
+      assert.ok(res.body.config.siteName);
+      assert.ok(res.body.config.maintenance);
+      assert.ok(res.body.config.features);
+    });
+
+    test('SUPER_ADMIN updates setting with optimistic concurrency check', async () => {
+      // 1. Get current version
+      const currentRes = await request(app)
+        .get('/api/v1/admin/system/settings/platform.siteName')
+        .set('Cookie', superCookie);
+      assert.equal(currentRes.status, 200);
+      const currentVer = currentRes.body.setting.version;
+
+      // 2. Stale version update must fail with 409
+      const staleRes = await request(app)
+        .put('/api/v1/admin/system/settings/platform.siteName')
+        .set('Cookie', superCookie)
+        .send({
+          value: 'Stale Update Attempt',
+          expectedVersion: currentVer + 99,
+          changeReason: 'Should fail with 409',
+        });
+      assert.equal(staleRes.status, 409);
+
+      // 3. Valid update succeeds
+      const updateRes = await request(app)
+        .put('/api/v1/admin/system/settings/platform.siteName')
+        .set('Cookie', superCookie)
+        .send({
+          value: 'ECI Digital Voting System (Phase 8.12 Live)',
+          expectedVersion: currentVer,
+          changeReason: 'Live integration verification update',
+        });
+      assert.equal(updateRes.status, 200);
+      assert.equal(updateRes.body.setting.version, currentVer + 1);
+      assert.equal(updateRes.body.setting.value, 'ECI Digital Voting System (Phase 8.12 Live)');
+    });
+
+    test('RBAC: STATE_ADMIN is denied global settings modification with 403 Forbidden', async () => {
+      const res = await request(app)
+        .put('/api/v1/admin/system/settings/platform.siteName')
+        .set('Cookie', wbCookie)
+        .send({
+          value: 'Unauthorized Mutation',
+          expectedVersion: 1,
+          changeReason: 'State admin unauthorized update',
+        });
+      assert.equal(res.status, 403);
+    });
+
+    test('RBAC: READ_ONLY_AUDITOR has read access but zero mutation capability', async () => {
+      const readRes = await request(app)
+        .get('/api/v1/admin/system/settings')
+        .set('Cookie', audCookie);
+      assert.equal(readRes.status, 200);
+
+      const mutateRes = await request(app)
+        .put('/api/v1/admin/system/settings/platform.siteName')
+        .set('Cookie', audCookie)
+        .send({
+          value: 'Auditor Mutation',
+          expectedVersion: 1,
+          changeReason: 'Auditor unauthorized mutation',
+        });
+      assert.equal(mutateRes.status, 403);
+    });
+
+    test('SUPER_ADMIN manages feature flags and inspects history', async () => {
+      const listRes = await request(app)
+        .get('/api/v1/admin/system/features')
+        .set('Cookie', superCookie);
+      assert.equal(listRes.status, 200);
+      assert.ok(Array.isArray(listRes.body.flags));
+
+      const updateRes = await request(app)
+        .put('/api/v1/admin/system/features/feat.advanced_analytics')
+        .set('Cookie', superCookie)
+        .send({
+          isEnabled: true,
+          rolloutPercentage: 75,
+          changeReason: 'Rollout increment to 75 percent',
+        });
+      assert.equal(updateRes.status, 200);
+      assert.equal(updateRes.body.flag.rolloutPercentage, 75);
+
+      const histRes = await request(app)
+        .get('/api/v1/admin/system/features/feat.advanced_analytics/history')
+        .set('Cookie', superCookie);
+      assert.equal(histRes.status, 200);
+      assert.ok(Array.isArray(histRes.body.history));
+      assert.ok(histRes.body.history.length >= 1);
+    });
+
+    test('Authenticated admin inspects operational diagnostics without credential leakage', async () => {
+      const diagRes = await request(app)
+        .get('/api/v1/health/diagnostics')
+        .set('Cookie', superCookie);
+      assert.equal(diagRes.status, 200);
+      assert.ok(diagRes.body.diagnostics);
+      assert.equal(diagRes.body.diagnostics.service, 'ovs-backend');
+      assert.ok(diagRes.body.diagnostics.memory);
+      assert.ok(diagRes.body.diagnostics.database);
+
+      // Verify no secrets leaked
+      const text = JSON.stringify(diagRes.body);
+      assert.equal(text.includes('DATABASE_URL'), false);
+      assert.equal(text.includes('SESSION_SECRET'), false);
+      assert.equal(text.includes('password'), false);
+    });
+  });
 });

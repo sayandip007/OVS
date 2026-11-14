@@ -69,6 +69,16 @@ import {
   createPublicAnnouncementsRouter,
   type CreatePublicAnnouncementsRouterOptions,
 } from './modules/notifications/public.announcements.routes.js';
+import {
+  createAdminSystemSettingsRouter,
+  createAdminFeatureFlagsRouter,
+  createAdminMaintenanceRouter,
+  createHealthDiagnosticsRouter,
+  createPublicConfigRouter,
+  type CreateSystemSettingsRouterOptions,
+} from './modules/system-settings/settings.routes.js';
+import { createMaintenanceMiddleware } from './modules/system-settings/maintenance.middleware.js';
+import { MaintenanceService } from './modules/system-settings/maintenance.service.js';
 
 export interface CreateAppOptions {
   clientOrigin?: string;
@@ -88,6 +98,8 @@ export interface CreateAppOptions {
   voterNotificationsOptions?: CreateVoterNotificationsRouterOptions;
   adminAnnouncementsOptions?: CreateAdminAnnouncementsRouterOptions;
   publicAnnouncementsOptions?: CreatePublicAnnouncementsRouterOptions;
+  systemSettingsOptions?: CreateSystemSettingsRouterOptions;
+  maintenanceService?: MaintenanceService;
 }
 
 export function createApp(options: CreateAppOptions = {}): Express {
@@ -116,8 +128,31 @@ export function createApp(options: CreateAppOptions = {}): Express {
   }
 
   app.use(
+    '/api/v1/health/diagnostics',
+    createHealthDiagnosticsRouter(options.systemSettingsOptions)
+  );
+  app.use(
     '/api/v1/health',
     createHealthRouter({ readinessCheck: options.readinessCheck })
+  );
+  app.use(
+    '/api/v1/system/public-config',
+    createPublicConfigRouter(options.systemSettingsOptions)
+  );
+
+  app.use(createMaintenanceMiddleware(options.maintenanceService));
+
+  app.use(
+    '/api/v1/admin/system/settings',
+    createAdminSystemSettingsRouter(options.systemSettingsOptions)
+  );
+  app.use(
+    '/api/v1/admin/system/features',
+    createAdminFeatureFlagsRouter(options.systemSettingsOptions)
+  );
+  app.use(
+    '/api/v1/admin/system/maintenance',
+    createAdminMaintenanceRouter(options.systemSettingsOptions)
   );
   app.use(
     '/api/v1/auth',
