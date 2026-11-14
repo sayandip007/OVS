@@ -34,6 +34,7 @@ export default function MasterSimulationConsole() {
     results,
     runClientSidePanIndiaSimulation,
     purgeClientSideSimulation,
+    loadRealCandidatesDataset,
   } = useElection();
   const { notify } = useNotification();
 
@@ -48,6 +49,7 @@ export default function MasterSimulationConsole() {
 
   // Execution state
   const [isRunning, setIsRunning] = useState(false);
+  const [isLoadingReal, setIsLoadingReal] = useState(false);
   const [progress, setProgress] = useState({
     percentage: 0,
     currentState: '',
@@ -214,6 +216,35 @@ export default function MasterSimulationConsole() {
     }
   };
 
+  const handleLoadRealCandidates = async () => {
+    setIsLoadingReal(true);
+    try {
+      const resp = await fetch('/data/real_candidates_2024.json');
+      if (!resp.ok) {
+        throw new Error('Dataset file not found at /data/real_candidates_2024.json.');
+      }
+      const data = await resp.json();
+      loadRealCandidatesDataset(data, {
+        adminId: currentAdmin?.id,
+        adminRole: currentAdmin?.role,
+      });
+
+      notify({
+        type: 'success',
+        title: 'Official 2024 Candidates Loaded',
+        message: `Successfully loaded ${data.totalCandidates.toLocaleString()} candidates across ${data.totalConstituencies} Parliamentary Constituencies into active roster!`,
+      });
+    } catch (err) {
+      notify({
+        type: 'error',
+        title: 'Failed to Load Dataset',
+        message: err.message,
+      });
+    } finally {
+      setIsLoadingReal(false);
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12">
       {/* 1. Header Banner */}
@@ -311,6 +342,47 @@ export default function MasterSimulationConsole() {
           <p className="text-[11px] font-medium text-slate-500 mt-1">
             {lastDiagnostics ? `${Math.round((lastDiagnostics.candidatesGenerated?.length || lastDiagnostics.candidatesGenerated || 0) / ((lastDiagnostics.executionTimeMs || 1) / 1000))} cand/sec` : 'Ready to benchmark'}
           </p>
+        </div>
+      </div>
+
+      {/* Official 2024 Lok Sabha Real Data Card */}
+      <div className="bg-gradient-to-r from-emerald-950 via-teal-950 to-slate-900 text-white rounded-2xl p-6 shadow-md border border-emerald-700/40">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-400/20 text-emerald-300 border border-emerald-400/30">
+                Official ECI 2024 Dataset
+              </span>
+              <span className="text-xs text-emerald-200/80 font-medium">
+                8,441 Candidates • 543 Parliamentary Constituencies • 749 Parties
+              </span>
+            </div>
+            <h3 className="text-lg font-black tracking-tight">
+              Real 2024 Lok Sabha Contesting Candidates Roster
+            </h3>
+            <p className="text-xs text-emerald-100/70 max-w-2xl">
+              Processed directly from your uploaded <code className="bg-emerald-900/60 px-1 py-0.5 rounded text-emerald-300">candidate_data.csv</code> with real candidate names, genders, ages, addresses, relations, photos, and constituency numbers.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleLoadRealCandidates}
+            disabled={isLoadingReal}
+            className="inline-flex items-center gap-2 px-5 py-3 rounded-xl text-xs font-black uppercase tracking-wider bg-emerald-500 hover:bg-emerald-400 text-slate-950 transition-colors cursor-pointer shadow-md self-start md:self-center shrink-0 disabled:opacity-50"
+          >
+            {isLoadingReal ? (
+              <>
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                <span>Loading 8,441 Candidates...</span>
+              </>
+            ) : (
+              <>
+                <Database className="w-4 h-4" />
+                <span>Load 8,441 Real Candidates Into Active Roster</span>
+              </>
+            )}
+          </button>
         </div>
       </div>
 

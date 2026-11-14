@@ -357,6 +357,19 @@ function LocalDemoCandidateManagement() {
 
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
+                Photo URL (Web Link or Local Asset)
+              </label>
+              <input
+                type="text"
+                placeholder="https://... or /assets/candidates/..."
+                value={form.photoUrl}
+                onChange={(e) => setForm({ ...form, photoUrl: e.target.value })}
+                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
                 Preset Photo
               </label>
               <select
@@ -364,6 +377,7 @@ function LocalDemoCandidateManagement() {
                 onChange={(e) => setForm({ ...form, photoUrl: e.target.value })}
                 className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white"
               >
+                <option value="">Select Preset...</option>
                 {CANDIDATE_PHOTO_OPTIONS.map((opt) => (
                   <option key={opt.id} value={opt.src}>
                     {opt.label}
@@ -525,8 +539,13 @@ function LocalDemoCandidateManagement() {
                   <tr key={cand.candidateId} className="hover:bg-slate-50">
                     <td className="py-2.5 px-3 flex items-center gap-2.5">
                       <img
-                        src={cand.photoUrl}
+                        src={cand.photoUrl || cand.photograph || defaultAvatar}
                         alt={cand.name}
+                        referrerPolicy="no-referrer"
+                        onError={(e) => {
+                          e.currentTarget.onerror = null;
+                          e.currentTarget.src = defaultAvatar;
+                        }}
                         className="w-9 h-9 rounded-lg object-cover border border-slate-200"
                       />
                       <div>
@@ -542,6 +561,11 @@ function LocalDemoCandidateManagement() {
                           <img
                             src={party.symbolUrl}
                             alt={party.abbreviation}
+                            referrerPolicy="no-referrer"
+                            onError={(e) => {
+                              e.currentTarget.onerror = null;
+                              e.currentTarget.src = eciLogo;
+                            }}
                             className="w-5 h-5 object-contain"
                           />
                         )}

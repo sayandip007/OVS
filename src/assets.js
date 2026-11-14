@@ -18,12 +18,23 @@ import notaImg from '../nota.jpg';
 import notaLogo from '../nota.png';
 
 export const PARTY_SYMBOL_OPTIONS = [
-  { id: 'logo1', label: 'Symbol 1 (Lotus)', name: 'Lotus Symbol', src: logo1 },
-  { id: 'logo2', label: 'Symbol 2 (Hand)', name: 'Hand Symbol', src: logo2 },
-  { id: 'logo3', label: 'Symbol 3 (Bicycle)', name: 'Bicycle Symbol', src: logo3 },
-  { id: 'logo4', label: 'Symbol 4 (Hammer & Sickle)', name: 'Star & Sickle Symbol', src: logo4 },
-  { id: 'logo5', label: 'Symbol 5 (Flowers & Grass)', name: 'Twin Flowers Symbol', src: logo5 },
-  { id: 'logo6', label: 'Symbol 6 (Elephant)', name: 'Elephant Symbol', src: logo6 },
+  { id: 'logo1', label: 'BJP (Lotus)', name: 'Lotus Symbol', src: logo1 },
+  { id: 'logo2', label: 'INC (Hand)', name: 'Hand Symbol', src: logo2 },
+  { id: 'aap', label: 'AAP (Broom)', name: 'Broom Symbol', src: '/assets/parties/aap.svg' },
+  { id: 'logo3', label: 'TDP (Bicycle)', name: 'Bicycle Symbol', src: logo3 },
+  { id: 'sp', label: 'SP (Bicycle)', name: 'Bicycle Symbol', src: '/assets/parties/sp.svg' },
+  { id: 'logo4', label: 'CPI(M) (Hammer & Sickle)', name: 'Star & Sickle Symbol', src: logo4 },
+  { id: 'logo5', label: 'AITC (Twin Flowers)', name: 'Twin Flowers Symbol', src: logo5 },
+  { id: 'logo6', label: 'BSP (Elephant)', name: 'Elephant Symbol', src: logo6 },
+  { id: 'dmk', label: 'DMK (Rising Sun)', name: 'Rising Sun Symbol', src: '/assets/parties/dmk.svg' },
+  { id: 'aiadmk', label: 'AIADMK (Two Leaves)', name: 'Two Leaves Symbol', src: '/assets/parties/aiadmk.svg' },
+  { id: 'ysrcp', label: 'YSRCP (Ceiling Fan)', name: 'Ceiling Fan Symbol', src: '/assets/parties/ysrcp.svg' },
+  { id: 'ss', label: 'Shiv Sena (Bow & Arrow)', name: 'Bow & Arrow Symbol', src: '/assets/parties/ss.svg' },
+  { id: 'ncp', label: 'NCP (Clock)', name: 'Clock Symbol', src: '/assets/parties/ncp.svg' },
+  { id: 'jdu', label: 'JD(U) (Arrow)', name: 'Arrow Symbol', src: '/assets/parties/jdu.svg' },
+  { id: 'rjd', label: 'RJD (Lantern)', name: 'Lantern Symbol', src: '/assets/parties/rjd.svg' },
+  { id: 'bjd', label: 'BJD (Conch)', name: 'Conch Symbol', src: '/assets/parties/bjd.svg' },
+  { id: 'aimim', label: 'AIMIM (Kite)', name: 'Kite Symbol', src: '/assets/parties/aimim.svg' },
   { id: 'eci', label: 'Independent / Free Symbol', name: 'Free Election Symbol', src: eciLogo },
 ];
 

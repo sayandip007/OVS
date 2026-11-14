@@ -2570,6 +2570,66 @@ export function ElectionProvider({ children }) {
     [store, syncKey, appendAuditLog]
   );
 
+  const loadRealCandidatesDataset = useCallback(
+    (dataset, actor = {}) => {
+      if (!dataset || !Array.isArray(dataset.candidates)) {
+        return { ok: false, error: 'Invalid real candidates dataset payload.' };
+      }
+
+      const ls2024Election = {
+        id: 'LS-2024',
+        name: 'General Parliamentary Election (Lok Sabha 2024)',
+        type: 'LOK_SABHA',
+        year: 2024,
+        status: 'POLLING_COMPLETED',
+        startDate: '2024-04-19',
+        endDate: '2024-06-01',
+        countingDate: '2024-06-04',
+        targetJurisdiction: 'National',
+        description:
+          'Official 18th Lok Sabha General Elections across 543 Parliamentary Constituencies.',
+        metadataSource: METADATA_SOURCES.VERIFIED_OFFICIAL,
+      };
+
+      const updatedElections = [
+        ...(store.elections || []).filter((e) => (e.id || e.electionId) !== 'LS-2024'),
+        ls2024Election,
+      ];
+
+      // Merge parties
+      const existingPartyIds = new Set((store.parties || []).map((p) => p.id || p.partyId));
+      const newParties = (dataset.parties || []).filter((p) => !existingPartyIds.has(p.id));
+      const updatedParties = [...(store.parties || []), ...newParties];
+
+      // Merge candidates
+      const existingCandidateIds = new Set(
+        (store.candidates || []).map((c) => c.id || c.candidateId)
+      );
+      const newCandidates = dataset.candidates.filter((c) => !existingCandidateIds.has(c.id));
+      const updatedCandidates = [...(store.candidates || []), ...newCandidates];
+
+      syncKey(STORAGE_KEYS.ELECTIONS, 'elections', updatedElections);
+      syncKey(STORAGE_KEYS.PARTIES, 'parties', updatedParties);
+      syncKey(STORAGE_KEYS.CANDIDATES, 'candidates', updatedCandidates);
+
+      appendAuditLog({
+        action: 'REAL_CANDIDATE_DATASET_LOADED',
+        entityType: 'CANDIDATE_REGISTRY',
+        entityId: 'LS-2024',
+        adminId: actor.adminId || 'ECI-SUPER-001',
+        adminRole: actor.adminRole || 'SUPER_ADMIN',
+        description: `Imported official 2024 Lok Sabha candidate list: ${newCandidates.length} candidates across ${dataset.totalConstituencies || 543} constituencies.`,
+      });
+
+      return {
+        ok: true,
+        loadedCandidatesCount: newCandidates.length,
+        totalConstituencies: dataset.totalConstituencies,
+      };
+    },
+    [store.elections, store.parties, store.candidates, syncKey, appendAuditLog]
+  );
+
   const exportDemoDatasets = useCallback(() => {
     return {
       exportedAt: new Date().toISOString(),
@@ -2743,6 +2803,7 @@ export function ElectionProvider({ children }) {
         resetDemoEnvironment: resetDemoData,
         runClientSidePanIndiaSimulation,
         purgeClientSideSimulation,
+        loadRealCandidatesDataset,
         panIndiaStates: PAN_INDIA_36_STATES,
         exportDemoDatasets,
         importDemoDatasets,

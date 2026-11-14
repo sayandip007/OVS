@@ -29,6 +29,8 @@
     "prisma:generate": "prisma generate --schema=backend/prisma/schema.prisma",
     "prisma:migrate:deploy": "prisma migrate deploy --schema=backend/prisma/schema.prisma",
     "prisma:seed": "tsx backend/prisma/seed.ts",
+    "import:candidates": "node scripts/process-real-candidates.mjs",
+    "db:import-candidates": "node --import tsx scripts/import-candidates-to-db.ts",
     "backend:admin:bootstrap": "tsx backend/src/modules/admin/bootstrapSuperAdmin.ts"
   },
   "dependencies": {

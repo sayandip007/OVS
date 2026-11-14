@@ -17,9 +17,13 @@ export default function CandidateCard({
       <div>
         <div className="flex items-start gap-4">
           <img
-            src={candidate.photograph || defaultAvatar}
+            src={candidate.photograph || candidate.photoUrl || defaultAvatar}
             alt={candidate.name}
             referrerPolicy="no-referrer"
+            onError={(e) => {
+              e.currentTarget.onerror = null;
+              e.currentTarget.src = defaultAvatar;
+            }}
             className="w-14 h-14 rounded-full object-cover border border-slate-200 shrink-0"
           />
           <div className="flex-1 min-w-0">
@@ -37,9 +41,13 @@ export default function CandidateCard({
             </h3>
             <div className="flex items-center gap-2 mt-1">
               <img
-                src={party?.symbol || eciLogo}
+                src={party?.symbol || party?.symbolUrl || eciLogo}
                 alt={party?.abbreviation || 'Party Symbol'}
                 referrerPolicy="no-referrer"
+                onError={(e) => {
+                  e.currentTarget.onerror = null;
+                  e.currentTarget.src = eciLogo;
+                }}
                 className="w-5 h-5 rounded-full object-contain border border-slate-200 shrink-0"
               />
               <span className="text-xs font-medium text-slate-700 truncate">

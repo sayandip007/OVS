@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+  <defs>
+    <radialGradient id="bgGrad_ss" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="85%" stop-color="#f8fafc" />
+      <stop offset="100%" stop-color="#e2e8f0" />
+    </radialGradient>
+  </defs>
+  <circle cx="60" cy="60" r="56" fill="url(#bgGrad_ss)" stroke="#F37023" stroke-width="4" />
+  <circle cx="60" cy="60" r="50" fill="none" stroke="#F37023" stroke-width="1.5" stroke-dasharray="4 2" opacity="0.6" />
+  <!-- Center Emblem -->
+  <circle cx="60" cy="46" r="22" fill="#F37023" opacity="0.15" />
+  <text x="60" y="53" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="900" fill="#F37023" text-anchor="middle" letter-spacing="1">
+    SS
+  </text>
+  <!-- Symbol Banner -->
+  <rect x="18" y="76" width="84" height="20" rx="10" fill="#F37023" />
+  <text x="60" y="90" font-family="Arial, Helvetica, sans-serif" font-size="9" font-weight="bold" fill="#ffffff" text-anchor="middle">
+    Bow and Arrow
+  </text>
+</svg>

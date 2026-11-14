@@ -33,6 +33,8 @@ export default function CandidateDirectory() {
   );
   const [partyFilter, setPartyFilter] = useState('ALL');
   const [selectedCandidate, setSelectedCandidate] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 24;
 
   const availableConstituencies = useMemo(() => {
     return constituencies.filter((c) => {
@@ -100,6 +102,12 @@ export default function CandidateDirectory() {
     constituencies,
   ]);
 
+  const totalPages = Math.ceil(filteredCandidates.length / pageSize) || 1;
+  const paginatedCandidates = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredCandidates.slice(start, start + pageSize);
+  }, [filteredCandidates, currentPage, pageSize]);
+
   const handleInspectCandidate = (cand, party, constituency) => {
     recordCandidateView(cand.id || cand.candidateId);
     const election = elections.find(
@@ -130,14 +138,20 @@ export default function CandidateDirectory() {
         <div className="lg:col-span-2">
           <SearchBar
             value={search}
-            onChange={setSearch}
+            onChange={(val) => {
+              setSearch(val);
+              setCurrentPage(1);
+            }}
             placeholder="Search candidate, party, or seat..."
           />
         </div>
 
         <select
           value={electionFilter}
-          onChange={(e) => setElectionFilter(e.target.value)}
+          onChange={(e) => {
+            setElectionFilter(e.target.value);
+            setCurrentPage(1);
+          }}
           className="px-3 py-2 text-xs sm:text-sm border border-slate-300 rounded-lg bg-white"
         >
           <option value="ALL">All Elections</option>
@@ -153,6 +167,7 @@ export default function CandidateDirectory() {
           onChange={(e) => {
             setTypeFilter(e.target.value);
             setConstituencyFilter('ALL');
+            setCurrentPage(1);
           }}
           className="px-3 py-2 text-xs sm:text-sm border border-slate-300 rounded-lg bg-white"
         >
@@ -168,6 +183,7 @@ export default function CandidateDirectory() {
           onChange={(e) => {
             setStateFilter(e.target.value);
             setConstituencyFilter('ALL');
+            setCurrentPage(1);
           }}
           className="px-3 py-2 text-xs sm:text-sm border border-slate-300 rounded-lg bg-white"
         >
@@ -181,7 +197,10 @@ export default function CandidateDirectory() {
 
         <select
           value={constituencyFilter}
-          onChange={(e) => setConstituencyFilter(e.target.value)}
+          onChange={(e) => {
+            setConstituencyFilter(e.target.value);
+            setCurrentPage(1);
+          }}
           className="px-3 py-2 text-xs sm:text-sm border border-slate-300 rounded-lg bg-white"
         >
           <option value="ALL">All Constituencies</option>
@@ -243,36 +262,88 @@ export default function CandidateDirectory() {
           }}
         />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {filteredCandidates.map((cand) => {
-            const party = parties.find((p) => p.partyId === cand.partyId);
-            const constituency = constituencies.find(
-              (c) => c.constituencyId === cand.constituencyId
-            );
-            return (
-              <div key={cand.candidateId} className="space-y-2">
-                <CandidateCard
-                  candidate={cand}
-                  party={party}
-                  constituency={constituency}
-                  onSelectProfile={() =>
-                    handleInspectCandidate(cand, party, constituency)
-                  }
-                />
-                <div className="flex justify-end">
-                  <button
-                    type="button"
-                    onClick={() =>
+        <div className="space-y-6">
+          <div className="flex items-center justify-between text-xs font-semibold text-slate-500 px-1">
+            <span>
+              Showing {Math.min((currentPage - 1) * pageSize + 1, filteredCandidates.length)}–
+              {Math.min(currentPage * pageSize, filteredCandidates.length)} of {filteredCandidates.length.toLocaleString()} candidates
+            </span>
+            <span>
+              Page {currentPage} of {totalPages}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {paginatedCandidates.map((cand) => {
+              const party = parties.find((p) => p.partyId === cand.partyId);
+              const constituency = constituencies.find(
+                (c) => c.constituencyId === cand.constituencyId
+              );
+              return (
+                <div key={cand.candidateId || cand.id} className="space-y-2">
+                  <CandidateCard
+                    candidate={cand}
+                    party={party}
+                    constituency={constituency}
+                    onSelectProfile={() =>
                       handleInspectCandidate(cand, party, constituency)
                     }
-                    className="text-xs font-bold text-[#002868] hover:underline cursor-pointer"
-                  >
-                    Inspect Full Affidavit &amp; Manifesto &rarr;
-                  </button>
+                  />
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleInspectCandidate(cand, party, constituency)
+                      }
+                      className="text-xs font-bold text-[#002868] hover:underline cursor-pointer"
+                    >
+                      Inspect Full Affidavit &amp; Manifesto &rarr;
+                    </button>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-2 pt-4 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={() => setCurrentPage(1)}
+                disabled={currentPage === 1}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              >
+                &laquo; First
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              >
+                &lsaquo; Prev
+              </button>
+              <span className="px-3 py-1.5 text-xs font-bold text-slate-900 bg-slate-100 rounded-lg">
+                {currentPage} / {totalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              >
+                Next &rsaquo;
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurrentPage(totalPages)}
+                disabled={currentPage === totalPages}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              >
+                Last &raquo;
+              </button>
+            </div>
+          )}
         </div>
       )}
 

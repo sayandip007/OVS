@@ -207,18 +207,30 @@ function LocalDemoPartyManagement() {
 
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">
-              Allocated Symbol Asset
+              Symbol Image URL or Preset Asset
             </label>
-            <select
-              onChange={(e) => handleSymbolChange(e.target.value)}
-              className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white"
-            >
-              {PARTY_SYMBOL_OPTIONS.map((opt) => (
-                <option key={opt.id} value={opt.label}>
-                  {opt.label} — {opt.name}
-                </option>
-              ))}
-            </select>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="e.g. /assets/parties/bjp.png or https://..."
+                value={form.symbolUrl}
+                onChange={(e) =>
+                  setForm((prev) => ({ ...prev, symbolUrl: e.target.value }))
+                }
+                className="flex-1 px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white"
+              />
+              <select
+                onChange={(e) => handleSymbolChange(e.target.value)}
+                className="w-48 px-2 py-2 text-xs border border-slate-300 rounded-lg bg-white cursor-pointer"
+              >
+                <option value="">Choose Preset...</option>
+                {PARTY_SYMBOL_OPTIONS.map((opt) => (
+                  <option key={opt.id} value={opt.label}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <button
@@ -244,8 +256,13 @@ function LocalDemoPartyManagement() {
             >
               <div className="flex items-center gap-3.5 min-w-0">
                 <img
-                  src={party.symbolUrl}
+                  src={party.symbolUrl || party.symbol}
                   alt={party.abbreviation}
+                  referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    e.currentTarget.onerror = null;
+                    e.currentTarget.src = PARTY_SYMBOL_OPTIONS[0].src;
+                  }}
                   className="w-14 h-14 rounded-xl object-contain border border-slate-200 p-1.5 bg-slate-50 shrink-0"
                 />
                 <div className="min-w-0">
