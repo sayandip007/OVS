@@ -62,10 +62,10 @@ describe('OVS Phase 8.2–8.4 — Live PostgreSQL & Supertest API Integration Su
       assert.equal(firstRun.parliamentaryCount, 6);
       assert.equal(firstRun.assemblyCount, 8);
       assert.equal(firstRun.partiesCount, 5);
-      assert.equal(firstRun.candidatesCount, 11);
+      assert.equal(firstRun.candidatesCount, 12);
       assert.equal(firstRun.electionsCount, 5);
       assert.equal(firstRun.electionConstituenciesCount, 12);
-      assert.equal(firstRun.nominationsCount, 14);
+      assert.equal(firstRun.nominationsCount, 15);
       assert.equal(firstRun.scheduleMilestonesCount, 20);
 
       // Run a second time to verify idempotency (zero duplicates, zero constraint errors)
