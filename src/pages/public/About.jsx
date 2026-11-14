@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import PageHeader from '../../components/common/PageHeader';
-import { eciLogo, g20Logo, years75Logo } from '../../assets';
+import { eciLogo } from '../../assets';
 
 export default function About() {
   return (
@@ -56,14 +56,8 @@ export default function About() {
         </div>
 
         <div className="lg:col-span-4 bg-slate-50 rounded-xl border border-slate-200 p-6 flex flex-col items-center text-center space-y-4">
-          <div className="flex items-center justify-center gap-4">
-            <img src={eciLogo} alt="ECI Logo" className="h-12 w-auto object-contain" />
-            <img src={g20Logo} alt="G20 Logo" className="h-12 w-auto object-contain" />
-            <img
-              src={years75Logo}
-              alt="75 Years Logo"
-              className="h-12 w-auto object-contain"
-            />
+          <div className="flex items-center justify-center">
+            <img src={eciLogo} alt="Election Commission of India Logo" className="h-16 w-16 object-contain drop-shadow-sm" />
           </div>
           <div className="space-y-1">
             <h3 className="text-sm font-bold text-slate-900">

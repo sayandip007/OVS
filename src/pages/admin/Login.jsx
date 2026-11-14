@@ -144,7 +144,7 @@ export default function AdminLogin() {
       <div className="max-w-xl mx-auto px-4 py-12">
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sm:p-8 space-y-6">
           <div className="flex items-center gap-3.5 pb-4 border-b border-slate-200">
-            <img src={eciLogo} alt="ECI" className="h-11 w-auto object-contain" />
+            <img src={eciLogo} alt="ECI" className="h-12 w-12 object-contain shrink-0" />
             <div>
               <span className="text-xs font-bold uppercase tracking-wider text-amber-700">
                 Secure Administrative Authentication (Backend API)
@@ -250,7 +250,7 @@ export default function AdminLogin() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         <div className="lg:col-span-7 bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sm:p-8 space-y-6">
           <div className="flex items-center gap-3.5 pb-4 border-b border-slate-200">
-            <img src={eciLogo} alt="ECI" className="h-11 w-auto object-contain" />
+            <img src={eciLogo} alt="ECI" className="h-12 w-12 object-contain shrink-0" />
             <div>
               <span className="text-xs font-bold uppercase tracking-wider text-amber-700">
                 Simulated ECI Administration

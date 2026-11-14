@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useElection } from '../../context/ElectionContext';
 import { useAuth } from '../../context/AuthContext';
 import { ELECTION_TYPES, CONSTITUENCY_TYPES, ELECTION_STATUS_LABELS } from '../../utils/constants';
-import { eciLogo, g20Logo, years75Logo } from '../../assets';
+import { eciLogo } from '../../assets';
 
 export default function Home() {
   const navigate = useNavigate();
@@ -171,11 +171,10 @@ export default function Home() {
                 </Link>
               </div>
 
-              <div className="pt-3 flex flex-wrap items-center gap-6 text-xs text-blue-200 border-t border-white/10">
-                <div className="flex items-center gap-3 bg-white/95 px-3 py-1.5 rounded-lg shadow-xs">
-                  <img src={eciLogo} alt="ECI" className="h-6 w-auto object-contain" />
-                  <img src={g20Logo} alt="G20" className="h-6 w-auto object-contain" />
-                  <img src={years75Logo} alt="75 Years" className="h-6 w-auto object-contain" />
+              <div className="pt-3 flex flex-wrap items-center gap-4 text-xs text-blue-200 border-t border-white/10">
+                <div className="flex items-center gap-2 bg-white/95 px-3 py-1.5 rounded-lg shadow-xs">
+                  <img src={eciLogo} alt="Election Commission of India" className="h-7 w-7 object-contain" />
+                  <span className="text-[11px] font-bold text-[#002868]">Election Commission of India</span>
                 </div>
                 <span>
                   Supports Simultaneous Lok Sabha (PC) &amp; State Assembly (AC) Ballots with NOTA

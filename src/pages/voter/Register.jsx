@@ -369,7 +369,7 @@ export default function VoterRegister() {
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-4">
           <div className="flex items-center gap-3">
-            <img src={eciLogo} alt="ECI" className="h-10 w-auto object-contain" />
+            <img src={eciLogo} alt="ECI" className="h-11 w-11 object-contain shrink-0" />
             <div>
               <span className="text-xs font-bold uppercase tracking-wider text-[#002868]">
                 Phase 3 • Multi-Step Citizen Demo Onboarding

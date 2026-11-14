@@ -1,0 +1,158 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Gradients -->
+    <linearGradient id="goldRing" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFE885" />
+      <stop offset="35%" stop-color="#D4AF37" />
+      <stop offset="70%" stop-color="#AA771C" />
+      <stop offset="100%" stop-color="#FFDF73" />
+    </linearGradient>
+
+    <linearGradient id="navyBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#001838" />
+      <stop offset="100%" stop-color="#002d72" />
+    </linearGradient>
+
+    <linearGradient id="saffronGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FF9933" />
+      <stop offset="100%" stop-color="#E67300" />
+    </linearGradient>
+
+    <linearGradient id="greenGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#138808" />
+      <stop offset="100%" stop-color="#0D5C05" />
+    </linearGradient>
+
+    <!-- Circular Text Paths -->
+    <path id="textArcTop" d="M 68,256 A 188,188 0 0,1 444,256" fill="none" />
+    <path id="textArcBottom" d="M 444,256 A 188,188 0 0,1 68,256" fill="none" />
+    
+    <filter id="subtleShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-opacity="0.3" flood-color="#000" />
+    </filter>
+  </defs>
+
+  <!-- Outer Drop Shadow Circle -->
+  <circle cx="256" cy="256" r="250" fill="none" />
+
+  <!-- Outer Gold Border -->
+  <circle cx="256" cy="256" r="248" fill="url(#goldRing)" />
+  <circle cx="256" cy="256" r="242" fill="#001838" />
+
+  <!-- Outer Dotted Ring -->
+  <circle cx="256" cy="256" r="236" fill="none" stroke="url(#goldRing)" stroke-width="2" stroke-dasharray="4,6" />
+
+  <!-- Navy Legend Band -->
+  <circle cx="256" cy="256" r="230" fill="url(#navyBg)" />
+
+  <!-- Circular Ring Separator Inner -->
+  <circle cx="256" cy="256" r="148" fill="url(#goldRing)" />
+  <circle cx="256" cy="256" r="144" fill="#FFFFFF" />
+
+  <!-- Top Hindi Inscription -->
+  <text font-family="'Segoe UI', Roboto, 'Noto Sans Devanagari', sans-serif" font-size="28" font-weight="900" fill="#FFFFFF" letter-spacing="3" filter="url(#subtleShadow)">
+    <textPath href="#textArcTop" startOffset="50%" text-anchor="middle">
+      भारत निर्वाचन आयोग
+    </textPath>
+  </text>
+
+  <!-- Bottom English Inscription -->
+  <text font-family="'Segoe UI', Roboto, Arial, sans-serif" font-size="21.5" font-weight="800" fill="#FFDF73" letter-spacing="2.2" filter="url(#subtleShadow)">
+    <textPath href="#textArcBottom" startOffset="50%" text-anchor="middle">
+      ELECTION COMMISSION OF INDIA
+    </textPath>
+  </text>
+
+  <!-- Star Embellishments -->
+  <g fill="url(#goldRing)" filter="url(#subtleShadow)">
+    <!-- Left Star -->
+    <path d="M 52,256 l 3.5,-7.5 8,-1.2 -5.8,-5.7 1.4,-8 -7.1,3.8 -7.1,-3.8 1.4,8 -5.8,5.7 8,1.2 z" transform="translate(10, 4) scale(0.9)" />
+    <!-- Right Star -->
+    <path d="M 460,256 l 3.5,-7.5 8,-1.2 -5.8,-5.7 1.4,-8 -7.1,3.8 -7.1,-3.8 1.4,8 -5.8,5.7 8,1.2 z" transform="translate(-10, 4) scale(0.9)" />
+  </g>
+
+  <!-- Inner Medallion: Indian Tricolour Waves -->
+  <g clip-path="url(#innerClip)">
+    <clipPath id="innerClip">
+      <circle cx="256" cy="256" r="142" />
+    </clipPath>
+
+    <!-- White Base -->
+    <rect x="110" y="110" width="292" height="292" fill="#FFFFFF" />
+
+    <!-- Top Saffron Section -->
+    <rect x="110" y="114" width="292" height="85" fill="url(#saffronGrad)" />
+
+    <!-- Bottom Green Section -->
+    <rect x="110" y="313" width="292" height="85" fill="url(#greenGrad)" />
+    
+    <!-- Thin Golden Division Lines -->
+    <line x1="114" y1="199" x2="398" y2="199" stroke="#E6A100" stroke-width="1.5" opacity="0.6" />
+    <line x1="114" y1="313" x2="398" y2="313" stroke="#0D5C05" stroke-width="1.5" opacity="0.6" />
+
+    <!-- Subtle Center Radial Glow -->
+    <radialGradient id="centerGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="1" />
+      <stop offset="70%" stop-color="#F5F8FF" stop-opacity="0.9" />
+      <stop offset="100%" stop-color="#E2ECFF" stop-opacity="0.8" />
+    </radialGradient>
+    <circle cx="256" cy="256" r="62" fill="url(#centerGlow)" />
+
+    <!-- Ashoka Chakra (24 Spokes) in Pure Navy -->
+    <g stroke="#002868" stroke-width="2.2" fill="none">
+      <!-- Chakra Outer Rim -->
+      <circle cx="256" cy="256" r="48" stroke-width="4.5" />
+      <circle cx="256" cy="256" r="44" stroke-width="1.5" />
+      <!-- Hub -->
+      <circle cx="256" cy="256" r="8" fill="#002868" stroke="none" />
+      <circle cx="256" cy="256" r="4" fill="#FFFFFF" stroke="none" />
+
+      <!-- 24 Spokes generated systematically -->
+      <!-- 0, 15, 30, 45, 60, 75, 90 deg... -->
+      <line x1="256" y1="208" x2="256" y2="248" />
+      <line x1="256" y1="264" x2="256" y2="304" />
+      <line x1="208" y1="256" x2="248" y2="256" />
+      <line x1="264" y1="256" x2="304" y2="256" />
+
+      <line x1="222" y1="222" x2="250" y2="250" />
+      <line x1="262" y1="262" x2="290" y2="290" />
+      <line x1="222" y1="290" x2="250" y2="262" />
+      <line x1="262" y1="250" x2="290" y2="222" />
+
+      <!-- 12 additional spokes for exact 24-spoke representation -->
+      <line x1="239" y1="210" x2="251" y2="248" />
+      <line x1="273" y1="210" x2="261" y2="248" />
+      <line x1="210" y1="239" x2="248" y2="251" />
+      <line x1="210" y1="273" x2="248" y2="261" />
+      <line x1="239" y1="302" x2="251" y2="264" />
+      <line x1="273" y1="302" x2="261" y2="264" />
+      <line x1="302" y1="239" x2="264" y2="251" />
+      <line x1="302" y1="273" x2="264" y2="261" />
+
+      <line x1="214" y1="230" x2="249" y2="252" />
+      <line x1="298" y1="282" x2="263" y2="260" />
+      <line x1="214" y1="282" x2="249" y2="260" />
+      <line x1="298" y1="230" x2="263" y2="252" />
+    </g>
+
+    <!-- Democratic Voting Symbol Overlay: Stylized Ballot Box with Vote Slip -->
+    <g transform="translate(256, 256)" filter="url(#subtleShadow)">
+      <!-- Symmetrical Laurel Wreath Branches around Chakra -->
+      <!-- Left Branch -->
+      <path d="M -70,20 C -78,-10 -65,-45 -48,-65 C -55,-45 -55,-15 -42,10 Z" fill="#D4AF37" opacity="0.9" />
+      <path d="M -72,-5 C -85,-18 -82,-35 -70,-45 C -72,-30 -68,-18 -60,-8 Z" fill="#AA771C" opacity="0.8" />
+      <!-- Right Branch -->
+      <path d="M 70,20 C 78,-10 65,-45 48,-65 C 55,-45 55,-15 42,10 Z" fill="#D4AF37" opacity="0.9" />
+      <path d="M 72,-5 C 85,-18 82,-35 70,-45 C 72,-30 68,-18 60,-8 Z" fill="#AA771C" opacity="0.8" />
+    </g>
+
+    <!-- ESTD 1950 Ribbon / Text at base of medallion -->
+    <rect x="206" y="348" width="100" height="22" rx="11" fill="#001838" stroke="url(#goldRing)" stroke-width="1.5" />
+    <text x="256" y="363.5" font-family="'Segoe UI', Roboto, Arial, sans-serif" font-size="11.5" font-weight="900" fill="#FFE885" text-anchor="middle" letter-spacing="1.5">
+      ESTD 1950
+    </text>
+  </g>
+
+  <!-- Inner Gold Bezel Ring -->
+  <circle cx="256" cy="256" r="142" fill="none" stroke="url(#goldRing)" stroke-width="3.5" />
+</svg>

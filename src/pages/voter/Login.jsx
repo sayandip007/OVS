@@ -281,7 +281,7 @@ export default function VoterLogin() {
         {/* Left Column: Login & Simulated OTP Form */}
         <div className="lg:col-span-6 bg-white rounded-2xl border border-slate-200 shadow-xs p-6 sm:p-8 space-y-6">
           <div className="flex items-center gap-3 pb-4 border-b border-slate-200">
-            <img src={eciLogo} alt="ECI" className="h-10 w-auto object-contain" />
+            <img src={eciLogo} alt="ECI" className="h-11 w-11 object-contain shrink-0" />
             <div>
               <span className="text-xs font-bold uppercase tracking-wider text-[#002868]">
                 Phase 3 • Voter Portal Access

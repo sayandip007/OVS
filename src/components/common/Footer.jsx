@@ -11,9 +11,9 @@ export default function Footer() {
             <div className="flex items-center gap-3">
               <img
                 src={eciLogo}
-                alt="ECI Logo"
+                alt="Election Commission of India Logo"
                 referrerPolicy="no-referrer"
-                className="h-9 w-auto bg-white rounded p-0.5 object-contain"
+                className="h-11 w-11 bg-white/95 rounded-full p-0.5 object-contain shrink-0 border border-white/20"
               />
               <div>
                 <p className="text-base font-bold text-white">
