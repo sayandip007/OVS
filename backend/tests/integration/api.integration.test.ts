@@ -2208,4 +2208,134 @@ describe('OVS Phase 8.2–8.4 — Live PostgreSQL & Supertest API Integration Su
       assert.equal(text.includes('password'), false);
     });
   });
+
+  describe('18. Phase 8.15.1 — Full Live PostgreSQL & API End-to-End User Acceptance Test (UAT)', () => {
+    let uatVoterEpic = 'UAT8151001';
+    let uatVoterMobile = '9800008151';
+    let uatVoterCookie: string = '';
+    let uatCsrfToken: string = '';
+
+    test('UAT 1: Real voter registers with consistent unverified semantics', async () => {
+      const regRes = await request(app)
+        .post('/api/v1/auth/register')
+        .send({
+          epicNumber: uatVoterEpic,
+          fullName: 'UAT Test Elector',
+          dateOfBirth: '1998-07-21',
+          gender: 'Female',
+          mobile: uatVoterMobile,
+          email: 'uat.elector@ovs-demo.invalid',
+          address: '42 Democracy Avenue, Nadia',
+          pinCode: '741101',
+          stateId: 'WB',
+          districtId: 'WB-DIST-NADIA',
+          parliamentaryConstituencyId: 'WB-PC-KRISHNANAGAR',
+          assemblyConstituencyId: 'WB-AC-KRISHNANAGAR-UTTAR',
+        });
+
+      assert.equal(regRes.status, 201);
+      assert.equal(regRes.body.data.accountStatus, 'UNVERIFIED');
+      assert.equal(regRes.body.data.user.voterProfile.isVerified, false);
+    });
+
+    test('UAT 2: Real OTP request, verification, session cookie & CSRF retrieval', async () => {
+      // 1. Request OTP challenge
+      const otpReqRes = await request(app)
+        .post('/api/v1/auth/otp/request')
+        .send({ identifier: uatVoterEpic });
+      assert.equal(otpReqRes.status, 200);
+      assert.ok(otpReqRes.body.data.challengeId);
+      const challengeId = otpReqRes.body.data.challengeId;
+
+      // 2. Fetch generated OTP from safe test development provider
+      const devOtpRes = await request(app).get(`/api/v1/auth/dev/otp/${uatVoterEpic}`);
+      assert.equal(devOtpRes.status, 200);
+      const rawOtp = devOtpRes.body.data.otp;
+
+      // 3. Verify OTP code
+      const verifyRes = await request(app)
+        .post('/api/v1/auth/otp/verify')
+        .send({ challengeId, otp: rawOtp });
+      assert.equal(verifyRes.status, 200);
+
+      // Extract session cookie
+      const cookies = verifyRes.headers['set-cookie'];
+      assert.ok(cookies);
+      const sessionCookie = (Array.isArray(cookies) ? cookies : [cookies]).find((c: string) =>
+        c.startsWith('ovs_session=')
+      );
+      assert.ok(sessionCookie);
+      uatVoterCookie = sessionCookie.split(';')[0];
+
+      // 4. Retrieve CSRF token
+      const csrfRes = await request(app)
+        .get('/api/v1/auth/csrf')
+        .set('Cookie', uatVoterCookie);
+      assert.equal(csrfRes.status, 200);
+      uatCsrfToken = csrfRes.body.data.csrfToken;
+      assert.ok(uatCsrfToken);
+    });
+
+    test('UAT 3: Real voter profile and constituency-specific ballot retrieval', async () => {
+      // 1. Fetch own profile
+      const profileRes = await request(app)
+        .get('/api/v1/voters/me')
+        .set('Cookie', uatVoterCookie);
+      assert.equal(profileRes.status, 200);
+      assert.equal(profileRes.body.data.epicNumber, uatVoterEpic);
+      assert.equal(profileRes.body.data.parliamentaryConstituencyId, 'WB-PC-KRISHNANAGAR');
+
+      // 2. Retrieve constituency-specific ballot for LS-2029
+      const ballotRes = await request(app)
+        .get('/api/v1/voter/elections/LS-2029/ballot')
+        .set('Cookie', uatVoterCookie);
+      assert.equal(ballotRes.status, 200);
+      assert.ok(ballotRes.body.ballot);
+      assert.equal(ballotRes.body.ballot.constituencyId, 'WB-PC-KRISHNANAGAR');
+      assert.ok(Array.isArray(ballotRes.body.ballot.candidates));
+      assert.ok(ballotRes.body.ballot.candidates.length >= 1);
+    });
+
+    test('UAT 4: Zero-Knowledge Participation Invariant — strict empty body & duplicate prevention', async () => {
+      // 1. Attempting to transmit candidateId MUST be rejected with 422
+      const leakAttemptRes = await request(app)
+        .post('/api/v1/voter/elections/LS-2029/participate')
+        .set('Cookie', uatVoterCookie)
+        .set('x-csrf-token', uatCsrfToken)
+        .send({ candidateId: 'CAND-LS29-WB-KRN-1' });
+      assert.equal(leakAttemptRes.status, 422);
+
+      // 2. Strict empty body succeeds
+      const partRes = await request(app)
+        .post('/api/v1/voter/elections/LS-2029/participate')
+        .set('Cookie', uatVoterCookie)
+        .set('x-csrf-token', uatCsrfToken)
+        .send({});
+      assert.equal(partRes.status, 201);
+      assert.ok(partRes.body.participation.referenceId);
+
+      // 3. Duplicate participation attempt strictly returns 409 Conflict
+      const dupRes = await request(app)
+        .post('/api/v1/voter/elections/LS-2029/participate')
+        .set('Cookie', uatVoterCookie)
+        .set('x-csrf-token', uatCsrfToken)
+        .send({});
+      assert.equal(dupRes.status, 409);
+    });
+
+    test('UAT 5: Turnout increment verified by administrator without choice derivation', async () => {
+      const superLogin = await request(app)
+        .post('/api/v1/admin/auth/login')
+        .send({ identifier: 'super.ci@ovs-test.local', password: 'SuperCiSecret#2026!' });
+      assert.equal(superLogin.status, 200);
+      const superCookie = (superLogin.headers['set-cookie'] as unknown as string[])[0]!.split(';')[0]!;
+
+      const summaryRes = await request(app)
+        .get('/api/v1/voter/elections/LS-2029/participation-summary')
+        .set('Cookie', superCookie);
+      assert.equal(summaryRes.status, 200);
+      assert.ok(summaryRes.body.summary);
+      assert.ok(summaryRes.body.summary.totalParticipated >= 1);
+    });
+  });
 });

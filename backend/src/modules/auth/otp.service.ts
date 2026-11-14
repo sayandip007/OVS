@@ -29,7 +29,10 @@ export class DevelopmentOtpProvider implements OtpDeliveryProvider {
   }
 
   getLastOtp(identifier: string): string | null {
-    if (process.env.NODE_ENV === 'production') {
+    if (process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging') {
+      return null;
+    }
+    if (process.env.ALLOW_OTP_INSPECTION !== 'true') {
       return null;
     }
     const entry =
@@ -50,6 +53,43 @@ export class DevelopmentOtpProvider implements OtpDeliveryProvider {
 }
 
 /**
+ * Production Disabled OTP Delivery Provider.
+ * Safely fails closed when real SMS gateway integration is not configured.
+ * Never fakes delivery, never returns true when no message was sent.
+ */
+export class ProductionDisabledOtpProvider implements OtpDeliveryProvider {
+  public readonly name = 'ProductionDisabledOtpProvider';
+
+  async sendOtp(_identifier: string, _mobile: string, _otp: string): Promise<boolean> {
+    throw new Error(
+      'SMS_DELIVERY_UNAVAILABLE: Real SMS delivery provider is not configured. Automated simulated delivery is disabled in production and staging environments for security.'
+    );
+  }
+
+  getLastOtp(_identifier: string): string | null {
+    return null;
+  }
+}
+
+/**
+ * Resolves the appropriate OTP delivery provider based on runtime environment.
+ * In development or test, returns DevelopmentOtpProvider.
+ * In production or staging, returns ProductionDisabledOtpProvider (unless an explicit provider is injected).
+ */
+export function resolveOtpProvider(
+  explicitProvider?: OtpDeliveryProvider,
+  nodeEnv: string = process.env.NODE_ENV || 'development'
+): OtpDeliveryProvider {
+  if (explicitProvider) {
+    return explicitProvider;
+  }
+  if (nodeEnv === 'production' || nodeEnv === 'staging') {
+    return new ProductionDisabledOtpProvider();
+  }
+  return new DevelopmentOtpProvider();
+}
+
+/**
  * Future SMS Gateway Delivery Provider.
  * Stub for regulated TRAI DLT SMS gateway integration.
  */
@@ -66,7 +106,7 @@ export class FutureSmsProvider implements OtpDeliveryProvider {
 
 export class OtpService {
   constructor(
-    private readonly provider: OtpDeliveryProvider = new DevelopmentOtpProvider()
+    private readonly provider: OtpDeliveryProvider = resolveOtpProvider()
   ) {}
 
   getProvider(): OtpDeliveryProvider {

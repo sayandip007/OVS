@@ -1,6 +1,6 @@
 # OVS Phase 8.5 — Election Lifecycle State Machine
 
-Defined centrally in [`election.lifecycle.ts`](file:///backend/src/modules/elections/election.lifecycle.ts) using existing `ElectionStatus` values.
+Defined centrally in [`election.lifecycle.ts`](..\..\backend\src\modules\elections\election.lifecycle.ts) using existing `ElectionStatus` values.
 
 ## 1. Transition Matrix
 

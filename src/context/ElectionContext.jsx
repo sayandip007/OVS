@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import {
   STORAGE_KEYS,
   METADATA_SOURCES,
@@ -2596,18 +2596,28 @@ export function ElectionProvider({ children }) {
         ls2024Election,
       ];
 
+      // Merge constituencies (all 543 Parliamentary Constituencies)
+      const existingConstituencyIds = new Set(
+        (store.constituencies || []).map((c) => c.id || c.constituencyId)
+      );
+      const newConstituencies = (dataset.constituencies || []).filter(
+        (c) => !existingConstituencyIds.has(c.id || c.constituencyId)
+      );
+      const updatedConstituencies = [...(store.constituencies || []), ...newConstituencies];
+
       // Merge parties
       const existingPartyIds = new Set((store.parties || []).map((p) => p.id || p.partyId));
-      const newParties = (dataset.parties || []).filter((p) => !existingPartyIds.has(p.id));
+      const newParties = (dataset.parties || []).filter((p) => !existingPartyIds.has(p.id || p.partyId));
       const updatedParties = [...(store.parties || []), ...newParties];
 
       // Merge candidates
       const existingCandidateIds = new Set(
         (store.candidates || []).map((c) => c.id || c.candidateId)
       );
-      const newCandidates = dataset.candidates.filter((c) => !existingCandidateIds.has(c.id));
+      const newCandidates = dataset.candidates.filter((c) => !existingCandidateIds.has(c.id || c.candidateId));
       const updatedCandidates = [...(store.candidates || []), ...newCandidates];
 
+      syncKey(STORAGE_KEYS.CONSTITUENCIES, 'constituencies', updatedConstituencies);
       syncKey(STORAGE_KEYS.ELECTIONS, 'elections', updatedElections);
       syncKey(STORAGE_KEYS.PARTIES, 'parties', updatedParties);
       syncKey(STORAGE_KEYS.CANDIDATES, 'candidates', updatedCandidates);
@@ -2627,8 +2637,34 @@ export function ElectionProvider({ children }) {
         totalConstituencies: dataset.totalConstituencies,
       };
     },
-    [store.elections, store.parties, store.candidates, syncKey, appendAuditLog]
+    [store.constituencies, store.elections, store.parties, store.candidates, syncKey, appendAuditLog]
   );
+
+  // Auto-load official 2024 Pan-India Lok Sabha candidates and 543 constituencies on initial launch
+  useEffect(() => {
+    let active = true;
+    if (typeof window !== 'undefined' && (store.candidates || []).length < 50) {
+      fetch('/data/real_candidates_2024.json')
+        .then((res) => {
+          if (!res.ok) throw new Error('Failed to load dataset');
+          return res.json();
+        })
+        .then((data) => {
+          if (active && data && Array.isArray(data.candidates)) {
+            loadRealCandidatesDataset(data, {
+              adminId: 'SYSTEM-INITIALIZER',
+              adminRole: 'SYSTEM',
+            });
+          }
+        })
+        .catch(() => {
+          // Gracefully fallback to baseline initial dataset
+        });
+    }
+    return () => {
+      active = false;
+    };
+  }, [loadRealCandidatesDataset, store.candidates]);
 
   const exportDemoDatasets = useCallback(() => {
     return {

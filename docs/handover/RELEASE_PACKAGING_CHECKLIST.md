@@ -26,12 +26,11 @@
 
 ### Upgrade Instructions
 1. Pull new release tag or artifact archive.
-2. Run database migration: `npx prisma migrate deploy --schema=backend/prisma/schema.prisma`.
-3. Apply updated triggers: `psql -d <DB_NAME> -f backend/prisma/CUSTOM_DATABASE_INTEGRITY.sql`.
-4. Install dependencies: `npm install --omit=dev`.
-5. Restart application services via container or process manager (`pm2 restart ovs-backend`).
+2. Run database migration: `npm run prisma:migrate:deploy` (applies all DDL and PL/pgSQL database integrity triggers).
+3. Install production dependencies: `npm install --omit=dev`.
+4. Restart application services via container or process manager (`docker compose up -d` or `pm2 restart ovs-backend`).
 
 ### Rollback Instructions
-1. Revert container image to previous tag: `docker compose pull backend:<PREVIOUS_TAG> && docker compose up -d`.
-2. If database schema was altered, execute the migration down-script recorded in `backend/prisma/migrations/`.
-3. Verify service health via `curl http://localhost:5000/health`.
+1. Revert container image to previous tag: `docker compose pull backend-api:<PREVIOUS_TAG> && docker compose up -d`.
+2. If database schema was altered, deploy a forward-fixing migration via `npm run prisma:migrate:deploy` or restore database from the verified point-in-time PostgreSQL backup snapshot per `docs/deployment/DISASTER_RECOVERY_RUNBOOK.md`.
+3. Verify service health via `curl http://localhost:5000/api/v1/health`.

@@ -1,9 +1,10 @@
 # OVS Database Architecture, Migrations & Seeds Guide
 
-**Database Engine:** PostgreSQL 16  
-**ORM:** Prisma ORM 5.22  
-**Schema Path:** `backend/prisma/schema.prisma`  
-**Native Integrity SQL:** `backend/prisma/CUSTOM_DATABASE_INTEGRITY.sql`  
+**Database Engine:** PostgreSQL 16+  
+**ORM:** Prisma ORM 6.4.1  
+**Authoritative Schema:** `backend/prisma/schema.prisma`  
+**Migration History:** `backend/prisma/migrations/`  
+**Architecture Reference SQL:** `docs/backend-architecture/CUSTOM_DATABASE_INTEGRITY.sql` (disposable reference for architecture validation tests)  
 
 ---
 
@@ -23,7 +24,7 @@
 12. `ElectionConstituency` — Mapping between elections and active constituencies.
 13. `ElectionScheduleMilestone` — Chronological milestone checkpoints.
 14. `PoliticalParty` — Registered national and state political parties.
-15. `Candidate` — Synthetic candidates contesting elections.
+15. `Candidate` — Candidates contesting elections.
 16. `CandidateNomination` — Nomination applications, affidavits, and status.
 17. `DemoParticipation` — Voter participation records (**strictly zero candidate fields**).
 18. `CountingSession` — Constituency counting session lifecycle.
@@ -32,7 +33,7 @@
 21. `TieResolution` — Immutable tie-break audit evidence and statutory method.
 22. `Announcement` — Public and state-targeted administrative gazettes.
 23. `VoterNotification` — In-app alerts and polling schedule reminders.
-24. `NotificationPreference` — Voter opt-in and category notification settings.
+24: `NotificationPreference` — Voter opt-in and category notification settings.
 25. `NotificationDelivery` — Idempotent notification outbox delivery tracking.
 26. `SystemSetting` — Configurable operational parameters.
 27. `SystemSettingHistory` — Versioned change log for system settings.
@@ -40,31 +41,47 @@
 
 ---
 
-## 2. Native PostgreSQL Database Triggers (`CUSTOM_DATABASE_INTEGRITY.sql`)
+## 2. Database Integrity Constraints & Triggers
 
-PostgreSQL triggers enforce business rules that must not be bypassed by application bugs:
+All custom constraints, partial indexes, and PL/pgSQL database triggers are committed as standard, version-controlled Prisma migrations in `backend/prisma/migrations/20261101000100_custom_database_integrity/migration.sql`. They execute automatically during standard schema deployment (`npm run prisma:migrate:deploy`).
 
-- `verify_election_constituency_type_fn()`: Validates that Lok Sabha elections only link to PCs and Assembly elections only link to ACs.
-- `verify_candidate_nomination_status_fn()`: Prevents invalid lifecycle jumps in nomination review.
-- `verify_candidate_tally_reconciliation_fn()`: Enforces that sum of candidate tallies, NOTA, and rejected votes matches round totals.
-- `verify_tie_resolution_insert()`: Ensures tie resolution can only be created when session status is `TIED`, top candidates have equal non-zero votes, and resolution method is approved.
-- `verify_counting_round_immutability()`: Freezes earlier counting rounds once subsequent rounds commence.
+**Key Integrity Protections:**
+- **Constituency Polymorphism:** Exclusivity CHECK constraints ensure Lok Sabha records bind strictly to `parliamentary_constituency_id` and State Assembly records bind strictly to `assembly_constituency_id`.
+- **Nomination Status Progression:** Enforces valid lifecycle state machine transitions (`DRAFT` &rarr; `SUBMITTED` &rarr; `VALIDATED` &rarr; `SCRUTINY_PASSED` &rarr; `APPROVED` or `REJECTED`).
+- **Vote Tally Reconciliation:** Bi-directional trigger reconciliation ensures the sum of candidate tallies, NOTA, and rejected votes strictly equals total counted votes.
+- **Tie Resolution Gating:** Dedicated INSERT trigger ensures tie resolutions only occur when session status is `TIED`, top candidates have equal non-zero votes, and resolution method is approved by an active, scoped administrator.
+- **Round Immutability:** Protects completed counting rounds from tampering or deletion once subsequent rounds commence.
 
 ---
 
 ## 3. Migration & Seeding Runbook
 
+### Deploy Migrations to PostgreSQL (Authoritative Deployment Path)
 ```bash
-# 1. Reset database and run all migrations from scratch
-npx prisma migrate reset --force --schema=backend/prisma/schema.prisma
+# Validate Prisma schema
+npm run prisma:validate
 
-# 2. Apply custom PostgreSQL triggers
-psql -U postgres -d ovs_development -f backend/prisma/CUSTOM_DATABASE_INTEGRITY.sql
+# Generate Prisma Client
+npm run prisma:generate
 
-# 3. Seed comprehensive synthetic demo fixtures
-npx tsx backend/prisma/seed-demo.ts
-
-# 4. Verify test database protection
-# The application includes assertSafeTestDatabase() which blocks destructive test scripts
-# from executing against production or remote databases.
+# Deploy all committed migrations (DDL + PL/pgSQL custom integrity triggers)
+npm run prisma:migrate:deploy
 ```
+
+> [!NOTE]
+> `npm run prisma:migrate:deploy` deploys all DDL tables and custom PL/pgSQL triggers in a single atomic pipeline. Never manually apply architecture reference SQL (`docs/backend-architecture/CUSTOM_DATABASE_INTEGRITY.sql`) to a migrated database; triggers are already included in migration `20261101000100_custom_database_integrity`.
+
+### Seed Synthetic Demo Dataset
+```bash
+# Seeding requires explicit opt-in and a development/demo database target
+OVS_ALLOW_DEMO_SEED=true npx tsx backend/prisma/seed-demo.ts
+```
+
+---
+
+## 4. Rollback & Disaster Recovery Protocol
+
+Prisma does not generate down-migrations. If a migration failure or schema regression occurs in a live environment:
+
+1. **Forward-Fix Migration (Standard):** Create a new forward-fix migration using `npx prisma migrate dev --name fix_regression` and deploy via `npm run prisma:migrate:deploy`.
+2. **Point-In-Time Backup Restoration (Catastrophic):** If an unrecoverable data corruption occurs, restore the PostgreSQL database from the latest verified WAL / pg_dump snapshot using the Disaster Recovery Runbook (`docs/deployment/DISASTER_RECOVERY_RUNBOOK.md`).

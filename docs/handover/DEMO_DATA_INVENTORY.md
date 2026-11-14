@@ -67,12 +67,12 @@ Default Demo Password: `DemoAdmin@2029!`
 
 | Officer Code | Email | Role | Jurisdiction Scope |
 |---|---|---|---|
-| `ECI-SUPER-DEMO` | `superadmin.demo@eci.gov.in` | `SUPER_ADMIN` | Nationwide (Full platform & admin provision) |
-| `ECI-NAT-DEMO` | `nationaladmin.demo@eci.gov.in` | `NATIONAL_ADMIN` | Nationwide (Election admin, no settings rollback) |
-| `ECI-WB-DEMO` | `stateadmin.wb.demo@eci.gov.in` | `STATE_ADMIN` | West Bengal (`WB`) only |
-| `ECI-MH-DEMO` | `stateadmin.mh.demo@eci.gov.in` | `STATE_ADMIN` | Maharashtra (`MH`) only |
-| `ECI-EO-WB-DEMO` | `ro.krishnanagar.demo@eci.gov.in` | `ELECTION_OFFICER` | `LS-2029` & `WB-PC-KRISHNANAGAR` only |
-| `ECI-AUDITOR-DEMO` | `auditor.demo@eci.gov.in` | `READ_ONLY_AUDITOR` | Nationwide Read-Only & Audit Export (Zero mutations) |
+| `ECI-SUPER-DEMO` | `superadmin.demo@ovs-demo.invalid` | `SUPER_ADMIN` | Nationwide (Full platform & admin provision) |
+| `ECI-NAT-DEMO` | `nationaladmin.demo@ovs-demo.invalid` | `NATIONAL_ADMIN` | Nationwide (Election admin, no settings rollback) |
+| `ECI-WB-DEMO` | `stateadmin.wb.demo@ovs-demo.invalid` | `STATE_ADMIN` | West Bengal (`WB`) only |
+| `ECI-MH-DEMO` | `stateadmin.mh.demo@ovs-demo.invalid` | `STATE_ADMIN` | Maharashtra (`MH`) only |
+| `ECI-EO-WB-DEMO` | `ro.krishnanagar.demo@ovs-demo.invalid` | `ELECTION_OFFICER` | `LS-2029` & `WB-PC-KRISHNANAGAR` only |
+| `ECI-AUDITOR-DEMO` | `auditor.demo@ovs-demo.invalid` | `READ_ONLY_AUDITOR` | Nationwide Read-Only & Audit Export (Zero mutations) |
 
 ---
 

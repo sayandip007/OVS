@@ -10,19 +10,19 @@
 - **Root Cause:** PostgreSQL daemon is not running or port 5432 is blocked.
 - **Verification:** `pg_isready -h localhost -p 5432`
 - **Solution:**
-  - Start local PostgreSQL: `systemctl start postgresql` or start Docker service: `docker compose up -d db`.
+  - Start local PostgreSQL: `systemctl start postgresql` or start Docker container: `docker compose up -d postgres-db`.
   - Check `DATABASE_URL` in `backend/.env`.
 
 ### Issue 2: Session Cookie / CSRF Rejection (HTTP 403 Forbidden)
-- **Root Cause:** Missing or invalid `x-csrf-token` header, or cross-origin mismatch between `FRONTEND_ORIGIN` and request origin.
+- **Root Cause:** Missing or invalid `x-csrf-token` header, or cross-origin mismatch between `CLIENT_ORIGIN` and request origin.
 - **Solution:**
-  - Ensure `FRONTEND_ORIGIN=http://localhost:3000` is set in `backend/.env`.
+  - Ensure `CLIENT_ORIGIN=http://localhost:3000` is set in `backend/.env`.
   - Check browser DevTools -> Application -> Cookies to ensure `ovs_session` is present and marked `HttpOnly; SameSite=Strict`.
 
-### Issue 3: Schema / Trigger Mismatch After Fresh Migrations
-- **Root Cause:** `CUSTOM_DATABASE_INTEGRITY.sql` triggers were not applied after running `prisma migrate reset`.
+### Issue 3: Schema / Trigger Mismatch After Database Reset
+- **Root Cause:** Migrations were not applied after resetting the database.
 - **Solution:**
-  - Re-apply triggers: `psql -d ovs_development -f backend/prisma/CUSTOM_DATABASE_INTEGRITY.sql`.
+  - Re-deploy all migrations: `npm run prisma:migrate:deploy`. This applies all DDL tables and custom PL/pgSQL database triggers in a single atomic pipeline.
 
 ### Issue 4: EPERM on Windows Node.js Directory Operations
 - **Root Cause:** Transient Windows file-locking by antivirus or file indexer during fast successive writes in `.temp` or `dist`.
@@ -40,10 +40,10 @@
 
 ```bash
 # Check basic liveness
-curl -i http://localhost:5000/health
+curl -i http://localhost:5000/api/v1/health/live
 
 # Check database readiness
-curl -i http://localhost:5000/ready
+curl -i http://localhost:5000/api/v1/health/ready
 
 # Scrape Prometheus metrics
 curl -s http://localhost:5000/metrics | grep ovs_http_requests_total

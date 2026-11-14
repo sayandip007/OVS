@@ -9,9 +9,9 @@ RUN apk add --no-cache openssl libc6-compat wget
 # Stage 2: Dependencies and Prisma client generation
 FROM base AS deps
 WORKDIR /app
-COPY package.json package-lock.json* ./
+COPY package.json package-lock.json ./
 COPY prisma ./prisma/
-RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
+RUN npm ci
 RUN npx prisma generate --schema=prisma/schema.prisma
 
 # Stage 3: TypeScript Build
@@ -21,18 +21,22 @@ COPY tsconfig.json tsconfig.build.json ./
 COPY src ./src/
 RUN npm run build
 
-# Stage 4: Production Runtime Runner
+# Stage 4: Prune devDependencies while keeping generated Prisma Client
+FROM deps AS prod-deps
+WORKDIR /app
+RUN npm prune --omit=dev
+
+# Stage 5: Production Runtime Runner
 FROM base AS runner
 ENV NODE_ENV=production
 WORKDIR /app
 
-# Copy production artifacts with non-root ownership
-COPY --chown=node:node package.json package-lock.json* ./
+# Copy production package manifests and prisma schema
+COPY --chown=node:node package.json package-lock.json ./
 COPY --chown=node:node prisma ./prisma/
-COPY --chown=node:node --from=deps /app/node_modules ./node_modules
 
-# Prune devDependencies to keep container lean and secure
-RUN npm prune --omit=dev && npx prisma generate --schema=prisma/schema.prisma
+# Copy production dependencies (including pre-generated @prisma/client)
+COPY --chown=node:node --from=prod-deps /app/node_modules ./node_modules
 
 # Copy compiled JavaScript output
 COPY --chown=node:node --from=build /app/dist ./dist

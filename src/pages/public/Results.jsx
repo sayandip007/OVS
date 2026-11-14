@@ -13,6 +13,7 @@ import {
   SimulatedResultDisclaimer,
   PartySeatsBarChart,
 } from '../../components/results/ResultCharts';
+import VisualAnalyticsInsights from '../../components/results/VisualAnalyticsInsights';
 import { notaImg, notaLogo } from '../../assets';
 import {
   Search,
@@ -411,6 +412,15 @@ export default function Results() {
           )}
         </div>
       </section>
+
+      {/* Interactive Visual Insights: Majority Tracker, Demographics, 36 States Matrix, Vote Conversion */}
+      <VisualAnalyticsInsights
+        partyRows={ls2029Analytics.partyRows}
+        results={results}
+        candidates={candidates}
+        states={states}
+        totalCountedVotes={turnoutMetrics.totalCountedVotes}
+      />
 
       {/* National Lok Sabha & Turnout Basis Overview */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

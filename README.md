@@ -251,13 +251,24 @@
 ---
 
 ### 4.2 Environment Configuration
-Copy the provided environment template to initialize local settings:
+Copy the provided environment templates to initialize local settings:
+
+**macOS / Linux / Git Bash:**
 ```bash
 # Copy root environment configuration
 cp .env.example .env
 
-# (Optional) Copy backend environment configuration if running backend independently
+# (Optional) Copy backend environment configuration for standalone backend development
 cp backend/.env.example backend/.env
+```
+
+**Windows PowerShell:**
+```powershell
+# Copy root environment configuration
+Copy-Item .env.example .env
+
+# (Optional) Copy backend environment configuration
+Copy-Item backend/.env.example backend/.env
 ```
 
 The application supports dual runtime data-source modes configured via `VITE_DATA_SOURCE_MODE` in `.env`:
@@ -266,20 +277,23 @@ The application supports dual runtime data-source modes configured via `VITE_DAT
 
 ---
 
-### 4.3 Mode A: Frontend Standalone Demo (Quick Start)
-To run the educational voting prototype with zero backend dependencies:
+### 4.3 Mode A: Frontend Standalone Demo (Quick Start — Under 2 Minutes)
+To run the educational voting portal with zero database dependencies:
 
 ```bash
-# 1. Install dependencies from package-lock.json
-npm ci
+# 1. Install dependencies
+npm install
 
-# 2. Start the Vite development server (Port 3000)
+# 2. (Optional) Re-generate the 2024 Pan-India Candidate & Party Dataset (already committed in public/data/)
+npm run import:candidates
+
+# 3. Start the Vite development server (Port 3000)
 npm run dev
 
-# 3. Open http://localhost:3000 in your browser
+# 4. Open http://localhost:3000 in your browser
 ```
 
-To create and preview the optimized production build:
+To create and preview the production build:
 ```bash
 # Build production bundle into dist/
 npm run build
@@ -291,16 +305,14 @@ npm run preview
 ---
 
 ### 4.4 Mode B: Backend & PostgreSQL Local Setup
-To run the Phase 8.2 modular monolith backend with a live PostgreSQL 16 database:
+To run the full modular monolith with a live PostgreSQL 16 database:
 
-#### 1. Start PostgreSQL 16
-You can launch a lightweight PostgreSQL 16 container via Docker:
+#### 1. Start PostgreSQL 16 (via Docker or Local Service)
 ```bash
 docker run --name ovs-postgres -e POSTGRES_USER=ovs_admin -e POSTGRES_PASSWORD=ovs_secret_dev -e POSTGRES_DB=ovs_db -p 5432:5432 -d postgres:16-alpine
 ```
-*(Or connect to an existing local PostgreSQL 16 instance and update `DATABASE_URL` in `.env`)*
 
-#### 2. Bootstrap Database Schema & Seed Data
+#### 2. Bootstrap Database Schema, Migrations & Real Candidates
 ```bash
 # Validate Prisma schema
 npm run prisma:validate
@@ -311,8 +323,14 @@ npm run prisma:generate
 # Deploy migrations (DDL + PL/pgSQL custom integrity triggers)
 npm run prisma:migrate:deploy
 
-# Seed synthetic DEMO_SAMPLE dataset (idempotent)
+# Seed initial DEMO_SAMPLE dataset (idempotent)
 npm run prisma:seed
+
+# (Optional) Populate PostgreSQL with all 8,441 Real 2024 Parliamentary Candidates & Parties
+npm run db:import-candidates
+
+# (Optional) Bootstrap initial Super Admin account
+npm run backend:admin:bootstrap
 ```
 
 #### 3. Start Backend API Server
@@ -323,6 +341,17 @@ npm run backend:dev
 # Verify health probes
 curl http://localhost:5000/api/v1/health/live
 curl http://localhost:5000/api/v1/health/ready
+```
+
+#### 4. Configure Frontend for Backend API Mode
+In `.env`:
+```env
+VITE_DATA_SOURCE_MODE=BACKEND_API
+VITE_API_BASE_URL=http://localhost:5000/api/v1
+```
+Then start the frontend:
+```bash
+npm run dev
 ```
 
 ---
@@ -409,13 +438,17 @@ npm run test:e2e
 
 ### ECI Admin Portal (`/eci/login`)
 - **Officers**:
-  - `SUPER_ADMIN`: `ECI-SUPER-001` (Rajiv Kumar — Chief Election Commissioner Demo)
-  - `NATIONAL_ADMIN`: `ECI-NAT-002` (Anup Chandra Pandey — National Election Administrator)
-  - `STATE_ADMIN`: `ECI-WB-003` (Ariz Aftab — CEO West Bengal, scoped to `WB`)
-  - `ELECTION_OFFICER`: `ECI-RO-004` (Smita Sharma — Returning Officer, scoped to `LS-2029` & `WB-ASSEMBLY-2029`)
-  - `READ_ONLY_AUDITOR`: `ECI-AUD-005` (Meenakshi Sundaram — Read-Only Observer)
+  - `SUPER_ADMIN`: `ECI-SUPER-001` (Dev Super Administrator — Fictional Demo)
+  - `NATIONAL_ADMIN`: `ECI-NAT-002` (Dev National Administrator — Fictional Demo)
+  - `STATE_ADMIN`: `ECI-WB-003` (Dev State Administrator WB — scoped to `WB`)
+  - `ELECTION_OFFICER`: `ECI-RO-004` (Dev Returning Officer — scoped to `LS-2029` & `WB-ASSEMBLY-2029`)
+  - `READ_ONLY_AUDITOR`: `ECI-AUD-005` (Dev Compliance Auditor — Read-Only Observer)
 - **Passcode**: `admin123` (or `eci2029`)
 - **Simulated 2FA OTP**: `123456`
+
+### Master Simulation Console (`/eci/simulation`)
+- Accessible to `SUPER_ADMIN` and `NATIONAL_ADMIN`.
+- Allows triggering one-click batch simulations of the 543 Lok Sabha seats and 36 State / UT elections with 500+ candidates per state to verify end-to-end counting engine throughput and vote integrity under load.
 
 ---
 

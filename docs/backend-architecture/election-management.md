@@ -6,7 +6,7 @@ OVS preserves strict separation between **Lok Sabha (Parliamentary)** and **Stat
 
 ## 2. Data Model (`Election` & `ElectionLifecycleHistory`)
 
-Extended via [`backend/prisma/schema.prisma`](file:///backend/prisma/schema.prisma) and forward migration [`20261112000300_phase_8_5_election_management_lifecycle/migration.sql`](file:///backend/prisma/migrations/20261112000300_phase_8_5_election_management_lifecycle/migration.sql):
+Extended via [`backend/prisma/schema.prisma`](..\..\backend\prisma\schema.prisma) and forward migration [`20261112000300_phase_8_5_election_management_lifecycle/migration.sql`](..\..\backend\prisma\migrations\20261112000300_phase_8_5_election_management_lifecycle\migration.sql):
 
 - **Core Fields**: `id`, `name`, `type` (`LOK_SABHA` | `STATE_ASSEMBLY`), `year`, `stateId`, `status` (`ElectionStatus`), `country`, `targetJurisdiction`, `description`, `version` (optimistic concurrency), `metadataSource`.
 - **Attribution**: `createdByAdminId`, `updatedByAdminId`, `cancelledAt`, `cancelledByAdminId`, `cancellationReason`, `archivedAt`, `archivedByAdminId`, `archiveNote`.

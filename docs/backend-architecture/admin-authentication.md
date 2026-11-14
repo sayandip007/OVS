@@ -12,7 +12,7 @@ The Online Voting System (OVS) maintains a **strict boundary** between public ci
 
 ## 2. Controlled `SUPER_ADMIN` Bootstrap Process
 
-No default production credentials are ever hardcoded into source files or seeds. Initial `SUPER_ADMIN` provisioning uses [`bootstrapSuperAdmin.ts`](file:///backend/src/modules/admin/bootstrapSuperAdmin.ts):
+No default production credentials are ever hardcoded into source files or seeds. Initial `SUPER_ADMIN` provisioning uses [`bootstrapSuperAdmin.ts`](..\..\backend\src\modules\admin\bootstrapSuperAdmin.ts):
 
 ```bash
 # Required environment variables (supplied securely by operator or CI)

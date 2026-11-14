@@ -75,7 +75,7 @@ services:
       dockerfile: Dockerfile.frontend
       args:
         VITE_API_BASE_URL: /api/v1
-        VITE_DATA_SOURCE_MODE: LOCAL_DEMO
+        VITE_DATA_SOURCE_MODE: BACKEND_API
     container_name: ovs-prod-frontend
     restart: unless-stopped
     ports:

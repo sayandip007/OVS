@@ -369,7 +369,7 @@ model VoterProfile {
   parliamentaryConstituencyId String                    @db.VarChar(50) @map("parliamentary_constituency_id")
   assemblyConstituencyId      String                    @db.VarChar(50) @map("assembly_constituency_id")
   registrationDate            DateTime                  @default(now()) @db.Timestamptz(6) @map("registration_date")
-  isVerified                  Boolean                   @default(true) @map("is_verified")
+  isVerified                  Boolean                   @default(false) @map("is_verified")
   metadataSource              MetadataSource            @default(DEMO_SAMPLE) @map("metadata_source")
   createdAt                   DateTime                  @default(now()) @db.Timestamptz(6) @map("created_at")
   updatedAt                   DateTime                  @updatedAt @db.Timestamptz(6) @map("updated_at")

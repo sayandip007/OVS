@@ -10,7 +10,12 @@ import {
   sessionIdParamSchema,
 } from './auth.schemas.js';
 import { AuthRepository } from './auth.repository.js';
-import { OtpService, DevelopmentOtpProvider, type OtpDeliveryProvider } from './otp.service.js';
+import {
+  OtpService,
+  DevelopmentOtpProvider,
+  resolveOtpProvider,
+  type OtpDeliveryProvider,
+} from './otp.service.js';
 import { SessionService } from './session.service.js';
 import { AuthService } from './auth.service.js';
 import { AuthController } from './auth.controller.js';
@@ -21,10 +26,17 @@ export interface CreateAuthRouterOptions {
   otpProvider?: OtpDeliveryProvider;
   sessionSecret?: string;
   enableRateLimit?: boolean;
+  nodeEnv?: string;
+  allowOtpInspection?: boolean;
 }
 
 export function createAuthRouter(options: CreateAuthRouterOptions = {}): Router {
   const router = Router();
+
+  const nodeEnv = options.nodeEnv ?? process.env.NODE_ENV ?? 'development';
+  const allowOtpInspection =
+    options.allowOtpInspection ??
+    (process.env.ALLOW_OTP_INSPECTION === 'true' && (nodeEnv === 'development' || nodeEnv === 'test'));
 
   const sessionSecret =
     options.sessionSecret ??
@@ -32,7 +44,7 @@ export function createAuthRouter(options: CreateAuthRouterOptions = {}): Router 
     'dev_session_secret_32_characters_long_min';
 
   const authRepository = options.authRepository ?? new AuthRepository();
-  const otpProvider = options.otpProvider ?? new DevelopmentOtpProvider();
+  const otpProvider = options.otpProvider ?? resolveOtpProvider(undefined, nodeEnv);
   const otpService = new OtpService(otpProvider);
   const sessionService = new SessionService(sessionSecret);
   const authService = new AuthService(
@@ -141,8 +153,10 @@ export function createAuthRouter(options: CreateAuthRouterOptions = {}): Router 
     controller.logoutAll
   );
 
-  // Development-only inspector endpoints
-  if (process.env.NODE_ENV !== 'production') {
+  // Development-only inspector endpoints:
+  // Strictly requires ALLOW_OTP_INSPECTION=true AND environment to be development or test.
+  // Never exposed in production or staging under any circumstances.
+  if (allowOtpInspection && (nodeEnv === 'development' || nodeEnv === 'test')) {
     router.get('/dev/latest-otp', controller.devInspectOtp);
     router.get('/dev/otp/:identifier', controller.devInspectOtp);
   }

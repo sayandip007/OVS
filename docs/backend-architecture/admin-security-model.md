@@ -19,7 +19,7 @@
 
 ## 2. Append-Only Security Audit Logging (`admin_action_logs`)
 
-Managed by [`admin.audit.service.ts`](file:///backend/src/modules/admin/admin.audit.service.ts):
+Managed by [`admin.audit.service.ts`](..\..\backend\src\modules\admin\admin.audit.service.ts):
 - Records actor (`adminUserId`, `actorUserId`, `actorIdentifier`, `actorRole`), `actionType`, `domain`, `targetEntityId`, `outcome` (`SUCCESS`, `FAILURE`, `DENIED`), `requestId`, `ipAddress`, `userAgent`, and `timestamp`.
 - Recursively redacts sensitive fields (`password`, `passwordHash`, `newPassword`, `sessionToken`, `csrfToken`, `otp`, `authorization`, `cookie`) before persistence and in Pino HTTP logs.
 - No update (`PUT`/`PATCH`) or delete (`DELETE`) API routes or repository mutators exist for `AdminActionLog`.

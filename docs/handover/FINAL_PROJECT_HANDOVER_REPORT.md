@@ -18,7 +18,7 @@ OVS models the multi-tier governance of Indian elections across 36 States and Un
 The application is structured into four cohesive layers:
 1. **Frontend Layer:** React 19 Single Page Application (SPA) with Tailwind CSS v4 and Lucide Icons. Features an adapter-based dual-mode data layer (`VITE_DATA_SOURCE_MODE`) supporting both browser `LOCAL_DEMO` (offline `localStorage`) and live `BACKEND_API` (Express + PostgreSQL) modes.
 2. **Backend API Layer:** Express 5 on Node.js 22 LTS written in TypeScript 5.8 with strict Zod schema validation, Helmet security headers, CORS protection, CSRF verification, rate limiting, and structured Pino JSON logging.
-3. **Data & Persistence Layer:** PostgreSQL 16 managed via Prisma ORM 5.22, augmented by native PostgreSQL stored procedures and triggers (`CUSTOM_DATABASE_INTEGRITY.sql`) enforcing multi-tenant constituency polymorphism, nomination lifecycle progression, tally reconciliation, and tie-resolution locks.
+3. **Data & Persistence Layer:** PostgreSQL 16 managed via Prisma ORM 5.22, augmented by declarative Prisma migrations (`backend/prisma/migrations/`) enforcing multi-tenant constituency polymorphism, nomination lifecycle progression, tally reconciliation, and tie-resolution locks.
 4. **Observability & DevOps Layer:** Multi-stage Docker production images, Docker Compose orchestration, Prometheus metrics scraping at `/metrics`, standard liveness/readiness probes at `/health` and `/ready`, and automated GitHub Actions CI.
 
 ---
@@ -55,19 +55,22 @@ Dedicated end-to-end UAT scenarios were executed and verified via automated test
 
 ---
 
-## E. Executed Test Results Summary
+## E. Executed Test Results Summary (Post-Phase 8.15.1 Remediation)
 
 | Test Domain | Executed | Passed | Failed | Skipped | Status |
 |---|---|---|---|---|---|
-| **Full Backend Unit Tests** | 184 | 184 | 0 | 0 | **PASS** |
-| **Dedicated UAT Suite** (`uatLifecycle.unit.test.ts`) | 24 | 24 | 0 | 0 | **PASS** |
+| **Full Backend Unit Tests** | 212 | 212 | 0 | 0 | **PASS** |
+| **Demo Seed Security Suite** (`demoSeedSecurity.unit.test.ts`) | 9 | 9 | 0 | 0 | **PASS** |
+| **OTP Environment Security Suite** (`otpEnvironmentSecurity.unit.test.ts`) | 10 | 10 | 0 | 0 | **PASS** |
+| **Voter Verification Semantics Suite** (`voterVerificationSemantics.unit.test.ts`) | 5 | 5 | 0 | 0 | **PASS** |
+| **Dedicated Simulated UAT Suite** (`uatLifecycle.unit.test.ts`) | 24 | 24 | 0 | 0 | **PASS** |
 | **Cross-Module Integration Suite** (`systemIntegration.unit.test.ts`) | 21 | 21 | 0 | 0 | **PASS** |
 | **Architecture Consistency & Invariants** (`npm test`) | 55 | 55 | 0 | 0 | **PASS** |
 | **Frontend TypeScript Typecheck** | Full | Full | 0 | 0 | **PASS** |
 | **Backend TypeScript Typecheck** | Full | Full | 0 | 0 | **PASS** |
-| **Production Vite Build** | Full | Full | 0 | 0 | **PASS** |
+| **Frontend ESLint Check** | Full | 0 errors | 0 | 0 | **PASS** |
 
-*Total Executed Tests:* **239 tests passing with 0 failures.**
+*Total Executed Automated Tests:* **267 passing tests with 0 failures.**
 
 ---
 
@@ -75,13 +78,17 @@ Dedicated end-to-end UAT scenarios were executed and verified via automated test
 - **Secret Ballot Invariant:** Verified that `DemoParticipation` in `schema.prisma` contains zero candidate or party fields. Request schema `participationConfirmBodySchema` enforces `.strict()`, rejecting candidate payloads with HTTP 422. Candidate selections exist only in volatile React component state.
 - **Independent Counting:** All vote tallies and counting rounds are completely independent synthetic numbers with zero joins or foreign keys to `DemoParticipation`.
 - **Authentication Security:** Passwords hashed with scrypt PHC (32-byte salt, constant-time verification). Cookies configured with `HttpOnly; SameSite=Strict`. Sessions regenerated upon authentication to defend against session fixation.
+- **Demo Seed Hardening (Phase 8.15.1):** Demo seeding strictly blocks execution in `production` and `staging` via `assertSafeDemoEnvironment()`, requires explicit `OVS_ALLOW_DEMO_SEED=true`, refuses to overwrite non-demo administrators, and preserves existing administrative password hashes.
+- **OTP Inspection Exposure Guard (Phase 8.15.1):** OTP inspection endpoints are completely omitted from routes unless `ALLOW_OTP_INSPECTION=true` and `NODE_ENV` is `development` or `test`. Production environments utilize `ProductionDisabledOtpProvider` and fail closed.
+- **Voter Verification Semantics (Phase 8.15.1):** Self-registered voters default to `isVerified=false` with `accountStatus=UNVERIFIED`. Email notification eligibility in production requires verified voter credentials.
 - **Injection Defenses:** All database queries parameterized through Prisma ORM. CSV exports quote spreadsheet formula triggers (`=`, `+`, `-`, `@`, `\t`, `\r`).
 - **Destructive Test Guard:** `assertSafeTestDatabase()` prevents destructive test suites from running against production databases.
 
 ---
 
 ## G. Deployment & Operational Readiness
-- **Production-Like Docker Stack:** Validated container configuration with Docker multi-stage builds (`Dockerfile.frontend`, `Dockerfile.backend`) and `docker-compose.yml`.
+- **Production-Like Docker Stack:** Multi-stage builds (`backend/Dockerfile`, `Dockerfile.frontend`) with `npm ci`, lockfile pinning, non-root user execution, and `VITE_DATA_SOURCE_MODE=BACKEND_API`.
+- **Development Docker Compose Stack:** Dedicated `backend/Dockerfile.dev` and `Dockerfile.frontend.dev` with live volume mounts, source hot reload, and dependency isolation.
 - **Health Probes:** Liveness (`/health`), readiness (`/ready`), and diagnostic probes operate reliably.
 - **Monitoring:** Prometheus endpoint (`/metrics`) exposes standardized telemetry for HTTP request counters and duration histograms.
 - **Disaster Recovery:** Documented database backup runbook using PostgreSQL WAL archiving and automated restoration verification.
@@ -89,9 +96,9 @@ Dedicated end-to-end UAT scenarios were executed and verified via automated test
 ---
 
 ## H. Step-by-Step Demonstration Instructions
-1. **Startup:** Follow [`LOCAL_SETUP_GUIDE.md`](file:///c:/Users/Sayandip%20Saha/OneDrive/Desktop/OVS/docs/handover/LOCAL_SETUP_GUIDE.md) to start backend and frontend services.
-2. **Seed Data:** Run `npx tsx backend/prisma/seed-demo.ts` to provision West Bengal, Maharashtra, and Delhi demo fixtures.
-3. **Voter Demonstration:** Follow [`DEMO_GUIDE.md`](file:///c:/Users/Sayandip%20Saha/OneDrive/Desktop/OVS/docs/handover/DEMO_GUIDE.md) Scene 2 using voter `DEMO-EPIC-8801` (mobile: `9800008801`).
+1. **Startup:** Follow [`LOCAL_SETUP_GUIDE.md`](./LOCAL_SETUP_GUIDE.md) to start backend and frontend services.
+2. **Seed Data:** Run `OVS_ALLOW_DEMO_SEED=true npx tsx backend/prisma/seed-demo.ts` in development environment to provision demo fixtures.
+3. **Voter Demonstration:** Follow [`DEMO_GUIDE.md`](./DEMO_GUIDE.md) Scene 2 using voter `DEMO-EPIC-8801` (mobile: `9800008801`).
 4. **Admin Demonstration:** Follow Scene 3 using `ECI-SUPER-DEMO` or `ECI-WB-DEMO` (password: `DemoAdmin@2029!`).
 5. **Tie Resolution Demonstration:** Review session `RESULT-LS-2029-DL-PC-NEW-DELHI` to inspect genuine tie handling and statutory resolution.
 
@@ -99,20 +106,20 @@ Dedicated end-to-end UAT scenarios were executed and verified via automated test
 
 ## I. Known Limitations & Simulation Boundaries
 - **Simulated OTP:** Uses local HMAC-SHA256 OTP generator rather than real government SMS gateways.
-- **Synthetic Registry:** Uses local demo voters and synthetic candidate lists rather than official government electoral rolls.
-- **Non-Homomorphic Counting:** Secret ballot is preserved via client volatility and independent synthetic counting rather than homomorphic mix-nets. Full details documented in [`KNOWN_LIMITATIONS.md`](file:///c:/Users/Sayandip%20Saha/OneDrive/Desktop/OVS/docs/handover/KNOWN_LIMITATIONS.md).
+- **Synthetic Registry:** Uses local demo voters and synthetic candidate lists rather than official government electoral rolls. All synthetic accounts use fictional personas with `.invalid` domains.
+- **Non-Homomorphic Counting:** Secret ballot is preserved via client volatility and independent synthetic counting rather than homomorphic mix-nets. Full details documented in [`KNOWN_LIMITATIONS.md`](./KNOWN_LIMITATIONS.md).
 
 ---
 
 ## J. Release Recommendation
-**Classification:** **RELEASE CANDIDATE (`v1.0.0-rc.1`)**
+**Classification:** **RELEASE CANDIDATE (`v1.0.0-rc.1`) — PHASE 8.15.1 REMEDIATED**
 
 ### Evidence Supporting Classification
-1. **Complete Architectural Integrity:** All planned phases (8.1 through 8.15) are implemented and verified.
-2. **Zero Failing Tests:** 184 backend unit/UAT tests and 55 architecture tests pass with 100% success rate.
-3. **Zero Type Errors:** Frontend and backend typechecks pass cleanly without compilation warnings.
+1. **Complete Blocker Remediation:** All 8 findings from Phase 8.15.1 preflight audit successfully reproduced, remediated, and verified by regression test suites.
+2. **Zero Failing Tests:** 212 backend unit/UAT tests and 55 architecture tests pass with 100% success rate.
+3. **Zero Type Errors:** Frontend and backend typechecks pass cleanly without compilation errors.
 4. **Verified Privacy Guarantee:** Mathematical and architectural proof of zero candidate-choice retention or leakage.
-5. **Complete Documentation Suite:** 15 comprehensive technical guides authored in `docs/handover/`.
+5. **Sanitized Handover Documentation:** All documentation free of local machine paths, non-existent SQL references, and real official names. Detailed audit and remediation history preserved in [`PHASE_8_15_1_IMPLEMENTATION_REPORT.md`](./PHASE_8_15_1_IMPLEMENTATION_REPORT.md).
 
 ---
 

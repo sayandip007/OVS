@@ -2,7 +2,7 @@
 
 ## 1. Role Hierarchy
 
-Defined centrally in [`admin.permissions.ts`](file:///backend/src/modules/admin/admin.permissions.ts):
+Defined centrally in [`admin.permissions.ts`](..\..\backend\src\modules\admin\admin.permissions.ts):
 
 | Rank | Role (`AdminRole`) | Intended Jurisdiction Scope | Provisioning Authority |
 | :---: | :--- | :--- | :--- |

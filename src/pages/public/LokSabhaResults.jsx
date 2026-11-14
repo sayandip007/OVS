@@ -12,6 +12,7 @@ import {
   PartySeatsBarChart,
   VoteShareDonutChart,
 } from '../../components/results/ResultCharts';
+import VisualAnalyticsInsights from '../../components/results/VisualAnalyticsInsights';
 import {
   ArrowLeft,
   Download,
@@ -324,6 +325,15 @@ export default function LokSabhaResults() {
           </span>
         </div>
       </div>
+
+      {/* Visual Analytics & Majority Suite */}
+      <VisualAnalyticsInsights
+        partyRows={nationalAnalytics.partyRows}
+        results={results}
+        candidates={candidates}
+        states={states}
+        totalCountedVotes={nationalAnalytics.totalSimulatedVotesCounted}
+      />
 
       {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

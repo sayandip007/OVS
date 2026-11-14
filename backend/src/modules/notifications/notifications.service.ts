@@ -3,6 +3,7 @@ import {
   AnnouncementCategory,
   AnnouncementStatus,
   ConstituencyType,
+  MetadataSource,
   NotificationDeliveryStatus,
   NotificationType,
   PrismaClient,
@@ -710,8 +711,8 @@ export class NotificationsService {
         },
       });
 
-      // Queue email delivery if email is enabled and verified
-      if (pref?.emailEnabled && voter.email && voter.isVerified) {
+      // Queue email delivery if email is enabled and verified (or safe demo rule applies)
+      if (this.isEmailNotificationEligible(voter, pref)) {
         await this.prisma.notificationDelivery.create({
           data: {
             notificationId: notifId,
@@ -771,7 +772,7 @@ export class NotificationsService {
         },
       });
 
-      if (pref?.emailEnabled && voter.email && voter.isVerified) {
+      if (this.isEmailNotificationEligible(voter, pref)) {
         await this.prisma.notificationDelivery.create({
           data: {
             notificationId: notifId,
@@ -784,6 +785,33 @@ export class NotificationsService {
         });
       }
     }
+  }
+
+  /**
+   * Evaluates voter email notification eligibility.
+   * Requires actual identity/email verification in production/staging.
+   * Permits safe demo records in non-production environments.
+   */
+  private isEmailNotificationEligible(
+    voter: { email?: string | null; isVerified: boolean; metadataSource?: MetadataSource },
+    pref?: { emailEnabled?: boolean | null } | null
+  ): boolean {
+    if (!pref?.emailEnabled || !voter.email) {
+      return false;
+    }
+    // Statutory rule: actual verified identity/email
+    if (voter.isVerified) {
+      return true;
+    }
+    // Safe demo-only rule: synthetic demo records in non-production environments
+    if (
+      voter.metadataSource === MetadataSource.DEMO_SAMPLE &&
+      process.env.NODE_ENV !== 'production' &&
+      process.env.NODE_ENV !== 'staging'
+    ) {
+      return true;
+    }
+    return false;
   }
 
   // ============================================================================

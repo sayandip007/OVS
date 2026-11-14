@@ -46,7 +46,7 @@
 ┌────────────────────────────────────────────────────────────────────────┐
 │                   POSTGRESQL 16 RELATIONAL DATABASE                    │
 │   • 28 Relational Models (schema.prisma)                               │
-│   • Native SQL Integrity Triggers (CUSTOM_DATABASE_INTEGRITY.sql)      │
+│   • Native SQL Integrity Triggers (Prisma Migration 20261101000100)    │
 │   • Multi-Tenant Constraints, Foreign Keys & Advisory Locks            │
 │   • Immutable Audit Trails & Historical Snapshots                      │
 └────────────────────────────────────────────────────────────────────────┘

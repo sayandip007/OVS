@@ -2,7 +2,7 @@
 
 ## 1. Data Model (`Candidate`)
 
-Reuses `Candidate` in [`backend/prisma/schema.prisma`](file:///backend/prisma/schema.prisma), extended in [`20261112000400_phase_8_6_candidates_parties_nominations/migration.sql`](file:///backend/prisma/migrations/20261112000400_phase_8_6_candidates_parties_nominations/migration.sql):
+Reuses `Candidate` in [`backend/prisma/schema.prisma`](..\..\backend\prisma\schema.prisma), extended in [`20261112000400_phase_8_6_candidates_parties_nominations/migration.sql`](..\..\backend\prisma\migrations\20261112000400_phase_8_6_candidates_parties_nominations\migration.sql):
 - `id`, `partyId`, `displayName`, `fullName`, `age` (>= 25), `gender`, `education`, `profession`, `criminalCases`, `assetsDeclared`, `liabilitiesDeclared`, `photoUrl`, `bio`, `isActive`, `deactivatedAt`, `metadataSource`.
 - No Aadhaar, EPIC, passport, or bank identifiers are stored.
 

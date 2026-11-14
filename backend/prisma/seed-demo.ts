@@ -1,13 +1,18 @@
 /**
- * OVS Phase 8.15 — Comprehensive Synthetic Demo Dataset Seed
+ * OVS Phase 8.15.1 — Comprehensive Synthetic Demo Dataset Seed (Hardened)
  *
- * Extends the existing seed architecture with:
- *  - Representative multi-state data (West Bengal, Maharashtra, Delhi)
- *  - Deterministic 5-role administrator credentials
- *  - Multi-jurisdiction demo voter profiles
- *  - Simulated tie resolution records
- *  - System settings & feature flags
- *  - Strictly zero voter candidate-choice data
+ * Requirements:
+ *  - Explicit refusal to run when NODE_ENV=production or staging.
+ *  - Require OVS_ALLOW_DEMO_SEED=true before seeding.
+ *  - Validate that target database is a clearly designated development/demo/test database.
+ *  - Fail closed if database identity cannot be verified.
+ *  - Never allow a demo seed to overwrite an existing non-demo administrator.
+ *  - Never reset an existing administrator's password to a shared demo password.
+ *  - Keep demo account provisioning isolated from production bootstrap provisioning.
+ *  - Make repeated seeding idempotent.
+ *  - Use reserved .invalid or .local demo email domains, NOT @eci.gov.in.
+ *  - Use clearly fictional administrator identities.
+ *  - Clearly mark every synthetic record as DEMO_SAMPLE.
  */
 
 import {
@@ -49,9 +54,233 @@ export interface DemoDatasetInventory {
   featureFlagsCount: number;
 }
 
+export function assertSafeDemoEnvironment(
+  databaseUrl?: string | null,
+  nodeEnv?: string | null,
+  allowDemoSeed?: string | null
+): void {
+  const env = nodeEnv !== undefined ? nodeEnv : process.env.NODE_ENV;
+  const allow = allowDemoSeed !== undefined ? allowDemoSeed : process.env.OVS_ALLOW_DEMO_SEED;
+  const dbUrl = databaseUrl !== undefined ? databaseUrl : process.env.DATABASE_URL;
+
+  if (env === 'production') {
+    throw new Error(
+      'FAIL-CLOSED DEMO SEED GUARD: Refusing to seed demo dataset while NODE_ENV=production.'
+    );
+  }
+  if (env === 'staging') {
+    throw new Error(
+      'FAIL-CLOSED DEMO SEED GUARD: Refusing to seed demo dataset while NODE_ENV=staging.'
+    );
+  }
+  if (allow !== 'true') {
+    throw new Error(
+      'FAIL-CLOSED DEMO SEED GUARD: OVS_ALLOW_DEMO_SEED must be explicitly set to "true" to run demo dataset seed.'
+    );
+  }
+  if (!dbUrl) {
+    throw new Error(
+      'FAIL-CLOSED DEMO SEED GUARD: DATABASE_URL is undefined. Cannot verify safe demo database.'
+    );
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(dbUrl);
+  } catch {
+    throw new Error(
+      'FAIL-CLOSED DEMO SEED GUARD: DATABASE_URL is not a valid URL.'
+    );
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+  const dbName = parsed.pathname.replace(/^\//, '').toLowerCase();
+
+  const isLocalOrContainerHost = [
+    'localhost',
+    '127.0.0.1',
+    '::1',
+    'postgres',
+    'postgres-db',
+    'ovs-postgres',
+  ].includes(hostname);
+
+  const isSafeDatabaseName =
+    dbName.includes('test') ||
+    dbName.includes('dev') ||
+    dbName.includes('demo') ||
+    dbName === 'ovs_db' ||
+    dbName === 'ovs_development' ||
+    dbName === 'ovs_demo' ||
+    dbName === 'ovs_ci_test';
+
+  if (!isLocalOrContainerHost || !isSafeDatabaseName) {
+    throw new Error(
+      `FAIL-CLOSED DEMO SEED GUARD: Refusing demo seed on unverified database target '${hostname}/${dbName}'. Target must be a designated development/demo/test database.`
+    );
+  }
+}
+
+export interface SeedDemoDatasetOptions {
+  skipEnvCheck?: boolean;
+}
+
+export async function provisionDemoAdministrators(
+  client: any,
+  demoAdminPasswordHash: string
+): Promise<void> {
+  // Seed multi-role administrators using strictly fictional personas and .invalid email domain
+  const demoAdmins = [
+    {
+      userId: '77777777-7777-4777-8777-777777770001',
+      adminId: '77777777-7777-4777-8777-777777771001',
+      officerCode: 'ECI-SUPER-DEMO',
+      email: 'superadmin.demo@ovs-demo.invalid',
+      fullName: 'Dev Super Administrator (DEMO_SAMPLE)',
+      designation: 'Chief Election Commissioner (Fictional Demo)',
+      role: AdminRole.SUPER_ADMIN,
+      assignedStateId: null,
+    },
+    {
+      userId: '77777777-7777-4777-8777-777777770002',
+      adminId: '77777777-7777-4777-8777-777777771002',
+      officerCode: 'ECI-NAT-DEMO',
+      email: 'nationaladmin.demo@ovs-demo.invalid',
+      fullName: 'Dev National Administrator (DEMO_SAMPLE)',
+      designation: 'National Election Director (Fictional Demo)',
+      role: AdminRole.NATIONAL_ADMIN,
+      assignedStateId: null,
+    },
+    {
+      userId: '77777777-7777-4777-8777-777777770003',
+      adminId: '77777777-7777-4777-8777-777777771003',
+      officerCode: 'ECI-WB-DEMO',
+      email: 'stateadmin.wb.demo@ovs-demo.invalid',
+      fullName: 'Dev State Administrator WB (DEMO_SAMPLE)',
+      designation: 'CEO West Bengal (Fictional Demo)',
+      role: AdminRole.STATE_ADMIN,
+      assignedStateId: 'WB',
+    },
+    {
+      userId: '77777777-7777-4777-8777-777777770004',
+      adminId: '77777777-7777-4777-8777-777777771004',
+      officerCode: 'ECI-MH-DEMO',
+      email: 'stateadmin.mh.demo@ovs-demo.invalid',
+      fullName: 'Dev State Administrator MH (DEMO_SAMPLE)',
+      designation: 'CEO Maharashtra (Fictional Demo)',
+      role: AdminRole.STATE_ADMIN,
+      assignedStateId: 'MH',
+    },
+    {
+      userId: '77777777-7777-4777-8777-777777770005',
+      adminId: '77777777-7777-4777-8777-777777771005',
+      officerCode: 'ECI-EO-WB-DEMO',
+      email: 'ro.krishnanagar.demo@ovs-demo.invalid',
+      fullName: 'Dev Returning Officer Krishnanagar (DEMO_SAMPLE)',
+      designation: 'Returning Officer (Fictional Demo)',
+      role: AdminRole.ELECTION_OFFICER,
+      assignedStateId: 'WB',
+    },
+    {
+      userId: '77777777-7777-4777-8777-777777770006',
+      adminId: '77777777-7777-4777-8777-777777771006',
+      officerCode: 'ECI-AUDITOR-DEMO',
+      email: 'auditor.demo@ovs-demo.invalid',
+      fullName: 'Dev Compliance Auditor (DEMO_SAMPLE)',
+      designation: 'Compliance Auditor (Fictional Demo)',
+      role: AdminRole.READ_ONLY_AUDITOR,
+      assignedStateId: null,
+    },
+  ];
+
+  for (const adm of demoAdmins) {
+    // Check if an admin with this officer code or email already exists
+    const existingAdminByCode = await client.adminUser.findUnique({
+      where: { officerCode: adm.officerCode },
+      include: { user: true },
+    });
+    const existingAdminByEmail = await client.adminUser.findUnique({
+      where: { email: adm.email },
+      include: { user: true },
+    });
+
+    // Guard: Never overwrite an existing non-demo administrator
+    if (existingAdminByCode && existingAdminByCode.id !== adm.adminId) {
+      throw new Error(
+        `FAIL-CLOSED DEMO SEED GUARD: Found existing non-demo administrator with officerCode '${adm.officerCode}'. Refusing to overwrite.`
+      );
+    }
+    if (existingAdminByEmail && existingAdminByEmail.id !== adm.adminId) {
+      throw new Error(
+        `FAIL-CLOSED DEMO SEED GUARD: Found existing non-demo administrator with email '${adm.email}'. Refusing to overwrite.`
+      );
+    }
+
+    const existingUser = await client.user.findUnique({
+      where: { identifier: adm.officerCode },
+    });
+
+    if (!existingUser) {
+      // Fresh demo provisioning
+      await client.user.create({
+        data: {
+          id: adm.userId,
+          userType: 'ADMIN',
+          identifier: adm.officerCode,
+          passwordHash: demoAdminPasswordHash,
+          isActive: true,
+        },
+      });
+    } else {
+      // Idempotent update: NEVER reset password hash of existing administrator
+      await client.user.update({
+        where: { id: existingUser.id },
+        data: {
+          isActive: true,
+        },
+      });
+    }
+
+    if (!existingAdminByCode) {
+      await client.adminUser.create({
+        data: {
+          id: adm.adminId,
+          userId: existingUser?.id ?? adm.userId,
+          officerCode: adm.officerCode,
+          email: adm.email,
+          fullName: adm.fullName,
+          designation: adm.designation,
+          role: adm.role,
+          assignedStateId: adm.assignedStateId,
+          status: AdminStatus.ACTIVE,
+          isActive: true,
+        },
+      });
+    } else {
+      await client.adminUser.update({
+        where: { id: existingAdminByCode.id },
+        data: {
+          email: adm.email,
+          fullName: adm.fullName,
+          designation: adm.designation,
+          role: adm.role,
+          assignedStateId: adm.assignedStateId,
+          status: AdminStatus.ACTIVE,
+          isActive: true,
+        },
+      });
+    }
+  }
+}
+
 export async function seedDemoDataset(
-  client: PrismaClient = defaultPrisma
+  client: PrismaClient = defaultPrisma,
+  options: SeedDemoDatasetOptions = {}
 ): Promise<DemoDatasetInventory> {
+  if (!options.skipEnvCheck) {
+    assertSafeDemoEnvironment();
+  }
+
   const passwordService = new PasswordService();
   const demoAdminPassword = 'DemoAdmin@2029!';
   const demoAdminPasswordHash = await passwordService.hashPassword(demoAdminPassword);
@@ -62,120 +291,17 @@ export async function seedDemoDataset(
   await seedDemoCountingScenarios(client);
   await seedNotificationsAndAnnouncements(client);
 
-  // 2. Seed multi-role administrators covering all RBAC scopes
-  const demoAdmins = [
-    {
-      userId: '77777777-7777-4777-8777-777777770001',
-      adminId: '77777777-7777-4777-8777-777777771001',
-      officerCode: 'ECI-SUPER-DEMO',
-      email: 'superadmin.demo@eci.gov.in',
-      fullName: 'Chief Election Commissioner (DEMO_SAMPLE)',
-      designation: 'Chief Election Commissioner',
-      role: AdminRole.SUPER_ADMIN,
-      assignedStateId: null,
-    },
-    {
-      userId: '77777777-7777-4777-8777-777777770002',
-      adminId: '77777777-7777-4777-8777-777777771002',
-      officerCode: 'ECI-NAT-DEMO',
-      email: 'nationaladmin.demo@eci.gov.in',
-      fullName: 'National Election Director (DEMO_SAMPLE)',
-      designation: 'National Election Director',
-      role: AdminRole.NATIONAL_ADMIN,
-      assignedStateId: null,
-    },
-    {
-      userId: '77777777-7777-4777-8777-777777770003',
-      adminId: '77777777-7777-4777-8777-777777771003',
-      officerCode: 'ECI-WB-DEMO',
-      email: 'stateadmin.wb.demo@eci.gov.in',
-      fullName: 'Chief Electoral Officer West Bengal (DEMO_SAMPLE)',
-      designation: 'CEO West Bengal',
-      role: AdminRole.STATE_ADMIN,
-      assignedStateId: 'WB',
-    },
-    {
-      userId: '77777777-7777-4777-8777-777777770004',
-      adminId: '77777777-7777-4777-8777-777777771004',
-      officerCode: 'ECI-MH-DEMO',
-      email: 'stateadmin.mh.demo@eci.gov.in',
-      fullName: 'Chief Electoral Officer Maharashtra (DEMO_SAMPLE)',
-      designation: 'CEO Maharashtra',
-      role: AdminRole.STATE_ADMIN,
-      assignedStateId: 'MH',
-    },
-    {
-      userId: '77777777-7777-4777-8777-777777770005',
-      adminId: '77777777-7777-4777-8777-777777771005',
-      officerCode: 'ECI-EO-WB-DEMO',
-      email: 'ro.krishnanagar.demo@eci.gov.in',
-      fullName: 'Returning Officer Krishnanagar (DEMO_SAMPLE)',
-      designation: 'Returning Officer',
-      role: AdminRole.ELECTION_OFFICER,
-      assignedStateId: 'WB',
-    },
-    {
-      userId: '77777777-7777-4777-8777-777777770006',
-      adminId: '77777777-7777-4777-8777-777777771006',
-      officerCode: 'ECI-AUDITOR-DEMO',
-      email: 'auditor.demo@eci.gov.in',
-      fullName: 'Senior Compliance Auditor (DEMO_SAMPLE)',
-      designation: 'Independent Election Auditor',
-      role: AdminRole.READ_ONLY_AUDITOR,
-      assignedStateId: null,
-    },
-  ];
+  // 2. Seed multi-role administrators
+  await provisionDemoAdministrators(client, demoAdminPasswordHash);
 
-  for (const adm of demoAdmins) {
-    await client.user.upsert({
-      where: { identifier: adm.officerCode },
-      update: {
-        passwordHash: demoAdminPasswordHash,
-        isActive: true,
-      },
-      create: {
-        id: adm.userId,
-        userType: 'ADMIN',
-        identifier: adm.officerCode,
-        passwordHash: demoAdminPasswordHash,
-        isActive: true,
-      },
-    });
-
-    await client.adminUser.upsert({
-      where: { officerCode: adm.officerCode },
-      update: {
-        email: adm.email,
-        fullName: adm.fullName,
-        designation: adm.designation,
-        role: adm.role,
-        assignedStateId: adm.assignedStateId,
-        status: AdminStatus.ACTIVE,
-        isActive: true,
-      },
-      create: {
-        id: adm.adminId,
-        userId: adm.userId,
-        officerCode: adm.officerCode,
-        email: adm.email,
-        fullName: adm.fullName,
-        designation: adm.designation,
-        role: adm.role,
-        assignedStateId: adm.assignedStateId,
-        status: AdminStatus.ACTIVE,
-        isActive: true,
-      },
-    });
-  }
-
-  // 3. Seed additional demo voters for Maharashtra & Delhi
+  // 3. Seed additional demo voters for Maharashtra & Delhi (strictly unverified / DEMO_SAMPLE)
   const regionalVoters = [
     {
       userId: '88888888-8888-4888-8888-888888880003',
       voterId: '88888888-8888-4888-8888-888888881003',
       epicNumber: 'DEMO-EPIC-8803',
       fullName: 'Rohan Deshmukh (DEMO_SAMPLE)',
-      email: 'rohan.deshmukh@ovs-demo.local',
+      email: 'rohan.deshmukh@ovs-demo.invalid',
       mobile: '9800008803',
       stateId: 'MH',
       districtId: 'MH-DIST-MUMBAI-SUBURBAN',
@@ -187,7 +313,7 @@ export async function seedDemoDataset(
       voterId: '88888888-8888-4888-8888-888888881004',
       epicNumber: 'DEMO-EPIC-8804',
       fullName: 'Priya Sharma (DEMO_SAMPLE)',
-      email: 'priya.sharma@ovs-demo.local',
+      email: 'priya.sharma@ovs-demo.invalid',
       mobile: '9800008804',
       stateId: 'DL',
       districtId: 'DL-DIST-NEW-DELHI',
@@ -227,7 +353,7 @@ export async function seedDemoDataset(
         districtId: v.districtId,
         parliamentaryConstituencyId: v.parliamentaryConstituencyId,
         assemblyConstituencyId: v.assemblyConstituencyId,
-        isVerified: true,
+        isVerified: false, // Synthetic demo voters must not be presented as officially verified voters
         metadataSource: MetadataSource.DEMO_SAMPLE,
       },
     });
@@ -366,7 +492,7 @@ if (isMain) {
   seedDemoDataset(defaultPrisma)
     .then(async (inventory) => {
       console.log(
-        'OVS Phase 8.15 DEMO_SAMPLE comprehensive dataset seed completed successfully:\n',
+        'OVS Phase 8.15.1 DEMO_SAMPLE comprehensive dataset seed completed successfully:\n',
         JSON.stringify(inventory, null, 2)
       );
       await defaultPrisma.$disconnect();

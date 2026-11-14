@@ -191,13 +191,13 @@ export const INITIAL_CANDIDATES = [
   // =========================================================================
   {
     id: 'CAND-LS29-UP-VNS-1',
-    name: 'Narendra Modi (Demo Reference)',
+    name: 'Devendra Joshi (Demo)',
     partyId: 'PARTY-BJP',
     electionId: 'LS-2029',
     constituencyId: 'UP-PC-VARANASI',
     electionType: ELECTION_TYPES.LOK_SABHA,
     photograph: candidate1,
-    biography: 'Parliamentary representative for Varanasi constituency (Demonstration Reference Record).',
+    biography: 'Parliamentary candidate for Varanasi constituency (Demonstration Sample Record).',
     education: 'M.A. Political Science',
     manifesto: 'Infrastructure modernization, riverfront conservation, and textile weavers export hub.',
     status: 'APPROVED',
@@ -205,13 +205,13 @@ export const INITIAL_CANDIDATES = [
   },
   {
     id: 'CAND-LS29-UP-VNS-2',
-    name: 'Rahul Gandhi (Demo Reference)',
+    name: 'Rajeev Singhania (Demo)',
     partyId: 'PARTY-INC',
     electionId: 'LS-2029',
     constituencyId: 'UP-PC-VARANASI',
     electionType: ELECTION_TYPES.LOK_SABHA,
     photograph: candidate2,
-    biography: 'Parliamentary candidate (Demonstration Reference Record).',
+    biography: 'Parliamentary candidate (Demonstration Sample Record).',
     education: 'M.Phil. Development Studies',
     manifesto: 'Youth employment fellowships, MSME credit access, and social security expansion.',
     publicDeclaration: 'No pending disqualification under RP Act 1951 (Demo Declaration).',
@@ -318,7 +318,7 @@ export const INITIAL_CANDIDATES = [
   // =========================================================================
   {
     id: 'CAND-LS24-1',
-    name: 'Narendra Modi',
+    name: 'Devendra Joshi (Demo)',
     partyId: 'PARTY-BJP',
     electionId: 'LS-2024',
     constituencyId: 'UP-PC-VARANASI',
@@ -332,7 +332,7 @@ export const INITIAL_CANDIDATES = [
   },
   {
     id: 'CAND-LS24-2',
-    name: 'Rahul Gandhi',
+    name: 'Rajeev Singhania (Demo)',
     partyId: 'PARTY-INC',
     electionId: 'LS-2024',
     constituencyId: 'KL-PC-1',
@@ -346,7 +346,7 @@ export const INITIAL_CANDIDATES = [
   },
   {
     id: 'CAND-LS24-3',
-    name: 'N Chandrababu Naidu',
+    name: 'C. V. Prasad (Demo)',
     partyId: 'PARTY-TDP',
     electionId: 'LS-2024',
     constituencyId: 'AP-PC-1',
@@ -360,7 +360,7 @@ export const INITIAL_CANDIDATES = [
   },
   {
     id: 'CAND-LS24-4',
-    name: 'Sitaram Yechury',
+    name: 'Somnath Sen (Demo)',
     partyId: 'PARTY-CPIM',
     electionId: 'LS-2024',
     constituencyId: 'WB-PC-KOLKATA-DAKSHIN',
@@ -374,7 +374,7 @@ export const INITIAL_CANDIDATES = [
   },
   {
     id: 'CAND-LS24-5',
-    name: 'Mamata Banerjee',
+    name: 'Maitreyi Bandyopadhyay (Demo)',
     partyId: 'PARTY-AITC',
     electionId: 'LS-2024',
     constituencyId: 'WB-PC-KOLKATA-DAKSHIN',
@@ -388,7 +388,7 @@ export const INITIAL_CANDIDATES = [
   },
   {
     id: 'CAND-LS24-6',
-    name: 'Nitish Kumar',
+    name: 'Navin Kishore (Demo)',
     partyId: 'PARTY-JDU',
     electionId: 'LS-2024',
     constituencyId: 'BR-PC-1',

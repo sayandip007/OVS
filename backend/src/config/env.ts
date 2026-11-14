@@ -57,9 +57,19 @@ export const envSchema = z
       .min(1)
       .default(120),
     REDIS_URL: z.string().optional(),
+    ALLOW_OTP_INSPECTION: z
+      .preprocess((val) => val === 'true' || val === true, z.boolean())
+      .default(false),
   })
   .superRefine((data, ctx) => {
     if (data.NODE_ENV === 'production' || data.NODE_ENV === 'staging') {
+      if (data.ALLOW_OTP_INSPECTION) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['ALLOW_OTP_INSPECTION'],
+          message: `ALLOW_OTP_INSPECTION is strictly forbidden when NODE_ENV=${data.NODE_ENV}`,
+        });
+      }
       const lowerSecret = data.SESSION_SECRET.toLowerCase();
       if (
         lowerSecret.includes('replace-with') ||

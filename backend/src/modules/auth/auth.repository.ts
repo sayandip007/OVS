@@ -202,7 +202,7 @@ export class AuthRepository {
               districtId: input.districtId.toUpperCase(),
               parliamentaryConstituencyId: input.parliamentaryConstituencyId.toUpperCase(),
               assemblyConstituencyId: input.assemblyConstituencyId.toUpperCase(),
-              isVerified: true,
+              isVerified: false,
               metadataSource: 'DEMO_SAMPLE',
             },
           },

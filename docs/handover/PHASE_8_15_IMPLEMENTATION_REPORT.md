@@ -11,12 +11,12 @@
 
 Phase 8.15 marks the successful completion of the entire planned development roadmap for the Online Voting System (OVS). All objectives set forth in the Phase 8.15 specification have been met:
 
-1. **Preflight Review Completed:** Created [`PHASE_8_15_PREFLIGHT_REVIEW.md`](file:///c:/Users/Sayandip%20Saha/OneDrive/Desktop/OVS/docs/handover/PHASE_8_15_PREFLIGHT_REVIEW.md), verifying the resolution of all prior findings.
+1. **Preflight Review Completed:** Created [`PHASE_8_15_PREFLIGHT_REVIEW.md`](./PHASE_8_15_PREFLIGHT_REVIEW.md), verifying the resolution of all prior findings.
 2. **Final Stabilization Pass:** Cleaned up interactive controls, verified navigation, confirmed error boundary protections, eliminated dead buttons, and validated responsive layout behavior.
-3. **Dedicated Automated UAT Suite:** Created [`uatLifecycle.unit.test.ts`](file:///c:/Users/Sayandip%20Saha/OneDrive/Desktop/OVS/backend/tests/unit/uatLifecycle.unit.test.ts) containing 24 automated acceptance tests across 10 functional domains. All 24 tests pass with 0 failures.
-4. **Reproducible Synthetic Demo Dataset:** Authored [`backend/prisma/seed-demo.ts`](file:///c:/Users/Sayandip%20Saha/OneDrive/Desktop/OVS/backend/prisma/seed-demo.ts) extending the base seed architecture to provision multi-state representative data (West Bengal, Maharashtra, Delhi), all 5 admin roles, demo voters, tie resolution scenarios, system settings, and feature flags. Documented in [`DEMO_DATA_INVENTORY.md`](file:///c:/Users/Sayandip%20Saha/OneDrive/Desktop/OVS/docs/handover/DEMO_DATA_INVENTORY.md).
+3. **Dedicated Automated UAT Suite:** Created [`uatLifecycle.unit.test.ts`](..\..\backend\tests\unit\uatLifecycle.unit.test.ts) containing 24 automated acceptance tests across 10 functional domains. All 24 tests pass with 0 failures.
+4. **Reproducible Synthetic Demo Dataset:** Authored [`backend/prisma/seed-demo.ts`](..\..\backend\prisma\seed-demo.ts) extending the base seed architecture to provision multi-state representative data (West Bengal, Maharashtra, Delhi), all 5 admin roles, demo voters, tie resolution scenarios, system settings, and feature flags. Documented in [`DEMO_DATA_INVENTORY.md`](./DEMO_DATA_INVENTORY.md).
 5. **Technical Documentation Handover Package:** Produced 15 structured documentation guides in `docs/handover/` covering architectural blueprints, setup runbooks, user guides, API specifications, and troubleshooting.
-6. **Voter Privacy Re-Verification:** Certified zero candidate choice retention or transmission in [`FINAL_PRIVACY_AND_EDUCATIONAL_USE_STATEMENT.md`](file:///c:/Users/Sayandip%20Saha/OneDrive/Desktop/OVS/docs/handover/FINAL_PRIVACY_AND_EDUCATIONAL_USE_STATEMENT.md).
+6. **Voter Privacy Re-Verification:** Certified zero candidate choice retention or transmission in [`FINAL_PRIVACY_AND_EDUCATIONAL_USE_STATEMENT.md`](./FINAL_PRIVACY_AND_EDUCATIONAL_USE_STATEMENT.md).
 
 ---
 
@@ -42,3 +42,9 @@ Phase 8.15 marks the successful completion of the entire planned development roa
 - **Voter Anonymity:** Strict Zod schema (`.strict()`) rejects candidate payload; database model has 0 candidate columns.
 - **CSV Formula Injection:** Evaluator export engine quotes spreadsheet formula control characters (`=`, `+`, `-`, `@`, `\t`, `\r`).
 - **Health & Metrics:** Endpoints `/health`, `/ready`, `/live`, and `/metrics` functional.
+
+---
+
+## 4. Phase 8.15.1 Remediation Note
+
+Following independent review of the Phase 8.15 release candidate, a focused corrective release **Phase 8.15.1 – Release Blocker Remediation, Runtime Verification & UAT Correction** was executed to harden the demo seed system, correct OTP provider environment handling, correct voter verification semantics, repair Docker build contexts and lockfiles, update documentation, and implement live PostgreSQL UAT integration. See [`PHASE_8_15_1_IMPLEMENTATION_REPORT.md`](./PHASE_8_15_1_IMPLEMENTATION_REPORT.md) for full audit and verification evidence.

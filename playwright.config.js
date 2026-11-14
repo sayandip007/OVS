@@ -33,8 +33,21 @@ export default defineConfig({
   },
   projects: [
     {
-      name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      name: 'local-demo',
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:3000',
+      },
+    },
+    {
+      name: 'api-backed',
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: process.env.PLAYWRIGHT_API_BASE_URL || 'http://127.0.0.1:3000',
+        extraHTTPHeaders: {
+          'X-OVS-Runtime-Mode': 'BACKEND_API',
+        },
+      },
     },
   ],
   webServer: {

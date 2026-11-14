@@ -64,16 +64,13 @@ With PostgreSQL 16 running on `localhost:5432`:
 
 ```bash
 # Generate Prisma Client
-npx prisma generate --schema=backend/prisma/schema.prisma
+npm run prisma:generate
 
-# Run migrations against clean database
-npx prisma migrate deploy --schema=backend/prisma/schema.prisma
+# Deploy all migrations (DDL + PL/pgSQL triggers) against clean database
+npm run prisma:migrate:deploy
 
-# Apply native database integrity triggers
-psql -d ovs_development -f backend/prisma/CUSTOM_DATABASE_INTEGRITY.sql
-
-# Seed comprehensive demo dataset
-npx tsx backend/prisma/seed-demo.ts
+# Seed comprehensive demo dataset (requires explicit opt-in)
+OVS_ALLOW_DEMO_SEED=true npx tsx backend/prisma/seed-demo.ts
 ```
 
 ---

@@ -4,8 +4,8 @@
 
 The OVS CI/CD automation is built using GitHub Actions to enforce comprehensive static analysis, security validation, architecture consistency, and database trigger verification on every commit and pull request.
 
-- **Continuous Integration Workflow:** [.github/workflows/ci.yml](file:///c:/Users/Sayandip%20Saha/OneDrive/Desktop/OVS/.github/workflows/ci.yml)
-- **Release Automation Workflow:** [.github/workflows/release.yml](file:///c:/Users/Sayandip%20Saha/OneDrive/Desktop/OVS/.github/workflows/release.yml)
+- **Continuous Integration Workflow:** [.github/workflows/ci.yml](..\..\.github\workflows\ci.yml)
+- **Release Automation Workflow:** [.github/workflows/release.yml](..\..\.github\workflows\release.yml)
 
 ---
 

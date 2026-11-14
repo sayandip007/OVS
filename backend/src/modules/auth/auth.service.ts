@@ -5,6 +5,7 @@ import {
   UnauthorizedProblemError,
   ForbiddenProblemError,
   ValidationProblemError,
+  ServiceUnavailableProblemError,
 } from '../../common/errors/problemDetails.js';
 import { AUTH_CONSTANTS } from './auth.constants.js';
 import type {
@@ -219,7 +220,21 @@ export class AuthService {
 
     // Deliver OTP via configured provider (never exposed in normal auth responses)
     const targetMobile = user.voterProfile?.mobile || cleanMobile || user.identifier;
-    await this.otpService.deliverOtp(user.identifier, targetMobile, rawOtp);
+    try {
+      const delivered = await this.otpService.deliverOtp(user.identifier, targetMobile, rawOtp);
+      if (!delivered) {
+        throw new ServiceUnavailableProblemError(
+          'OTP delivery failed. SMS delivery provider returned failure.'
+        );
+      }
+    } catch (err: any) {
+      if (err instanceof ServiceUnavailableProblemError) {
+        throw err;
+      }
+      throw new ServiceUnavailableProblemError(
+        err?.message || 'OTP delivery is currently unavailable in this environment.'
+      );
+    }
 
     return {
       challengeId: challenge.id,

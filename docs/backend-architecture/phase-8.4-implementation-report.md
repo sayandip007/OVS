@@ -6,8 +6,8 @@ Phase 8.4 implements a dedicated, fail-closed administrative authentication, Rol
 
 ## 2. Database Schema & Forward Migration
 
-- **Prisma Schema**: [`backend/prisma/schema.prisma`](file:///backend/prisma/schema.prisma)
-- **Migration**: [`backend/prisma/migrations/20261111000200_phase_8_4_admin_rbac_scopes_audit/migration.sql`](file:///backend/prisma/migrations/20261111000200_phase_8_4_admin_rbac_scopes_audit/migration.sql)
+- **Prisma Schema**: [`backend/prisma/schema.prisma`](..\..\backend\prisma\schema.prisma)
+- **Migration**: [`backend/prisma/migrations/20261111000200_phase_8_4_admin_rbac_scopes_audit/migration.sql`](..\..\backend\prisma\migrations\20261111000200_phase_8_4_admin_rbac_scopes_audit\migration.sql)
 - Key structural additions:
   - `AdminStatus` enum (`ACTIVE`, `SUSPENDED`, `DEACTIVATED`) synchronized via `chk_admin_status_active_sync`.
   - `UserSession.lastActivityAt` (`last_activity_at`) for 30-minute idle timeout tracking.
@@ -22,23 +22,23 @@ Phase 8.4 implements a dedicated, fail-closed administrative authentication, Rol
 
 1. **Separated Admin Identity & Bootstrap**:
    - Public voter registration (`POST /api/v1/auth/register`) validates strict Zod schemas and never assigns administrative roles (`userType: 'VOTER'`).
-   - Initial `SUPER_ADMIN` accounts are provisioned exclusively via [`bootstrapSuperAdmin.ts`](file:///backend/src/modules/admin/bootstrapSuperAdmin.ts) (`npm run backend:admin:bootstrap`) using explicit arguments/environment variables (no hardcoded production credentials).
+   - Initial `SUPER_ADMIN` accounts are provisioned exclusively via [`bootstrapSuperAdmin.ts`](..\..\backend\src\modules\admin\bootstrapSuperAdmin.ts) (`npm run backend:admin:bootstrap`) using explicit arguments/environment variables (no hardcoded production credentials).
 2. **Password Hashing & Lockout Protection**:
-   - [`password.service.ts`](file:///backend/src/modules/admin/password.service.ts) uses Node.js `crypto.scrypt` (`N=16384, r=8, p=1`, 16-byte salt, 64-byte key, PHC encoding) with `crypto.timingSafeEqual`.
+   - [`password.service.ts`](..\..\backend\src\modules\admin\password.service.ts) uses Node.js `crypto.scrypt` (`N=16384, r=8, p=1`, 16-byte salt, 64-byte key, PHC encoding) with `crypto.timingSafeEqual`.
    - Enforces minimum length (12 chars), character-class complexity, identifier non-inclusion, constant-time dummy verification against user enumeration, progressive failed-login lockouts, and rate limiting on `/api/v1/admin/auth/login`.
 3. **Server-Managed Sessions & CSRF**:
    - Reuses HttpOnly `ovs_session` cookie (SHA-256 hashed in `UserSession`), HMAC-SHA256 `X-CSRF-Token`, session-fixation rotation on login, and 30-minute idle expiry.
    - Suspension/deactivation immediately revokes all active sessions for the admin.
 4. **Separated RBAC & Jurisdiction Scope Enforcement**:
-   - Centralized permissions in [`admin.permissions.ts`](file:///backend/src/modules/admin/admin.permissions.ts) (`ROLE_PERMISSION_MATRIX`, `ADMIN_ROLE_RANK`, `MUTATING_ADMIN_PERMISSIONS`).
+   - Centralized permissions in [`admin.permissions.ts`](..\..\backend\src\modules\admin\admin.permissions.ts) (`ROLE_PERMISSION_MATRIX`, `ADMIN_ROLE_RANK`, `MUTATING_ADMIN_PERMISSIONS`).
    - `READ_ONLY_AUDITOR` strictly holds zero mutating permissions.
-   - `requirePermission(...)` and `requireJurisdictionScope(...)` are independent middleware checks in [`admin.middleware.ts`](file:///backend/src/modules/admin/admin.middleware.ts); having a permission never bypasses state/election/constituency scope restrictions, and role hierarchy + scope subset rules block privilege escalation.
+   - `requirePermission(...)` and `requireJurisdictionScope(...)` are independent middleware checks in [`admin.middleware.ts`](..\..\backend\src\modules\admin\admin.middleware.ts); having a permission never bypasses state/election/constituency scope restrictions, and role hierarchy + scope subset rules block privilege escalation.
 5. **Sanitized Append-Only Audit Logging**:
-   - [`admin.audit.service.ts`](file:///backend/src/modules/admin/admin.audit.service.ts) recursively redacts secrets (`password`, `passwordHash`, `otp`, `sessionToken`, `csrfToken`, cookies, auth headers) before persistence in `admin_action_logs`.
+   - [`admin.audit.service.ts`](..\..\backend\src\modules\admin\admin.audit.service.ts) recursively redacts secrets (`password`, `passwordHash`, `otp`, `sessionToken`, `csrfToken`, cookies, auth headers) before persistence in `admin_action_logs`.
 
 ## 4. Administrative API Surface (`/api/v1/admin`)
 
-Implemented in [`admin.routes.ts`](file:///backend/src/modules/admin/admin.routes.ts) and [`admin.controller.ts`](file:///backend/src/modules/admin/admin.controller.ts):
+Implemented in [`admin.routes.ts`](..\..\backend\src\modules\admin\admin.routes.ts) and [`admin.controller.ts`](..\..\backend\src\modules\admin\admin.controller.ts):
 - `POST /api/v1/admin/auth/login`
 - `POST /api/v1/admin/auth/logout`
 - `POST /api/v1/admin/auth/logout-all`
@@ -61,7 +61,7 @@ Implemented in [`admin.routes.ts`](file:///backend/src/modules/admin/admin.route
 
 ## 5. Frontend Integration & Dual-Mode Compatibility
 
-- Preserves `LOCAL_DEMO` (default) compatibility for all existing UI workflows and Playwright specs while integrating `BACKEND_API` mode via [`apiClient.js`](file:///src/services/apiClient.js), [`AuthContext.jsx`](file:///src/context/AuthContext.jsx), [`adminPermissionService.js`](file:///src/services/adminPermissionService.js), [`AdminSidebar.jsx`](file:///src/components/admin/AdminSidebar.jsx), [`AdminLayout.jsx`](file:///src/layouts/AdminLayout.jsx), [`Login.jsx`](file:///src/pages/admin/Login.jsx), [`AuditLogs.jsx`](file:///src/pages/admin/AuditLogs.jsx), [`AdminProfile.jsx`](file:///src/pages/admin/AdminProfile.jsx), [`AdminUserManagement.jsx`](file:///src/pages/admin/AdminUserManagement.jsx), and [`AppRoutes.jsx`](file:///src/routes/AppRoutes.jsx) (with explicit 403 Forbidden screen).
+- Preserves `LOCAL_DEMO` (default) compatibility for all existing UI workflows and Playwright specs while integrating `BACKEND_API` mode via [`apiClient.js`](..\..\src\services\apiClient.js), [`AuthContext.jsx`](..\..\src\context\AuthContext.jsx), [`adminPermissionService.js`](..\..\src\services\adminPermissionService.js), [`AdminSidebar.jsx`](..\..\src\components\admin\AdminSidebar.jsx), [`AdminLayout.jsx`](..\..\src\layouts\AdminLayout.jsx), [`Login.jsx`](..\..\src\pages\admin\Login.jsx), [`AuditLogs.jsx`](..\..\src\pages\admin\AuditLogs.jsx), [`AdminProfile.jsx`](..\..\src\pages\admin\AdminProfile.jsx), [`AdminUserManagement.jsx`](..\..\src\pages\admin\AdminUserManagement.jsx), and [`AppRoutes.jsx`](..\..\src\routes\AppRoutes.jsx) (with explicit 403 Forbidden screen).
 
 ## 6. CI/CD Fixes Applied
 

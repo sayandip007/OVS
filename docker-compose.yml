@@ -20,7 +20,7 @@ services:
   backend-api:
     build:
       context: ./backend
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.dev
     container_name: ovs-backend
     restart: unless-stopped
     environment:
@@ -30,20 +30,23 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-ovs_admin}:${POSTGRES_PASSWORD:-ovs_secret_dev}@postgres-db:5432/${POSTGRES_DB:-ovs_db}?schema=public
       SESSION_SECRET: ${SESSION_SECRET:-dev_session_secret_32_characters_long_min}
       CLIENT_ORIGIN: ${CLIENT_ORIGIN:-http://localhost:3000}
+      ALLOW_OTP_INSPECTION: "true"
+      OVS_ALLOW_DEMO_SEED: "true"
     ports:
       - "5000:5000"
     volumes:
-      - ./backend:/app
-      - /app/node_modules
+      - ./backend/src:/app/src
+      - ./backend/prisma:/app/prisma
     depends_on:
       postgres-db:
         condition: service_healthy
-    command: sh -c "npx prisma migrate deploy --schema=prisma/schema.prisma && npm run prisma:seed && npm run dev"
+    command: sh -c "npx prisma migrate deploy --schema=prisma/schema.prisma && npx tsx prisma/seed-demo.ts && npm run dev"
 
   frontend-dev:
-    image: node:22-alpine
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend.dev
     container_name: ovs-frontend
-    working_dir: /app
     restart: unless-stopped
     environment:
       VITE_DATA_SOURCE_MODE: ${VITE_DATA_SOURCE_MODE:-LOCAL_DEMO}
@@ -51,10 +54,13 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - .:/app
-      - /app/node_modules
+      - ./src:/app/src
+      - ./public:/app/public
+      - ./index.html:/app/index.html
+      - ./vite.config.ts:/app/vite.config.ts
     depends_on:
-      - backend-api
+      backend-api:
+        condition: service_started
     command: npm run dev
 
 volumes:

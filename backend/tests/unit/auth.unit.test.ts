@@ -197,16 +197,22 @@ describe('OVS Phase 8.3 — Backend Auth Unit Tests', () => {
       assert.equal(isOtpLocked(5, 3), true);
     });
 
-    test('DevelopmentOtpProvider stores and exposes OTP only in non-production', async () => {
-      const devProvider = new DevelopmentOtpProvider();
-      await devProvider.sendOtp('test-challenge-uuid', '9876543210', '543210');
+    test('DevelopmentOtpProvider stores and exposes OTP only in non-production when enabled', async () => {
+      const origFlag = process.env.ALLOW_OTP_INSPECTION;
+      try {
+        process.env.ALLOW_OTP_INSPECTION = 'true';
+        const devProvider = new DevelopmentOtpProvider();
+        await devProvider.sendOtp('test-challenge-uuid', '9876543210', '543210');
 
-      const retrieved = devProvider.getLastOtp('9876543210');
-      assert.equal(retrieved, '543210');
+        const retrieved = devProvider.getLastOtp('9876543210');
+        assert.equal(retrieved, '543210');
 
-      // Clear for isolation
-      DevelopmentOtpProvider.clear();
-      assert.equal(devProvider.getLastOtp('9876543210'), null);
+        // Clear for isolation
+        DevelopmentOtpProvider.clear();
+        assert.equal(devProvider.getLastOtp('9876543210'), null);
+      } finally {
+        process.env.ALLOW_OTP_INSPECTION = origFlag;
+      }
     });
   });
 

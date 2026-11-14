@@ -1,9 +1,13 @@
 /**
- * OVS Phase 8.15 — Comprehensive Automated User Acceptance Testing (UAT) Suite
+ * OVS Phase 8.15 — Simulated Lifecycle & Verification Unit Test Suite
+ *
+ * NOTE: This suite tests business logic, schema strictness, and state transitions
+ * in memory using unit test assertions. Full end-to-end UAT against live PostgreSQL 16
+ * is executed via backend/tests/integration/api.integration.test.ts and Playwright E2E.
  *
  * Covers:
  *  1. Public Portal & Eligibility Presentation
- *  2. Complete 17-Step Voter Journey Simulation (Zero Candidate-Choice Leakage)
+ *  2. 17-Step Voter Journey Simulation (Zero Candidate-Choice Leakage Invariant)
  *  3. Multi-Role Administrator RBAC & Jurisdiction Scoping (Positive & Negative)
  *  4. Complete Election Lifecycle (Lok Sabha & State Assembly)
  *  5. Candidate & Political Party Nomination Workflows

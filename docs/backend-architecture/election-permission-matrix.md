@@ -2,7 +2,7 @@
 
 ## 1. Role-Permission Matrix
 
-Defined in [`admin.permissions.ts`](file:///backend/src/modules/admin/admin.permissions.ts):
+Defined in [`admin.permissions.ts`](..\..\backend\src\modules\admin\admin.permissions.ts):
 
 | Permission | `SUPER_ADMIN` | `NATIONAL_ADMIN` | `STATE_ADMIN` | `ELECTION_OFFICER` | `READ_ONLY_AUDITOR` |
 |---|---|---|---|---|---|

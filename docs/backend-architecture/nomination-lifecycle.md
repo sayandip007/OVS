@@ -1,6 +1,6 @@
 # OVS Phase 8.6 — Nomination Lifecycle State Machine
 
-Defined in [`nomination.lifecycle.ts`](file:///C:/Users/Sayandip%20Saha/OneDrive/Desktop/OVS/backend/src/modules/nominations/nomination.lifecycle.ts) using `CandidateNominationStatus`:
+Defined in [`nomination.lifecycle.ts`](..\..\backend\src\modules\nominations\nomination.lifecycle.ts) using `CandidateNominationStatus`:
 
 | From | To | Endpoint | Permission | Notes |
 |---|---|---|---|---|

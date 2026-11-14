@@ -10,7 +10,7 @@ import {
   CONSTITUENCY_TYPES,
   CANDIDATE_STATUS_LABELS,
 } from '../../utils/constants';
-import { CANDIDATE_PHOTO_OPTIONS } from '../../assets';
+import { CANDIDATE_PHOTO_OPTIONS, defaultAvatar, eciLogo } from '../../assets';
 import { CheckCircle2, XCircle, PauseCircle, Archive, Edit3 } from 'lucide-react';
 
 export default function CandidateManagement() {
