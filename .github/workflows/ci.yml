@@ -134,3 +134,24 @@ jobs:
         run: |
           npm run backend:admin:bootstrap
           npm run backend:admin:bootstrap
+
+  docker-and-deployment-verification:
+    name: Docker Stack & Deployment Script Syntax Verification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate Docker Compose Development Configuration
+        run: docker compose -f docker-compose.yml config
+
+      - name: Validate Docker Compose Production Configuration
+        env:
+          POSTGRES_PASSWORD: ci_sample_prod_password_123
+          SESSION_SECRET: ci_sample_prod_session_secret_32_characters_min
+        run: docker compose -f docker-compose.production.yml config
+
+      - name: Validate Backup & Recovery Shell Scripts Syntax
+        run: |
+          bash -n scripts/backup/backup.sh
+          bash -n scripts/backup/restore-verify.sh

@@ -79,6 +79,10 @@ import {
 } from './modules/system-settings/settings.routes.js';
 import { createMaintenanceMiddleware } from './modules/system-settings/maintenance.middleware.js';
 import { MaintenanceService } from './modules/system-settings/maintenance.service.js';
+import {
+  createMetricsMiddleware,
+  createMetricsHandler,
+} from './modules/observability/metrics.js';
 
 export interface CreateAppOptions {
   clientOrigin?: string;
@@ -113,11 +117,16 @@ export function createApp(options: CreateAppOptions = {}): Express {
   app.disable('x-powered-by');
 
   app.use(requestIdMiddleware);
+  app.use(createMetricsMiddleware());
   app.use(httpLoggerMiddleware);
   app.use(createHelmetMiddleware());
   app.use(createCorsMiddleware(origins));
   app.use(cookieParser());
   app.use(express.json({ limit: '100kb' }));
+
+  // Prometheus metrics exposition endpoints
+  app.get('/metrics', createMetricsHandler());
+  app.get('/api/v1/metrics', createMetricsHandler());
 
   const shouldRateLimit =
     typeof options.rateLimitMax === 'number' ||

@@ -4,9 +4,11 @@ import dotenv from 'dotenv';
 dotenv.config({ path: './backend/.env' });
 dotenv.config();
 
-const envSchema = z
+export const envSchema = z
   .object({
-    NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+    NODE_ENV: z
+      .enum(['development', 'test', 'staging', 'production'])
+      .default('development'),
     PORT: z.coerce
       .number({ invalid_type_error: 'PORT must be a valid TCP port number' })
       .int()
@@ -49,10 +51,15 @@ const envSchema = z
     LOG_LEVEL: z
       .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
       .default('info'),
+    RATE_LIMIT_MAX: z.coerce
+      .number({ invalid_type_error: 'RATE_LIMIT_MAX must be a valid integer' })
+      .int()
+      .min(1)
+      .default(120),
     REDIS_URL: z.string().optional(),
   })
   .superRefine((data, ctx) => {
-    if (data.NODE_ENV === 'production') {
+    if (data.NODE_ENV === 'production' || data.NODE_ENV === 'staging') {
       const lowerSecret = data.SESSION_SECRET.toLowerCase();
       if (
         lowerSecret.includes('replace-with') ||
@@ -63,8 +70,7 @@ const envSchema = z
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['SESSION_SECRET'],
-          message:
-            'Insecure placeholder SESSION_SECRET is strictly forbidden when NODE_ENV=production',
+          message: `Insecure placeholder SESSION_SECRET is strictly forbidden when NODE_ENV=${data.NODE_ENV}`,
         });
       }
     }

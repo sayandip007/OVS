@@ -18,11 +18,33 @@ async function bootstrap(): Promise<void> {
     );
   });
 
+  let isShuttingDown = false;
   const shutdown = async (signal: string) => {
-    logger.info({ signal }, 'Received shutdown signal, closing HTTP server and Prisma pool');
-    server.close(async () => {
-      await disconnectDatabase();
-      process.exit(0);
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+
+    logger.info({ signal }, 'Received shutdown signal, beginning graceful connection draining');
+
+    // Force exit after 10 seconds if connections fail to close
+    const forceExitTimer = setTimeout(() => {
+      logger.error('Graceful shutdown timed out after 10s. Forcing process termination.');
+      process.exit(1);
+    }, 10000);
+    forceExitTimer.unref();
+
+    server.close(async (err) => {
+      clearTimeout(forceExitTimer);
+      if (err) {
+        logger.error({ err }, 'Error during HTTP server close');
+      }
+      try {
+        await disconnectDatabase();
+        logger.info('Database pool closed cleanly. Process exiting.');
+        process.exit(0);
+      } catch (dbErr) {
+        logger.error({ dbErr }, 'Error disconnecting database pool');
+        process.exit(1);
+      }
     });
   };
 
